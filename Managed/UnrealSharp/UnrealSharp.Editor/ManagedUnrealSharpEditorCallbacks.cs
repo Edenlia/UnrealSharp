@@ -9,7 +9,7 @@ namespace UnrealSharp.Editor;
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct FManagedUnrealSharpEditorCallbacks()
 {
-    public delegate* unmanaged<IntPtr, UnmanagedArray, NativeBool> RecompileDirtyProjects = &ManagedUnrealSharpEditorCallbacks.RecompileDirtyProjects;
+    public delegate* unmanaged<IntPtr, UnmanagedArray*, NativeBool> RecompileDirtyProjects = &ManagedUnrealSharpEditorCallbacks.RecompileDirtyProjects;
     
     public delegate* unmanaged<char*, char*, IntPtr, void> RecompileChangedFile = &ManagedUnrealSharpEditorCallbacks.RecompileChangedFile;
     public delegate* unmanaged<char*, char*, void> RemoveSourceFile = &ManagedUnrealSharpEditorCallbacks.RemoveSourceFile;
@@ -25,10 +25,15 @@ public unsafe struct FManagedUnrealSharpEditorCallbacks()
 public static class ManagedUnrealSharpEditorCallbacks
 {
     [UnmanagedCallersOnly]
-    public static NativeBool RecompileDirtyProjects(IntPtr exceptionBuffer, UnmanagedArray pendingModifiedAssembliesBuffer)
+    public static unsafe NativeBool RecompileDirtyProjects(IntPtr exceptionBuffer, UnmanagedArray* pendingModifiedAssemblies)
     {
         try
         {
+            if (pendingModifiedAssemblies == null || pendingModifiedAssemblies->ArrayNum <= 0)
+            {
+                throw new InvalidOperationException("No modified assemblies were supplied for C# hot reload.");
+            }
+            UnmanagedArray pendingModifiedAssembliesBuffer = *pendingModifiedAssemblies;
             List<string> modifiedAssemblyNames = new(pendingModifiedAssembliesBuffer.ArrayNum);
             
             pendingModifiedAssembliesBuffer.ForEachWithMarshaller(StringMarshaller.FromNative, assemblyName =>

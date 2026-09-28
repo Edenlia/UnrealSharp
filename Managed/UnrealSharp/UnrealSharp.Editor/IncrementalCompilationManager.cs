@@ -128,6 +128,11 @@ public static class IncrementalCompilationManager
     public static void RecompileDirtyProjects(List<string> modifiedAssemblyNames)
     {
         List<Project> projects = ProjectUtilities.GetProjectsFromNames(modifiedAssemblyNames, SolutionManager.CurrentProjects);
+        if (projects.Count != modifiedAssemblyNames.Distinct().Count())
+        {
+            throw new InvalidOperationException("Some modified assemblies could not be resolved to Roslyn projects: "
+                                                + string.Join(", ", modifiedAssemblyNames));
+        }
 
         for (int i = projects.Count - 1; i >= 0; i--)
         {
