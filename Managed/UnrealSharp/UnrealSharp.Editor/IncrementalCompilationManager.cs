@@ -56,7 +56,10 @@ public static class IncrementalCompilationManager
             return;
         }
 
-        state.InitialCompilation = state.InitialCompilation!.RemoveSyntaxTrees(existingTree);
+        Compilation oldCompilation = state.InitialCompilation!;
+        Compilation newCompilation = oldCompilation.RemoveSyntaxTrees(existingTree);
+        SyntaxUtilities.LookForChangesInUnrealTypes(oldCompilation, existingTree, newCompilation, null, foundProject);
+        state.InitialCompilation = newCompilation;
         state.TreesByPath.Remove(fullPath);
     }
 
@@ -108,17 +111,20 @@ public static class IncrementalCompilationManager
             }
         }
 
+        Compilation oldCompilation = state.InitialCompilation!;
+        Compilation newCompilation;
         if (state.TreesByPath!.TryGetValue(fullPath, out SyntaxTree? existingTree))
         {
-            state.InitialCompilation = state.InitialCompilation!.ReplaceSyntaxTree(existingTree, newTree);
+            newCompilation = oldCompilation.ReplaceSyntaxTree(existingTree, newTree);
         }
         else
         {
-            state.InitialCompilation = state.InitialCompilation!.AddSyntaxTrees(newTree);
+            newCompilation = oldCompilation.AddSyntaxTrees(newTree);
         }
 
-        SyntaxUtilities.LookForChangesInUnrealTypes(newTree, existingTree, foundProject);
+        SyntaxUtilities.LookForChangesInUnrealTypes(oldCompilation, existingTree, newCompilation, newTree, foundProject);
 
+        state.InitialCompilation = newCompilation;
         state.TreesByPath[fullPath] = newTree;
 
         stopwatch.Stop();

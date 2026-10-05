@@ -305,17 +305,34 @@ public static class InspectionDispatcher
         }
         else
         {
-            foreach (MemberDeclarationSyntax memberDeclaration in typeDeclaration.Members)
+            // The UClass/UStruct attribute belongs to the type, not just the
+            // partial declaration carrying it. Resolve each declaration in its
+            // own syntax tree while preserving member syntax for specifiers.
+            HashSet<ISymbol> inspected = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            foreach (SyntaxReference declarationReference in typeSymbol.DeclaringSyntaxReferences)
             {
-                ImmutableArray<ISymbol> memberSymbols =
-                    GetDeclaredSymbolsForMember(memberDeclaration, ctx.SemanticModel);
-
-                if (memberSymbols.IsDefaultOrEmpty)
+                if (declarationReference.GetSyntax() is not TypeDeclarationSyntax declaration)
                 {
                     continue;
                 }
 
-                RunMemberInspections(topType, memberDeclaration, memberSymbols, ctx);
+                SemanticModel semanticModel = ctx.SemanticModel.Compilation.GetSemanticModel(declaration.SyntaxTree);
+                foreach (MemberDeclarationSyntax memberDeclaration in declaration.Members)
+                {
+                    ImmutableArray<ISymbol> memberSymbols = GetDeclaredSymbolsForMember(memberDeclaration, semanticModel);
+                    foreach (ISymbol memberSymbol in memberSymbols)
+                    {
+                        // A partial method's definition and implementation can
+                        // share attributes; emit its reflection only once.
+                        ISymbol canonical = memberSymbol is IMethodSymbol method
+                            ? method.PartialDefinitionPart ?? method
+                            : memberSymbol;
+                        if (inspected.Add(canonical))
+                        {
+                            RunMemberInspections(topType, memberDeclaration, ImmutableArray.Create(canonical), ctx);
+                        }
+                    }
+                }
             }
         }
     }
