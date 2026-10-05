@@ -192,6 +192,7 @@ public static class SolutionManager
                 state.TreesByPath[document.FilePath!] = tree;
             }
 
+            UCSEditorBlueprintFunctionLibrary.SetProjectSourceFiles(project.Name, projectDocumentPaths.ToList());
             LogUnrealSharpEditor.Log($"Project '{project.Name}' loaded for incremental generation.");
         }
         catch (Exception exception)

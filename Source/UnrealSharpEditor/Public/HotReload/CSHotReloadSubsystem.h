@@ -55,11 +55,13 @@ public:
 	void ResumeHotReload();
 	
 	void RefreshDirectoryWatchers();
+	void WatchLinkedSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles);
 	void NotifyNewType() { bDetectedNewManagedType = true;}
 
 private:
 	
-	void AddDirectoryToWatch(const FString& Directory, FName ProjectName);
+	void AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly = false);
+	void HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
 	
 	void HandleScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
 
@@ -100,7 +102,15 @@ private:
 	int32 FailedCompiles = 0;
 	int32 LastCompileResult = 0;
 
-	TArray<FString> WatchingDirectories;
+	struct FSourceDirectoryWatch
+	{
+		FString Directory;
+		FName ProjectName;
+		FDelegateHandle Handle;
+		bool bLinkedOnly;
+	};
+	TArray<FSourceDirectoryWatch> WatchingDirectories;
+	TMap<FName, TSet<FString>> LinkedSourceFiles;
 
 	TMap<FName, TArray<FFileChangeData>> PendingFileChanges;
 

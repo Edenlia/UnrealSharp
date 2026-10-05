@@ -51,6 +51,18 @@ bool UCSHotReloadSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UCSHotReloadSubsystem::Deinitialize()
 {
+	if (FDirectoryWatcherModule* Module = FModuleManager::GetModulePtr<FDirectoryWatcherModule>("DirectoryWatcher"))
+	{
+		if (IDirectoryWatcher* Watcher = Module->Get())
+		{
+			for (const FSourceDirectoryWatch& Watch : WatchingDirectories)
+			{
+				Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
+			}
+		}
+	}
+	WatchingDirectories.Reset();
+	LinkedSourceFiles.Reset();
 	Super::Deinitialize();
 	FTSTicker::GetCoreTicker().RemoveTicker(HotReloadTickDelegate);
 }
@@ -92,10 +104,12 @@ FString UCSHotReloadSubsystem::GetCompilationStatus() const
 	check(IsInGameThread());
 	const bool bPending = HasPendingHotReloadChanges();
 	const bool bBusy = !bHotReloadReady || bIsHotReloadPaused || IsHotReloading() || bPending;
-	return FString::Printf(TEXT("{\"ready\":%s,\"busy\":%s,\"pending_changes\":%s,\"paused\":%s,\"started_compiles\":%d,\"completed_compiles\":%d,\"failed_compiles\":%d,\"last_compile_result\":%d}"),
+	int32 LinkedCount = 0;
+	for (const auto& Pair : LinkedSourceFiles) LinkedCount += Pair.Value.Num();
+	return FString::Printf(TEXT("{\"ready\":%s,\"busy\":%s,\"pending_changes\":%s,\"paused\":%s,\"started_compiles\":%d,\"completed_compiles\":%d,\"failed_compiles\":%d,\"last_compile_result\":%d,\"watched_directories\":%d,\"linked_source_files\":%d}"),
 		bHotReloadReady ? TEXT("true") : TEXT("false"), bBusy ? TEXT("true") : TEXT("false"),
 		bPending ? TEXT("true") : TEXT("false"), bIsHotReloadPaused ? TEXT("true") : TEXT("false"),
-		StartedCompiles, CompletedCompiles, FailedCompiles, LastCompileResult);
+		StartedCompiles, CompletedCompiles, FailedCompiles, LastCompileResult, WatchingDirectories.Num(), LinkedCount);
 }
 
 void UCSHotReloadSubsystem::PerformHotReload()
@@ -273,9 +287,70 @@ bool UCSHotReloadSubsystem::Tick(float DeltaTime)
 	return true;
 }
 
-void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName)
+void UCSHotReloadSubsystem::WatchLinkedSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles)
 {
-	if (WatchingDirectories.Contains(Directory))
+	check(IsInGameThread());
+	TArray<FString> ProjectPaths;
+	UnrealSharp::Project::GetAllProjectPaths(ProjectPaths);
+	const FString* ProjectPath = ProjectPaths.FindByPredicate([ProjectName](const FString& Path)
+	{
+		return FName(*FPaths::GetBaseFilename(Path)) == ProjectName;
+	});
+	if (!ProjectPath) return;
+	const FString ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::GetPath(*ProjectPath));
+	IDirectoryWatcher* Watcher = FModuleManager::LoadModuleChecked<FDirectoryWatcherModule>("DirectoryWatcher").Get();
+	for (int32 Index = WatchingDirectories.Num() - 1; Index >= 0; --Index)
+	{
+		const FSourceDirectoryWatch& Watch = WatchingDirectories[Index];
+		if (Watch.bLinkedOnly && Watch.ProjectName == ProjectName)
+		{
+			Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
+			WatchingDirectories.RemoveAt(Index);
+		}
+	}
+	TSet<FString>& Files = LinkedSourceFiles.FindOrAdd(ProjectName);
+	Files.Reset();
+	TArray<FString> Directories;
+	for (const FString& Source : SourceFiles)
+	{
+		FString File = FPaths::ConvertRelativePathToFull(Source);
+		FPaths::NormalizeFilename(File);
+		if (!File.EndsWith(TEXT(".cs")) || FPaths::IsUnderDirectory(File, ProjectDirectory)
+			|| File.Contains(TEXT("/obj/")) || File.Contains(TEXT("/bin/")) || File.Contains(TEXT("/Intermediate/"))) continue;
+		Files.Add(File);
+		Directories.AddUnique(FPaths::GetPath(File));
+	}
+	// DirectoryWatcher is recursive. Register the shortest enclosing directories
+	// once per project, and filter every notification against its evaluated files.
+	Directories.Sort([](const FString& A, const FString& B) { return A.Len() < B.Len(); });
+	for (const FString& Directory : Directories)
+	{
+		const bool Covered = WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
+		{
+			return Watch.ProjectName == ProjectName && (Directory == Watch.Directory || FPaths::IsUnderDirectory(Directory, Watch.Directory));
+		});
+		if (!Covered) AddDirectoryToWatch(Directory, ProjectName, true);
+	}
+}
+
+void UCSHotReloadSubsystem::HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName)
+{
+	const TSet<FString>* Sources = LinkedSourceFiles.Find(ProjectName);
+	if (!Sources) return;
+	TArray<FFileChangeData> IncludedChanges;
+	for (const FFileChangeData& Change : ChangedFiles)
+	{
+		FString File = FPaths::ConvertRelativePathToFull(Change.Filename);
+		FPaths::NormalizeFilename(File);
+		if (Sources->Contains(File)) IncludedChanges.Add(Change);
+	}
+	if (!IncludedChanges.IsEmpty()) HandleScriptFileChanges(IncludedChanges, ProjectName);
+}
+
+void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly)
+{
+	if (WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
+		{ return Watch.Directory == Directory && Watch.ProjectName == ProjectName && Watch.bLinkedOnly == bLinkedOnly; }))
 	{
 		return;
 	}
@@ -290,10 +365,11 @@ void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName 
 	FDelegateHandle Handle;
 	DirectoryWatcherModule.Get()->RegisterDirectoryChangedCallback_Handle(
 		Directory,
-		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
+		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, bLinkedOnly
+			? &UCSHotReloadSubsystem::HandleLinkedScriptFileChanges : &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
 		Handle);
 
-	WatchingDirectories.Add(Directory);
+	WatchingDirectories.Add({ Directory, ProjectName, Handle, bLinkedOnly });
 }
 
 void UCSHotReloadSubsystem::PauseHotReload(const FString& Reason)
@@ -325,7 +401,9 @@ void UCSHotReloadSubsystem::ResumeHotReload()
 		PauseNotification.Reset();
 	}
 	
-	for (const TPair<FName, TArray<FFileChangeData>>& Pair : PendingFileChanges)
+	TMap<FName, TArray<FFileChangeData>> Changes = MoveTemp(PendingFileChanges);
+	PendingFileChanges.Reset();
+	for (const TPair<FName, TArray<FFileChangeData>>& Pair : Changes)
 	{
 		HandleScriptFileChanges(Pair.Value, Pair.Key);
 	}
