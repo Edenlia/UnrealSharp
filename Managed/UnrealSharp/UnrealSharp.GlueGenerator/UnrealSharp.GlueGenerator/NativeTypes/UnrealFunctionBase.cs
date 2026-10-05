@@ -129,9 +129,21 @@ public abstract record UnrealFunctionBase : UnrealStruct
                     property.MakeRefParameter();
                     hasOutParams = true;
                     break;
+                case RefKind.In:
+                    property.MakeRefParameter();
+                    property.PropertyFlags |= EPropertyFlags.ConstParm;
+                    break;
                 case RefKind.None:
                     property.MakeParameter();
                     break;
+            }
+
+            if (parameterSymbol.GetAttributes().Any(attribute =>
+                    attribute.AttributeClass?.ToDisplayString() == "UnrealSharp.Attributes.ConstAttribute"))
+            {
+                if (parameterSymbol.RefKind is RefKind.Out or RefKind.Ref)
+                    throw new InvalidOperationException("Const cannot annotate writable ref/out parameters; use in for a readonly reference.");
+                property.PropertyFlags |= EPropertyFlags.ConstParm;
             }
 
             if (parameterSymbol.HasExplicitDefaultValue && parameterSymbol.ExplicitDefaultValue != null)
@@ -304,7 +316,8 @@ public abstract record UnrealFunctionBase : UnrealStruct
             ReturnType.ExportToNative(builder, "returnBuffer", "returnValue");
         }
 
-        foreach (UnrealProperty parameter in Properties.Where(p => p.PropertyFlags.HasFlag(EPropertyFlags.OutParm)))
+        foreach (UnrealProperty parameter in Properties.Where(p => p.PropertyFlags.HasFlag(EPropertyFlags.OutParm)
+                     && !p.PropertyFlags.HasFlag(EPropertyFlags.ConstParm)))
         {
             parameter.ExportToNative(builder, SourceGenUtilities.Buffer, parameter.FieldName.SourceName);
         }
