@@ -8,6 +8,9 @@
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
 #include "Logging/StructuredLog.h"
+#include "Dom/JsonObject.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonSerializer.h"
 
 using namespace UnrealSharp;
 
@@ -217,10 +220,67 @@ load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::ConfigureRuntime
 		ErrorCode = Hostfxr_InitForRuntimeConfig(reinterpret_cast<const char_t*>(RuntimeConfigConv.Get()), &InitializeParameters, &HostFXR_Handle);
 	}
 
-	if (ErrorCode != 0 || !HostFXR_Handle)
+	// hostfxr documents 1 and 2 as successful component initialization when
+	// another managed plugin has already loaded the process runtime.
+	const bool bCompatibleExistingHost = !Layout.bSelfContained && (ErrorCode == 1 || ErrorCode == 2);
+	if ((ErrorCode != 0 && !bCompatibleExistingHost) || !HostFXR_Handle)
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "hostfxr_initialize failed with code: {0}. Set COREHOST_TRACE=1 and COREHOST_TRACEFILE=<path> for the full logging", ErrorCode);
+		if (HostFXR_Handle) Hostfxr_Close(HostFXR_Handle);
 		return nullptr;
+	}
+	if (ErrorCode == 2)
+	{
+		// Do not silently accept arbitrary runtime-option mismatches. Check the
+		// requested switches against the already active runtime, which cannot be
+		// reconfigured after another plugin has loaded it.
+		const auto GetProperty = reinterpret_cast<hostfxr_get_runtime_property_value_fn>(
+			FPlatformProcess::GetDllExport(RuntimeHost, TEXT("hostfxr_get_runtime_property_value")));
+		FString ConfigText;
+		TSharedPtr<FJsonObject> Config;
+		const TSharedPtr<FJsonObject>* Options = nullptr;
+		const TSharedPtr<FJsonObject>* Properties = nullptr;
+		bool bAcceptable = GetProperty && FFileHelper::LoadFileToString(ConfigText, *Layout.RuntimeConfigPath)
+			&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ConfigText), Config)
+			&& Config.IsValid() && Config->TryGetObjectField(TEXT("runtimeOptions"), Options);
+		if (bAcceptable && (*Options)->TryGetObjectField(TEXT("configProperties"), Properties))
+		{
+			for (const auto& Pair : (*Properties)->Values)
+			{
+				if (Pair.Value->Type != EJson::Boolean && Pair.Value->Type != EJson::String)
+				{
+					bAcceptable = false;
+					break;
+				}
+				const FString Requested = Pair.Value->Type == EJson::Boolean
+					? (Pair.Value->AsBool() ? TEXT("true") : TEXT("false")) : Pair.Value->AsString();
+				const auto Name = StringCast<DotNetUtilities::FHostChar>(*Pair.Key);
+				const char_t* ActiveValue = nullptr;
+				const int32 PropertyResult = GetProperty(nullptr, reinterpret_cast<const char_t*>(Name.Get()), &ActiveValue);
+				const FString Active = ActiveValue ? FString(StringCast<TCHAR>(
+					reinterpret_cast<const DotNetUtilities::FHostChar*>(ActiveValue)).Get()) : FString();
+				// This SDK-emitted trimming feature switch is not required by Sharp's
+				// collectible-assembly reload; it does not use MetadataUpdater.ApplyUpdate.
+				const bool bUnusedMetadataSwitch = static_cast<uint32>(PropertyResult) == 0x800080a4u
+					&& Pair.Key == TEXT("System.Reflection.Metadata.MetadataUpdater.IsSupported")
+					&& Requested == TEXT("false");
+				if (!bUnusedMetadataSwitch && (PropertyResult != 0 || !Active.Equals(Requested, ESearchCase::IgnoreCase)))
+				{
+					UE_LOGFMT(LogUnrealSharp, Error, "Existing runtime property conflicts with UnrealSharp: {0}", Pair.Key);
+					bAcceptable = false;
+					break;
+				}
+				UE_LOGFMT(LogUnrealSharp, Log, "Existing runtime property accepted: {0} ({1})", Pair.Key,
+					bUnusedMetadataSwitch ? TEXT("unused metadata-update feature switch absent") : TEXT("matching value"));
+			}
+		}
+		if (!bAcceptable)
+		{
+			UE_LOGFMT(LogUnrealSharp, Error, "Could not validate differing properties of the active .NET runtime.");
+			Hostfxr_Close(HostFXR_Handle);
+			return nullptr;
+		}
+		UE_LOGFMT(LogUnrealSharp, Log, "Reusing compatible process .NET runtime after validating requested properties.");
 	}
 
 	void* LoadAssemblyAndGetFunctionPointer = nullptr;
