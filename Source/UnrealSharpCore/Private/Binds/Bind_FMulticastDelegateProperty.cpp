@@ -38,14 +38,16 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
 		DelegateProperty->AddDelegate(NewScriptDelegate, nullptr, Delegate);
 	}
 
-	bool IsBound(FMulticastScriptDelegate* Delegate)
+	bool IsBound(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate)
 	{
-		return Delegate->IsBound();
+		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
+		return Delegate && Delegate->IsBound();
 	}
 
-	void ToString(FMulticastScriptDelegate* Delegate, FString* OutString)
+	void ToString(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate, FString* OutString)
 	{
-		*OutString = Delegate->ToString<UObject>();
+		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
+		*OutString = Delegate ? Delegate->ToString<UObject>() : FString();
 	}
 
 	void RemoveDelegate(FMulticastDelegateProperty* DelegateProperty, FMulticastScriptDelegate* Delegate, UObject* Target, const char* FunctionName)
@@ -62,6 +64,12 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
 	void BroadcastDelegate(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate, void* Parameters)
 	{
 		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
+		// Unbound sparse delegates have no allocated multicast storage, including
+		// immediately after their last listener is removed. Broadcasting is a no-op.
+		if (!Delegate)
+		{
+			return;
+		}
 #if ENGINE_MINOR_VERSION >= 8
 		Delegate->ProcessDelegate<UObject>(Parameters);
 #else
@@ -73,7 +81,7 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
 	{
 		FScriptDelegate NewScriptDelegate = MakeScriptDelegate(Target, FunctionName);
 		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
-		return Delegate->Contains(NewScriptDelegate);
+		return Delegate && Delegate->Contains(NewScriptDelegate);
 	}
 
 	void* GetSignatureFunction(FMulticastDelegateProperty* DelegateProperty)
