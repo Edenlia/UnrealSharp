@@ -24,6 +24,9 @@ public enum FunctionFlags : ulong
     [FunctionFlagsMap(NativeFunctionFlags.BlueprintPure)]
     BlueprintPure = NativeFunctionFlags.BlueprintPure,
 
+    [FunctionFlagsMap(NativeFunctionFlags.Const)]
+    Const = NativeFunctionFlags.Const,
+
     [FunctionFlagsMap(NativeFunctionFlags.BlueprintNativeEvent)]
     BlueprintEvent = NativeFunctionFlags.BlueprintNativeEvent,
 
