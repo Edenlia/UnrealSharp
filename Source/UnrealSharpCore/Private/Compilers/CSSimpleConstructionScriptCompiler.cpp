@@ -25,10 +25,22 @@ FCSRootNodeInfo::FCSRootNodeInfo(const FObjectProperty* NativeProperty, USceneCo
 	ensure(OwningClass->HasAllClassFlags(CLASS_Native));
 }
 
-void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData)
+void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData, bool bCreateDefaultSceneRoot)
 {
 	if (!Outer->IsChildOf(AActor::StaticClass()))
 	{
+		return;
+	}
+	if (!bCreateDefaultSceneRoot && !PropertiesReflectionData.ContainsByPredicate(
+		[](const FCSPropertyReflectionData& Property)
+		{
+			return Property.InnerType->PropertyType == ECSPropertyType::DefaultComponent;
+		}))
+	{
+		// USimpleConstructionScript's constructor/validation also creates a
+		// default root. A component-free layer needs no SCS at all; otherwise
+		// Editor validation can silently restore that synthetic inherited root.
+		*SimpleConstructionScript = nullptr;
 		return;
 	}
 	
@@ -104,7 +116,7 @@ void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass
 	if (!ActorRootComponentInfo.IsValid())
 	{
 		// User has not specified a root component, try to find or promote one
-		TryFindOrPromoteRootComponent(CurrentSCS, ActorRootComponentInfo, GeneratedClass, AllNodes);
+		TryFindOrPromoteRootComponent(CurrentSCS, ActorRootComponentInfo, GeneratedClass, AllNodes, bCreateDefaultSceneRoot);
 	}
 
 	USCS_Node* DefaultSceneRootComponent = FindObject<USCS_Node>(CurrentSCS, *DefaultSceneRoot_UnrealSharp);
@@ -447,7 +459,7 @@ USCS_Node* FCSSimpleConstructionScriptCompiler::FindRootComponentNode(const USim
 	return RootNode;
 }
 
-void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes)
+void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes, bool bCreateDefaultSceneRoot)
 {
 	ForEachSimpleConstructionScript(SimpleConstructionScript, [&](USimpleConstructionScript* ParentSCS)
 	{
@@ -511,6 +523,11 @@ void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleC
 
 	if (!RootComponentNode.IsValid())
 	{
+		// Component-free script layers can leave root ownership to a BP child.
+		if (!bCreateDefaultSceneRoot)
+		{
+			return;
+		}
 		// Last resort, make a default scene root
 		USCS_Node* Node = CreateNode(SimpleConstructionScript, Outer, USceneComponent::StaticClass(), "DefaultSceneRoot", &DefaultSceneRoot_UnrealSharp);
 		SimpleConstructionScript->AddNode(Node);

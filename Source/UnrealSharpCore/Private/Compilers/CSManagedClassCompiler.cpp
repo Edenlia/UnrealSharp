@@ -98,7 +98,8 @@ void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> Cl
 	FCSPropertyFactory::CreateAndAssignProperties(Field, ClassReflectionData->Properties);
 
 	// Build the construction script that will spawn the components
-	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Field, &Field->SimpleConstructionScript, ClassReflectionData->Properties);
+	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Field, &Field->SimpleConstructionScript,
+		ClassReflectionData->Properties, !ClassReflectionData->HasMetaData(TEXT("NoDefaultSceneRoot")));
 
 #if WITH_EDITOR
 	UBlueprint* Blueprint = Field->GetOwningBlueprint();
@@ -232,6 +233,21 @@ void UCSManagedClassCompiler::SetupDefaultTickSettings(UObject* DefaultObject, c
 	
 	TickFunction->bCanEverTick = ParentTickFunction->bCanEverTick;
 	TickFunction->bStartWithTickEnabled = ParentTickFunction->bStartWithTickEnabled;
+
+	// Consult serialized managed reflection data, including during the first
+	// skeleton compile before editor-only UClass metadata has been applied.
+	for (const UClass* Candidate = Class; Candidate; Candidate = Candidate->GetSuperClass())
+	{
+		if (const UCSClass* ManagedClass = Cast<UCSClass>(Candidate))
+		{
+			const TSharedPtr<FCSManagedTypeDefinition> Definition = ManagedClass->GetManagedTypeDefinition();
+			if (Definition && Definition->GetReflectionData<FCSClassReflectionData>()->HasMetaData(TEXT("NoAutoTick")))
+			{
+				return;
+			}
+			break;
+		}
+	}
 	
 	if (TickFunction->bCanEverTick && TickFunction->bStartWithTickEnabled)
 	{

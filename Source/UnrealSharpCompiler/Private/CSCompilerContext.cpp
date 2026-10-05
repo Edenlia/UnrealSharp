@@ -135,6 +135,9 @@ void FCSCompilerContext::SpawnNewClass(const FString& NewClassName)
 
 	Blueprint->SkeletonGeneratedClass = NewSkeletonClass;
 	NewClass = NewSkeletonClass;
+	// Native event overrides must exist in the first skeleton as well. The
+	// factory discovers inherited signatures through this superclass chain.
+	NewClass->SetSuperStruct(Blueprint->ParentClass);
 
 	// Skeleton class doesn't generate functions on the first pass.
 	// It's done in CleanAndSanitizeClass which doesn't run when the skeleton class is created
@@ -165,7 +168,8 @@ void FCSCompilerContext::ValidateSimpleConstructionScript() const
 	
 	const TArray<FCSPropertyReflectionData>& Properties = GetReflectionData()->Properties;
 	
-	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(MainClass, &MainClass->SimpleConstructionScript, Properties);
+	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(MainClass, &MainClass->SimpleConstructionScript,
+		Properties, !GetReflectionData()->HasMetaData(TEXT("NoDefaultSceneRoot")));
 	USimpleConstructionScript* SimpleConstructionScript = MainClass->SimpleConstructionScript;
 	Blueprint->SimpleConstructionScript = SimpleConstructionScript;
 

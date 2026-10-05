@@ -43,7 +43,7 @@ struct FCSNodeInfo
 class FCSSimpleConstructionScriptCompiler
 {
 public:
-	UNREALSHARPCORE_API static void CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData);
+	UNREALSHARPCORE_API static void CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData, bool bCreateDefaultSceneRoot = true);
 private:
 	static USCS_Node* CreateNode(USimpleConstructionScript* SimpleConstructionScript, UStruct* GeneratedClass, UClass* NewComponentClass, FName NewComponentVariableName, FString* OptionalName = nullptr);
 	static void UpdateTemplateComponent(USCS_Node* Node, UStruct* GeneratedClass, UClass* NewComponentClass, FName NewComponentVariableName);
@@ -54,7 +54,7 @@ private:
 	static void ForEachSimpleConstructionScript(const USimpleConstructionScript* SimpleConstructionScript, const TFunctionRef<bool(USimpleConstructionScript*)>& Callback);
 	static USCS_Node* FindRootComponentNode(const USimpleConstructionScript* SimpleConstructionScript);
 
-	static void TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes);
+	static void TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes, bool bCreateDefaultSceneRoot);
 	
 	static void DetachNodeFromOldParent(USCS_Node* Node, USimpleConstructionScript* CurrentSCS);
 	
