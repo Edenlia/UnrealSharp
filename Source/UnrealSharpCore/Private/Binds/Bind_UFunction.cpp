@@ -105,7 +105,19 @@ DECLARE_UNREALSHARP_BINDER(Bind_UFunction)
 	}
 	
 	BIND_UNREALSHARP_FUNCTION(GetNativeFunctionParamsSize)
+	void DestroyFunctionParams(UFunction* NativeFunction, void* Params)
+	{
+		check(NativeFunction && Params);
+		// Match InitializeFunctionParams: BP locals are outside the caller's
+		// parameter buffer and must never be destroyed here.
+		uint8 ParamsLeft = NativeFunction->NumParms;
+		for (TFieldIterator<FProperty> PropIt(NativeFunction); PropIt && ParamsLeft; ++PropIt, --ParamsLeft)
+		{
+			PropIt->DestroyValue_InContainer(Params);
+		}
+	}
+
 	BIND_UNREALSHARP_FUNCTION(CreateNativeFunctionCustomStructSpecialization)
 	BIND_UNREALSHARP_FUNCTION(InitializeFunctionParams)
+	BIND_UNREALSHARP_FUNCTION(DestroyFunctionParams)
 }
-
