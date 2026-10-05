@@ -65,6 +65,7 @@ void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
 
 void UCSHotReloadSubsystem::OnHotReloadReady()
 {
+	bHotReloadReady = true;
 	ResumeHotReload();
 	UE_LOGFMT(LogUnrealSharpEditor, Display, "C# Hot Reload is ready.");
 }
@@ -84,6 +85,17 @@ bool UCSHotReloadSubsystem::HasPendingHotReloadChanges() const
 	}
 	
 	return bHasPendingChanges;
+}
+
+FString UCSHotReloadSubsystem::GetCompilationStatus() const
+{
+	check(IsInGameThread());
+	const bool bPending = HasPendingHotReloadChanges();
+	const bool bBusy = !bHotReloadReady || bIsHotReloadPaused || IsHotReloading() || bPending;
+	return FString::Printf(TEXT("{\"ready\":%s,\"busy\":%s,\"pending_changes\":%s,\"paused\":%s,\"started_compiles\":%d,\"completed_compiles\":%d,\"failed_compiles\":%d,\"last_compile_result\":%d}"),
+		bHotReloadReady ? TEXT("true") : TEXT("false"), bBusy ? TEXT("true") : TEXT("false"),
+		bPending ? TEXT("true") : TEXT("false"), bIsHotReloadPaused ? TEXT("true") : TEXT("false"),
+		StartedCompiles, CompletedCompiles, FailedCompiles, LastCompileResult);
 }
 
 void UCSHotReloadSubsystem::PerformHotReload()
@@ -117,6 +129,7 @@ void UCSHotReloadSubsystem::PerformHotReload()
 	UE_LOGFMT(LogUnrealSharpEditor, Display, "Starting C# Hot Reload...");
 	
 	CurrentHotReloadStatus = Active;
+	++StartedCompiles;
 	double StartTime = FPlatformTime::Seconds();
 
 	FScopedSlowTask Progress(4, LOCTEXT("HotReload", "Reloading C#..."));
@@ -129,6 +142,9 @@ void UCSHotReloadSubsystem::PerformHotReload()
 	if (!FCSHotReloadUtilities::RecompileDirtyProjects(AssembliesSortedByDependencies, ExceptionMessage))
 	{
 		CurrentHotReloadStatus = FailedToCompile;
+		++CompletedCompiles;
+		++FailedCompiles;
+		LastCompileResult = -1;
 		UE_LOG(LogUnrealSharpEditor, Error, TEXT("C# Compilation Failed: %s"), *ExceptionMessage);
 		if (FApp::CanEverRender())
 		{
@@ -170,6 +186,8 @@ void UCSHotReloadSubsystem::PerformHotReload()
 	}
 	
 	CurrentHotReloadStatus = Inactive;
+	++CompletedCompiles;
+	LastCompileResult = 1;
 	bDetectedNewManagedType = false;
 	ReloadedTypes.Reset();
 	

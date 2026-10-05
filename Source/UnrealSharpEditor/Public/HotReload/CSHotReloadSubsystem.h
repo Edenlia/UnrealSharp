@@ -43,6 +43,12 @@ public:
 	UNREALSHARPEDITOR_API bool IsHotReloading() const { return CurrentHotReloadStatus == Active; }
 	UNREALSHARPEDITOR_API bool HasPendingHotReloadChanges() const;
 	
+	/** Coherent game-thread snapshot for editor automation and profiling. */
+	UFUNCTION(BlueprintPure, Category = "UnrealSharp|Editor")
+	UNREALSHARPEDITOR_API FString GetCompilationStatus() const;
+
+	/** Same action as the editor's Force Hot Reload command. */
+	UFUNCTION(BlueprintCallable, Category = "UnrealSharp|Editor")
 	UNREALSHARPEDITOR_API void PerformHotReload();
 	
 	void PauseHotReload(const FString& Reason = FString());
@@ -88,6 +94,11 @@ private:
 
 	EHotReloadStatus CurrentHotReloadStatus = Inactive;
 	bool bIsHotReloadPaused = false;
+	bool bHotReloadReady = false;
+	int32 StartedCompiles = 0;
+	int32 CompletedCompiles = 0;
+	int32 FailedCompiles = 0;
+	int32 LastCompileResult = 0;
 
 	TArray<FString> WatchingDirectories;
 
