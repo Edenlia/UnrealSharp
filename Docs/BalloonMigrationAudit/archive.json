@@ -1,0 +1,260 @@
+{
+  "base": "2b51b3b076b5cbe327add60d1f93ad7d48cfe12c",
+  "tip": "f4d12067c450bd75a0380c61d65e677ce66a477b",
+  "main": "d7edf9dc624ebe7ae5228a4fc64c7b7e4c35f917",
+  "engineRef": "49a7bda8e0ffbfef70940e30fb807997d119803c",
+  "files": [
+    {
+      "file": "Docs/BlueprintEnumMappings.md",
+      "historical": "632165ed67877598b07c4a3138530c3379c1e6d9",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/BlueprintRootOwnership.md",
+      "historical": "c96df730bd3f8e53398ae86e9a253a7dc5554bb8",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/EditorCompilationStatus.md",
+      "historical": "2eb08813f1ef30e9584e076c78b95f199c08c16d",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/ManagedEventOutputParameters.md",
+      "historical": "a29e41cd042afe5ee8b4c98fa1877d6734059770",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/PartialReflectionMembers.md",
+      "historical": "6996026c6139a504430eb04ea7adba713832f38d",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/ReadOnlyParameters.md",
+      "historical": "efde1999c5f71d37105af9bd364c4793c3f35b4c",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Docs/SparseDelegateEmptyStorage.md",
+      "historical": "e19c6db9cd58a7963b730e46682fccced0bbf513",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "LinkedSourceHotReload.md",
+      "historical": "ebfb274f4958328637f68706a8b48a959ede8ed3",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Core/Attributes/BlueprintEnumAttribute.cs",
+      "historical": "7010fd5953938b3c49bf4e29f1d6d11baa3e431a",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Core/Attributes/ConstAttribute.cs",
+      "historical": "33302aba03f036d73f81eb2fa98a0eb7ee42d10e",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Core/Attributes/UFunctionAttribute.cs",
+      "historical": "85967d7a9e4cd351ba349021bf385952b38a2e3b",
+      "engine": "4f6c25592bc7442d2c7efd7700d657b2f16d1da9",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Editor/IncrementalCompilationManager.cs",
+      "historical": "e7ae1155c4cd28b7a72816de1523be626f8041f3",
+      "engine": "535a0cc5081534aff08b384698e5dcefd236aa78",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Editor/ManagedUnrealSharpEditorCallbacks.cs",
+      "historical": "c15ad0e553a7b640a0f295b8b40f2865475b52b2",
+      "engine": "b2658d3b6a612923309daa30937e556fa54bc05d",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Editor/SolutionManager.cs",
+      "historical": "9e96f8e9cf1473aa02975ae120b3b5d061562f78",
+      "engine": "ff16f66afb23dc3ba636086f729419d353f9e4cb",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Editor/SyntaxUtilities.cs",
+      "historical": "5e18794cf02531ddf35c74bc34f23b8b75edd530",
+      "engine": "8ba748e68b7fcf7c0f8ca68098711f30f6bf4c7f",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.Editor/UnrealTypeChangeDetector.cs",
+      "historical": "4264d93501adaf75f5e3b99de6ed3c3855593a96",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/InspectionDispatcher.cs",
+      "historical": "5a6ef4baca9cecec89a08941181dd79629b2e5d9",
+      "engine": "95e3354058549823ff0fe3bcf34182d7b3026ca2",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/Properties/EnumProperty.cs",
+      "historical": "6408856ca2c32b59421c29331e295ab8d1dce403",
+      "engine": "1a66c2a3fc6d942d810d0328681003f0aaa00a19",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/UnrealFunctionBase.cs",
+      "historical": "a7a0b05d4df341d60804a2b6e0f2260dfc590145",
+      "engine": "69753af327deb5fcb0a3c773fb4403d54cfbb99e",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp/Interop/Bind_BalloonRuntime.cs",
+      "historical": "3c66b21bbeb8d21ab55a77ab611f7b967e147b14",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp/Interop/Bind_FMulticastDelegateProperty.cs",
+      "historical": "9608451d0346d81b4175fc62298ffd02bd124f41",
+      "engine": "cfb17ed022d6dccdfc50d2f673d8081c29220826",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp/Interop/Bind_UFunction.cs",
+      "historical": "b228bc01f684b382b04a9414deb1220d6defee5e",
+      "engine": "f7575b9b1eaab65e80f24dbb62a1be06bfe57154",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Managed/UnrealSharp/UnrealSharp/MulticastDelegate.cs",
+      "historical": "612ac6a64b5db44540e3de0e3eba0b08dd69ff25",
+      "engine": "9d0102d695eff2d61a3c16e900942e0efe82cee1",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCompiler/Private/CSCompilerContext.cpp",
+      "historical": "d73ceba2f13eafe0ca1e132650a793fe7fe93acd",
+      "engine": "b95b57a13415b0f92b520c9cde5890cc76f3929f",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Binds/Bind_BalloonRuntime.cpp",
+      "historical": "22c2b29a3572dac93a78afef61b931b007cf8d31",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Binds/Bind_FMulticastDelegateProperty.cpp",
+      "historical": "4a40eac512d23f53e6cf4ecfd8fac10e4f8774fd",
+      "engine": "9675b37f8d1c71541d9489cc3c6ca750f3f3fbb4",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Binds/Bind_UFunction.cpp",
+      "historical": "0f9bd1a52b894c3e28c6a20fd896e9f502fc93dd",
+      "engine": "c42ddb87ccf3294fe4872704cafe3e8b81c68cd5",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Compilers/CSManagedClassCompiler.cpp",
+      "historical": "4c105aa3e2745b0f35c48a65418b6571d6653007",
+      "engine": "e1801981afd152acb078d1c5500e10f945f9c5a1",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Compilers/CSSimpleConstructionScriptCompiler.cpp",
+      "historical": "0159d7061c4734a4f1cb853f34745fdffc5d23cf",
+      "engine": "317b877397d09aa06cdef86954fb689360bc581a",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/DotNet/CSDotNetRuntimeHost.cpp",
+      "historical": "f5622f1927a609c656d1ef4c6972138c415034f3",
+      "engine": "d2d334acf721f933c4a4d8bd707931116c4774df",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Private/Factories/PropertyGenerators/CSEnumPropertyGenerator.cpp",
+      "historical": "e833f4e73f96052c7aecbef2f6d4775018ce31c0",
+      "engine": "6593e84f4be8774026fbc6d79b7071f27e9f23fe",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpCore/Public/Compilers/CSSimpleConstructionScriptCompiler.h",
+      "historical": "1d819a94a5af91bf2f8463aae17c0d6e4c60b346",
+      "engine": "b9d5fa2d29bf1b34c31b438a6440a488d37cc62e",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Private/CSEditorBlueprintFunctionLibrary.cpp",
+      "historical": "e509e5c9100708caa1b8f94fcefd44a7a5d1ca47",
+      "engine": "273261e89a13cec09a2851637861eb2ffe63e9e9",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Private/HotReload/CSHotReloadSubsystem.cpp",
+      "historical": "d1fd48ca687c00be76c53f36b5b1c86ae76b63fa",
+      "engine": "8f19dee479225cd7f42264d3fec4ee86eac5a03d",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Private/HotReload/CSHotReloadUtilities.cpp",
+      "historical": "45bf342ec33d247959041dca148210e17524273f",
+      "engine": "5f84567ef0fcebb4320d81c4bc3d1072600be1ce",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Public/CSEditorBlueprintFunctionLibrary.h",
+      "historical": "08d0f5f396fb7dbe00d18f2dfbf5097298aac780",
+      "engine": "80ca8bd0860950244a8dc9fe8e4475a326c3dcd6",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Public/HotReload/CSHotReloadSubsystem.h",
+      "historical": "0f46925f349f69a3f35a76fad8f5fdab299c8b16",
+      "engine": "9a28493f4108539e1d548d06f9f495ea74c74814",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpEditor/Public/UnrealSharpEditor.h",
+      "historical": "0aedcf66578a588b243dc9cdc6f850b5bf260d3a",
+      "engine": "b62e3c6b4d2b4deaf8d4d19de8c55b59f9a505f1",
+      "status": "differs-review-required"
+    },
+    {
+      "file": "Source/UnrealSharpManagedGlue/Exporters/StructExporter.cs",
+      "historical": "6fcec7965c1ac8365e4707a480503f1e310363ed",
+      "engine": "6fcec7965c1ac8365e4707a480503f1e310363ed",
+      "status": "identical"
+    },
+    {
+      "file": "Tests/PartialTypes/PartialTypes.Tests.csproj",
+      "historical": "2e94d8350a0290cf6c639d5311b9e007a6ddefaa",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Tests/PartialTypes/Program.cs",
+      "historical": "2945c352baa92dea46e44bf0b758aaf7dc93bfcf",
+      "engine": null,
+      "status": "absent-in-engine"
+    },
+    {
+      "file": "Tests/PartialTypes/README.md",
+      "historical": "3bd81d5a524fff8c6d3c1b28beb2c46bbef7ed64",
+      "engine": null,
+      "status": "absent-in-engine"
+    }
+  ]
+}

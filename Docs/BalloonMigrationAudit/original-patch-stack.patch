@@ -1,0 +1,1987 @@
+diff --git a/Docs/BlueprintEnumMappings.md b/Docs/BlueprintEnumMappings.md
+new file mode 100644
+index 00000000..632165ed
+--- /dev/null
++++ b/Docs/BlueprintEnumMappings.md
+@@ -0,0 +1,25 @@
++# Existing Blueprint enum mappings
++
++`[BlueprintEnum("/Game/Folder/E_State.E_State")]` maps a plain C# byte enum to
++the existing UserDefinedEnum. It does not register a C# UEnum. Include every
++real entry in asset order with the exact numeric value; omit Unreal's generated
++MAX entry. C# member labels are independent of localized Blueprint display names.
++Do not also use UEnumAttribute.
++
++The generator emits the asset path and ordered values on enum properties and
++function parameters. It omits a managed assembly dependency for the mapped enum.
++Native property creation loads that exact asset and validates its identity,
++entry count and values before reusing the UEnum. Existing enum marshalling stays
++byte based. Invalid mappings fail instead of silently creating a replacement.
++The referenced asset must be available in the runtime/cooked content as usual.
++
++A plugin C# edit needs the official BuildSolution command on Managed/UnrealSharp,
++even when UHT reports no changed engine glue. Then run BuildUserSolution.
++Native changes still require the target project's canonical AutoBuild first.
++
++Balloon verification: Tools/ScriptComparison/SharpFoundation/foundation-13.json
++in the host project. AutoBuild74, plugin managed01 and user managed30 succeeded.
++Editor13_f433c1f2 verified original enum identity in three properties and two
++function signatures, all values, mismatched enum rejection, and a Blueprint
++child override called from C# with the mapped enum parameter. No authored assets
++were saved. This is not cooked or live enum-asset editing verification.
+diff --git a/Docs/BlueprintRootOwnership.md b/Docs/BlueprintRootOwnership.md
+new file mode 100644
+index 00000000..c96df730
+--- /dev/null
++++ b/Docs/BlueprintRootOwnership.md
+@@ -0,0 +1,34 @@
++# Blueprint-owned scene roots
++
++`[UnrealSharp.Core.Attributes.UMetaData("NoDefaultSceneRoot")]` opts an Actor
++class out of the synthetic `DefaultSceneRoot_UnrealSharp` fallback. Native,
++inherited and explicitly declared scene components are still resolved or
++promoted normally. This is useful for a component-free C# behavior layer placed
++between a native Actor type and an existing Blueprint whose SCS owns the root.
++
++The option is read from class reflection data in both runtime compilation and
++the Editor skeleton compiler. It does not depend on editor-only UClass metadata
++being applied before construction. Existing classes retain the default behavior
++unless they explicitly opt out.
++
++The first skeleton now receives its intended superclass before the function
++factory enumerates inherited event signatures. Without it, initial skeleton
++construction can miss C# overrides even though the generated class contains
++them, causing BP parent-call node reconstruction to resolve a native ancestor.
++
++Validation is recorded in Balloon's `SharpCutover` snapshots and Foundation
++fixtures. A native build by itself is not an asset-preservation or runtime proof.
++Balloon AutoBuild97 and official managed build90 succeeded. Foundation52 verifies
++43 groups, including direct C# native Tick dispatch and two BP layers whose
++enabled event/parent chains each accumulate 0.75 in C#. Cutover07_1ec36148 passed
++all 104 class signatures and 200 in-memory BP contract comparisons with zero
++unreviewed differences, managed/BP errors or ensures. These are correctness
++results; they do not establish hotcompile, full gameplay or performance parity.
++
++`[UnrealSharp.Core.Attributes.UMetaData("NoAutoTick")]` preserves the native
++parent's tick flags instead of automatically enabling tick when C# overrides
++`Tick`. The event remains callable. The option uses the nearest managed class's
++reflection data during CDO/skeleton compilation and instance refresh. Classes
++without it retain the existing automatic behavior. Balloon uses it only on
++OpeningSceneEnd and GameEndTrigger: the original Puerts Editor export shows
++`bCanEverTick=false` on both assets, despite their TS ReceiveTick methods.
+diff --git a/Docs/EditorCompilationStatus.md b/Docs/EditorCompilationStatus.md
+new file mode 100644
+index 00000000..2eb08813
+--- /dev/null
++++ b/Docs/EditorCompilationStatus.md
+@@ -0,0 +1,17 @@
++# Editor compilation status
++
++`CSHotReloadSubsystem.GetCompilationStatus` provides a coherent game-thread
++snapshot of workspace readiness, paused/pending state and compile counters.
++The counters surround the existing synchronous `PerformHotReload` operation;
++completion includes assembly reload and dependent Blueprint refresh. A native
++log error or invalid resulting object must still fail the caller's verification.
++
++The exposed `PerformHotReload` UFUNCTION is the same action as the editor menu.
++It retains the existing pending-change, PIE/SIE and pause checks. No native
++compile path, forced compile or new scheduling mechanism is introduced.
++
++Balloon AutoBuild99 passed with its unchanged target/options. Three runtime
++status fields and counters were observed in normal Editor PIE algorithm runs;
++the initial completed/failed counters were zero and remained unchanged while
++timing. Hot-reload behavior itself is verified separately by live C# and BP
++return values during the memory workflow.
+diff --git a/Docs/ManagedEventOutputParameters.md b/Docs/ManagedEventOutputParameters.md
+new file mode 100644
+index 00000000..a29e41cd
+--- /dev/null
++++ b/Docs/ManagedEventOutputParameters.md
+@@ -0,0 +1,23 @@
++# Managed event output parameters
++
++The source generator now treats C# `out` as output-only and copies `out` and
++`ref` values back after calling the reflected Unreal function. The previous
++wrapper read unassigned C# outputs and never copied results back, preventing
++Balloon's detachable-mesh event from compiling with its original output pins.
++Native-to-managed dispatch also avoids reading an output-only value.
++
++Managed call wrappers initialize their native parameter buffer before writing
++values and destroy it in `finally`, after copying results into managed storage.
++This supports owned FString and container values in addition to scalars and
++object pointers. Destruction visits the same first NumParms properties as the
++existing initializer; Blueprint local properties outside the caller's buffer
++are excluded. Function containers use the existing copy marshallers.
++
++Verified through Balloon's canonical AutoBuild75, official plugin BuildSolution02
++and BuildUserSolution33. Editor Foundation15_72fdfe57 passed 18 checks with no
++managed or Blueprint errors: sixteen roundtrips of ref integer, out bool/object/
++Unicode string/integer array plus a string return; a disposable BP component
++overrode the real detachable-mesh event and returned its own bool/object outputs.
++The complete prior reflection/Construction/Blueprint dispatch checks also pass.
++Foundation14's fixture retained an automatic parent call; its exception is kept
++as a failed run. The corrected fixture connects entry directly to result.
+diff --git a/Docs/PartialReflectionMembers.md b/Docs/PartialReflectionMembers.md
+new file mode 100644
+index 00000000..6996026c
+--- /dev/null
++++ b/Docs/PartialReflectionMembers.md
+@@ -0,0 +1,54 @@
++# Reflection and Editor reload across partial type declarations
++
++The glue generator previously inspected only members in the syntax declaration
++carrying `UClass`/`UStruct`. A `UFunction` in another partial file silently lost
++reflection; a Blueprint event or partial property also failed to compile because
++its generated implementation was missing.
++
++`InspectionDispatcher` now visits every declaring syntax reference and resolves
++members using that syntax tree's semantic model. Member syntax remains available
++for property accessor/specifier handling. Partial method definitions and
++implementations are deduplicated by their canonical definition symbol. The
++existing primary-constructor path already inspects the complete symbol table.
++
++The Editor also previously decided which native types needed rebuilding by
++looking for a UClass/UStruct attribute on the changed declaration's syntax.
++Changing an unannotated partial file could therefore generate and reload a new
++assembly without marking its Unreal type dirty. Native reflection and Blueprint
++children retained the old properties until the attributed declaration changed.
++
++`UnrealTypeChangeDetector` resolves the changed declarations in the old and new
++incremental compilation snapshots. The merged type symbol supplies the Unreal
++attribute even when it is written in another file. Structural changes now dirty
++that type through the existing native reload path. File additions, removals and
++constructor changes are included; unchanged saves and trivia-only edits remain
++ignored. Fully qualified type identities keep unrelated same-named types apart.
++
++The standalone regression checks in `Tests/PartialTypes` exercise the production
++detector and the real incremental glue generator. All 32 checks passed, including
++repeated edits that retain the attributed syntax tree unchanged.
++
++The Editor reload regression was reproduced in Balloon on Mac ARM64 / UE 5.8.3
++with the generation-only fix installed: source-save compilation and reload
++succeeded, but the added property was absent from the managed parent and its
++Blueprint child and grandchild. With the complete fix, eight consecutive saves
++or file deletions passed: create an empty part, add a property, rename/change its
++type, remove it, add a new partial file, delete that file, add the property again,
++and delete the remaining extra file. Reflected property presence/absence and
++read/write behavior were checked on all three classes after each reload. The
++UClass file remained byte-identical and no Blueprint was manually recompiled
++after reload. Temporary sources were removed and no Blueprint assets were saved.
++Official plugin BuildSolution 07 and user BuildUserSolution 235 both exited 0;
++the canonical AutoBuild native invocation also passed before Editor verification.
++The fixture, raw logs and manifests are retained in Balloon under
++`Saved/ScriptComparison/R1PartialReload`. This is a Balloon integration test,
++not a claim of independent-project coverage for every reflected member kind.
++
++Earlier generation validation used official plugin BuildSolution 05 and user
++BuildUserSolution 81 (both exit 0). Normal Editor Foundation44_36993dd0 exits 0:
++an unannotated partial file's UProperty roundtrips 12 → 19 through its UFunction;
++the production player-binding callable is present in native reflection; the
++microbenchmark host's Blueprint event dispatches its C# default and a BP override
++1000 times each. No duplicate UClass attributes are needed. The fixture and raw
++logs live in Balloon's Tools/ScriptComparison/SharpFoundation and corresponding
++Docs/ScriptComparison/Evidence/SharpFoundation directory.
+diff --git a/Docs/ReadOnlyParameters.md b/Docs/ReadOnlyParameters.md
+new file mode 100644
+index 00000000..efde1999
+--- /dev/null
++++ b/Docs/ReadOnlyParameters.md
+@@ -0,0 +1,20 @@
++# Readonly managed function parameters
++
++The function generator handled C# `out`, `ref` and ordinary value parameters,
++but omitted the `in` case. The generated metadata therefore lacked `CPF_Parm`
++on an `in` argument, and the registered UFunction silently lost that parameter.
++
++`in` now emits `Parm | OutParm | ReferenceParm | ConstParm`, matching a native
++const-reference input. The generated invocation reads it but does not copy it
++back after the call. A parameter-only `[Const]` attribute retains `ConstParm`
++for native value inputs without changing their C# passing convention. Writable
++`ref`/`out` arguments reject `[Const]` rather than producing contradictory flags.
++
++Official managed plugin06 and user82 builds passed. Balloon's normal Editor
++Foundation45 verified a vector `in` plus const float through ProcessEvent (24
++from `(1,2,3)` and 4), including actual native flags. That run later failed its
++separate ref-output fixture; it is retained as a failed overall run. The complete
++SharpCutover02_ad245c48 audit passed for 104 BP roots/200 saved BPs, with zero
++managed-function signature differences after adapter name/ref fixes. No native
++assets were saved by the audit. Full cutover and runtime verification remain
++separate evidence.
+diff --git a/Docs/SparseDelegateEmptyStorage.md b/Docs/SparseDelegateEmptyStorage.md
+new file mode 100644
+index 00000000..e19c6db9
+--- /dev/null
++++ b/Docs/SparseDelegateEmptyStorage.md
+@@ -0,0 +1,27 @@
++# Empty sparse multicast delegates
++
++Balloon's tutorial migration exposed a native crash when managed code broadcast
++`AActor.OnActorBeginOverlap` after removing its final listener. Unreal returns a
++null multicast storage pointer for an unbound sparse delegate. The former binder
++resolved that pointer and unconditionally dereferenced it in `BroadcastDelegate`
++and `ContainsDelegate`. `IsBound` instead interpreted the sparse wrapper itself as
++a regular multicast delegate.
++
++All queries now resolve storage through the reflected property. Empty storage
++means an unbound delegate, no matching listener, an empty string and a no-op
++broadcast. Inline multicast delegates continue to use their original address.
++The native and managed callback signatures for `IsBound` and `ToString` change
++together; rebuild both the native plugin and official managed solution before
++loading the plugin.
++
++Reproduction and validation live in Balloon's
++`Tools/ScriptComparison/SharpFoundation/ABalloonSharpInteropProbe.cs`:
++query and broadcast an empty actor overlap delegate, bind a reflected C# callback,
++query and broadcast it, remove the last listener, then query and broadcast again.
++The same fixture also exercises regular controller delegates and retains their
++argument/filter/removal assertions. Foundation18 records the original SIGSEGV.
++This is a functional regression check, not a performance sample.
++
++Foundation19_299302e9 passed with native AutoBuild78, official plugin managed
++BuildSolution03 and user BuildUserSolution39. The full run exited zero with
++20 check groups and no managed or Blueprint errors.
+diff --git a/LinkedSourceHotReload.md b/LinkedSourceHotReload.md
+new file mode 100644
+index 00000000..ebfb274f
+--- /dev/null
++++ b/LinkedSourceHotReload.md
+@@ -0,0 +1,27 @@
++# Linked C# sources in the Editor
++
++The default project-directory watcher misses `Compile` items linked from outside
++the `.csproj` directory. After Roslyn evaluates a project, `SolutionManager`
++passes its actual document paths to the native editor subsystem. Registration
++runs on the game thread. Additional recursive directory watchers accept only
++those evaluated `.cs` paths; unrelated files and generated `obj`, `bin`, and
++`Intermediate` outputs do not enter the compile queue. Watcher handles are
++unregistered when the subsystem deinitializes. Resuming a paused reload consumes
++the queued file changes once.
++
++This supports edits to existing external Compile items. Newly introduced linked
++files or changes to project membership require the solution to be evaluated
++again (for example, reopening the Editor). The ordinary project-directory
++watcher remains responsible for files created beneath the project itself.
++
++Balloon verification uses its canonical Mac Development AutoBuild, followed by
++the official Release BuildUserSolution task. In a normal Editor, the native
++status reports 435 external source files across 95 watched directories. Saving
++the actual floating component changes its reflected sea-level result from 0 to
++77 and back; saving the shared height-modifier stack changes the computed height
++from 0 to 100 and back. All four official OnScriptSave reloads succeed. An invalid
++`.cs` file under an excluded nested directory causes no compilation. Exact
++original source bytes are restored before running Opening in the same Editor.
++Detailed process, build, and gameplay evidence lives in Balloon's
++`Tools/ScriptComparison/OpeningPerformance` diagnostics, separate from Release
++performance samples.
+diff --git a/Managed/UnrealSharp/UnrealSharp.Core/Attributes/BlueprintEnumAttribute.cs b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/BlueprintEnumAttribute.cs
+new file mode 100644
+index 00000000..7010fd59
+--- /dev/null
++++ b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/BlueprintEnumAttribute.cs
+@@ -0,0 +1,12 @@
++namespace UnrealSharp.Attributes;
++
++/// <summary>
++/// Maps a byte enum to an existing UserDefinedEnum asset. This does not register
++/// a new UEnum. Declare all real entries in asset order with their exact values;
++/// omit Unreal's generated MAX entry. Do not combine with UEnumAttribute.
++/// </summary>
++[AttributeUsage(AttributeTargets.Enum)]
++public sealed class BlueprintEnumAttribute(string assetPath) : Attribute
++{
++    public string AssetPath { get; } = assetPath;
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.Core/Attributes/ConstAttribute.cs b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/ConstAttribute.cs
+new file mode 100644
+index 00000000..33302aba
+--- /dev/null
++++ b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/ConstAttribute.cs
+@@ -0,0 +1,8 @@
++namespace UnrealSharp.Attributes;
++
++/// <summary>
++/// Preserve native CPF_ConstParm on a value parameter. Use C# in for a readonly
++/// reference; this attribute does not change C# argument passing or storage.
++/// </summary>
++[AttributeUsage(AttributeTargets.Parameter)]
++public sealed class ConstAttribute : Attribute;
+diff --git a/Managed/UnrealSharp/UnrealSharp.Core/Attributes/UFunctionAttribute.cs b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/UFunctionAttribute.cs
+index 4f6c2559..85967d7a 100644
+--- a/Managed/UnrealSharp/UnrealSharp.Core/Attributes/UFunctionAttribute.cs
++++ b/Managed/UnrealSharp/UnrealSharp.Core/Attributes/UFunctionAttribute.cs
+@@ -24,6 +24,9 @@ public enum FunctionFlags : ulong
+     [FunctionFlagsMap(NativeFunctionFlags.BlueprintPure)]
+     BlueprintPure = NativeFunctionFlags.BlueprintPure,
+ 
++    [FunctionFlagsMap(NativeFunctionFlags.Const)]
++    Const = NativeFunctionFlags.Const,
++
+     [FunctionFlagsMap(NativeFunctionFlags.BlueprintNativeEvent)]
+     BlueprintEvent = NativeFunctionFlags.BlueprintNativeEvent,
+ 
+@@ -56,4 +59,4 @@ public sealed class UFunctionAttribute(FunctionFlags flags = FunctionFlags.None)
+     /// If true, the function can be called from an instance of the class in the editor.
+     /// </summary>
+     public bool CallInEditor = false;
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.Editor/IncrementalCompilationManager.cs b/Managed/UnrealSharp/UnrealSharp.Editor/IncrementalCompilationManager.cs
+index 535a0cc5..e7ae1155 100644
+--- a/Managed/UnrealSharp/UnrealSharp.Editor/IncrementalCompilationManager.cs
++++ b/Managed/UnrealSharp/UnrealSharp.Editor/IncrementalCompilationManager.cs
+@@ -56,7 +56,10 @@ public static class IncrementalCompilationManager
+             return;
+         }
+ 
+-        state.InitialCompilation = state.InitialCompilation!.RemoveSyntaxTrees(existingTree);
++        Compilation oldCompilation = state.InitialCompilation!;
++        Compilation newCompilation = oldCompilation.RemoveSyntaxTrees(existingTree);
++        SyntaxUtilities.LookForChangesInUnrealTypes(oldCompilation, existingTree, newCompilation, null, foundProject);
++        state.InitialCompilation = newCompilation;
+         state.TreesByPath.Remove(fullPath);
+     }
+ 
+@@ -108,17 +111,20 @@ public static class IncrementalCompilationManager
+             }
+         }
+ 
++        Compilation oldCompilation = state.InitialCompilation!;
++        Compilation newCompilation;
+         if (state.TreesByPath!.TryGetValue(fullPath, out SyntaxTree? existingTree))
+         {
+-            state.InitialCompilation = state.InitialCompilation!.ReplaceSyntaxTree(existingTree, newTree);
++            newCompilation = oldCompilation.ReplaceSyntaxTree(existingTree, newTree);
+         }
+         else
+         {
+-            state.InitialCompilation = state.InitialCompilation!.AddSyntaxTrees(newTree);
++            newCompilation = oldCompilation.AddSyntaxTrees(newTree);
+         }
+ 
+-        SyntaxUtilities.LookForChangesInUnrealTypes(newTree, existingTree, foundProject);
++        SyntaxUtilities.LookForChangesInUnrealTypes(oldCompilation, existingTree, newCompilation, newTree, foundProject);
+ 
++        state.InitialCompilation = newCompilation;
+         state.TreesByPath[fullPath] = newTree;
+ 
+         stopwatch.Stop();
+@@ -128,6 +134,11 @@ public static class IncrementalCompilationManager
+     public static void RecompileDirtyProjects(List<string> modifiedAssemblyNames)
+     {
+         List<Project> projects = ProjectUtilities.GetProjectsFromNames(modifiedAssemblyNames, SolutionManager.CurrentProjects);
++        if (projects.Count != modifiedAssemblyNames.Distinct().Count())
++        {
++            throw new InvalidOperationException("Some modified assemblies could not be resolved to Roslyn projects: "
++                                                + string.Join(", ", modifiedAssemblyNames));
++        }
+ 
+         for (int i = projects.Count - 1; i >= 0; i--)
+         {
+@@ -382,4 +393,4 @@ public static class IncrementalCompilationManager
+         stopwatch.Stop();
+         LogUnrealSharpEditor.Log($"Project '{project.Name}' produced an assembly in {stopwatch.Elapsed.TotalSeconds:F2} seconds.");
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.Editor/ManagedUnrealSharpEditorCallbacks.cs b/Managed/UnrealSharp/UnrealSharp.Editor/ManagedUnrealSharpEditorCallbacks.cs
+index b2658d3b..c15ad0e5 100644
+--- a/Managed/UnrealSharp/UnrealSharp.Editor/ManagedUnrealSharpEditorCallbacks.cs
++++ b/Managed/UnrealSharp/UnrealSharp.Editor/ManagedUnrealSharpEditorCallbacks.cs
+@@ -9,7 +9,7 @@ namespace UnrealSharp.Editor;
+ [StructLayout(LayoutKind.Sequential)]
+ public unsafe struct FManagedUnrealSharpEditorCallbacks()
+ {
+-    public delegate* unmanaged<IntPtr, UnmanagedArray, NativeBool> RecompileDirtyProjects = &ManagedUnrealSharpEditorCallbacks.RecompileDirtyProjects;
++    public delegate* unmanaged<IntPtr, UnmanagedArray*, NativeBool> RecompileDirtyProjects = &ManagedUnrealSharpEditorCallbacks.RecompileDirtyProjects;
+     
+     public delegate* unmanaged<char*, char*, IntPtr, void> RecompileChangedFile = &ManagedUnrealSharpEditorCallbacks.RecompileChangedFile;
+     public delegate* unmanaged<char*, char*, void> RemoveSourceFile = &ManagedUnrealSharpEditorCallbacks.RemoveSourceFile;
+@@ -25,10 +25,15 @@ public unsafe struct FManagedUnrealSharpEditorCallbacks()
+ public static class ManagedUnrealSharpEditorCallbacks
+ {
+     [UnmanagedCallersOnly]
+-    public static NativeBool RecompileDirtyProjects(IntPtr exceptionBuffer, UnmanagedArray pendingModifiedAssembliesBuffer)
++    public static unsafe NativeBool RecompileDirtyProjects(IntPtr exceptionBuffer, UnmanagedArray* pendingModifiedAssemblies)
+     {
+         try
+         {
++            if (pendingModifiedAssemblies == null || pendingModifiedAssemblies->ArrayNum <= 0)
++            {
++                throw new InvalidOperationException("No modified assemblies were supplied for C# hot reload.");
++            }
++            UnmanagedArray pendingModifiedAssembliesBuffer = *pendingModifiedAssemblies;
+             List<string> modifiedAssemblyNames = new(pendingModifiedAssembliesBuffer.ArrayNum);
+             
+             pendingModifiedAssembliesBuffer.ForEachWithMarshaller(StringMarshaller.FromNative, assemblyName =>
+@@ -144,4 +149,4 @@ public static class ManagedUnrealSharpEditorCallbacks
+         string filePathStr = new string(filePath);
+         IncrementalCompilationManager.RemoveSourceFile(projectNameStr, filePathStr);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.Editor/SolutionManager.cs b/Managed/UnrealSharp/UnrealSharp.Editor/SolutionManager.cs
+index ff16f66a..9e96f8e9 100644
+--- a/Managed/UnrealSharp/UnrealSharp.Editor/SolutionManager.cs
++++ b/Managed/UnrealSharp/UnrealSharp.Editor/SolutionManager.cs
+@@ -192,6 +192,7 @@ public static class SolutionManager
+                 state.TreesByPath[document.FilePath!] = tree;
+             }
+ 
++            UCSEditorBlueprintFunctionLibrary.SetProjectSourceFiles(project.Name, projectDocumentPaths.ToList());
+             LogUnrealSharpEditor.Log($"Project '{project.Name}' loaded for incremental generation.");
+         }
+         catch (Exception exception)
+diff --git a/Managed/UnrealSharp/UnrealSharp.Editor/SyntaxUtilities.cs b/Managed/UnrealSharp/UnrealSharp.Editor/SyntaxUtilities.cs
+index 8ba748e6..5e18794c 100644
+--- a/Managed/UnrealSharp/UnrealSharp.Editor/SyntaxUtilities.cs
++++ b/Managed/UnrealSharp/UnrealSharp.Editor/SyntaxUtilities.cs
+@@ -8,58 +8,15 @@ using UnrealSharp.SourceGenerator.Utilities;
+ 
+ namespace UnrealSharp.Editor;
+ 
+-[Flags]
+-// ReSharper disable once InconsistentNaming
+-public enum ECSTypeStructuralFlags : byte
+-{
+-    None = 0,
+-    StructuralChanges = 1 << 0,
+-    ConstructorChanges = 1 << 1,
+-};
+-
+ public static class SyntaxUtilities
+ {
+-    public static void LookForChangesInUnrealTypes(SyntaxTree newTree, SyntaxTree? existingTree, Project owningProject)
++    public static void LookForChangesInUnrealTypes(Compilation oldCompilation, SyntaxTree? existingTree,
++        Compilation newCompilation, SyntaxTree? newTree, Project owningProject)
+     {
+-        List<BaseTypeDeclarationSyntax> newTypeDeclarations = newTree.GetRoot()
+-            .DescendantNodes()
+-            .OfType<BaseTypeDeclarationSyntax>()
+-            .ToList();
+-
+-        List<BaseTypeDeclarationSyntax>? oldTypeDeclarations = existingTree != null
+-            ? existingTree.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>().ToList()
+-            : null;
+-
+-        for (int i = 0; i < newTypeDeclarations.Count; i++)
++        foreach (UnrealTypeChange change in UnrealTypeChangeDetector.GetChanges(
++                     oldCompilation, existingTree, newCompilation, newTree))
+         {
+-            BaseTypeDeclarationSyntax newTypeDecl = newTypeDeclarations[i];
+-            if (!newTypeDecl.HasAnyUAttribute())
+-            {
+-                continue;
+-            }
+-
+-            ECSTypeStructuralFlags dirtyFlags = ECSTypeStructuralFlags.StructuralChanges;
+-
+-            if (oldTypeDeclarations != null)
+-            {
+-                BaseTypeDeclarationSyntax? oldTypeDecl =
+-                    oldTypeDeclarations.FirstOrDefault(t => t.Identifier.Text == newTypeDecl.Identifier.Text);
+-
+-                if (oldTypeDecl != null)
+-                {
+-                    if (newTypeDecl.IsEquivalentTo(oldTypeDecl, topLevel: false))
+-                    {
+-                        continue;
+-                    }
+-
+-                    if (HasConstructorChanged(newTypeDecl, oldTypeDecl))
+-                    {
+-                        dirtyFlags |= ECSTypeStructuralFlags.ConstructorChanges;
+-                    }
+-                }
+-            }
+-
+-            DirtyUnrealType(newTypeDecl, owningProject, dirtyFlags);
++            DirtyUnrealType(change.Declaration, owningProject, change.Flags);
+         }
+     }
+ 
+@@ -97,36 +54,4 @@ public static class SyntaxUtilities
+         return assembly.GetType(fullTypeName, throwOnError: false);
+     }
+ 
+-    private static bool HasConstructorChanged(BaseTypeDeclarationSyntax newBaseType,
+-        BaseTypeDeclarationSyntax oldBaseType)
+-    {
+-        if (newBaseType is not TypeDeclarationSyntax newType || oldBaseType is not TypeDeclarationSyntax oldType)
+-        {
+-            return false;
+-        }
+-
+-        ConstructorDeclarationSyntax? newConstructor = GetConstructor(newType);
+-        ConstructorDeclarationSyntax? oldConstructor = GetConstructor(oldType);
+-
+-        if (newConstructor == null && oldConstructor == null)
+-        {
+-            // No constructors existed before or now
+-            return false;
+-        }
+-
+-        if (newConstructor == null || oldConstructor == null)
+-        {
+-            // New constructor was added or removed
+-            return true;
+-        }
+-
+-        return !newConstructor.IsEquivalentTo(oldConstructor, topLevel: false);
+-    }
+-
+-    private static ConstructorDeclarationSyntax? GetConstructor(TypeDeclarationSyntax classDeclaration)
+-    {
+-        return classDeclaration.Members
+-            .OfType<ConstructorDeclarationSyntax>()
+-            .FirstOrDefault(ctor => ctor.ParameterList.Parameters.Count == 0);
+-    }
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.Editor/UnrealTypeChangeDetector.cs b/Managed/UnrealSharp/UnrealSharp.Editor/UnrealTypeChangeDetector.cs
+new file mode 100644
+index 00000000..4264d935
+--- /dev/null
++++ b/Managed/UnrealSharp/UnrealSharp.Editor/UnrealTypeChangeDetector.cs
+@@ -0,0 +1,133 @@
++using Microsoft.CodeAnalysis;
++using Microsoft.CodeAnalysis.CSharp.Syntax;
++
++namespace UnrealSharp.Editor;
++
++[Flags]
++// ReSharper disable once InconsistentNaming
++public enum ECSTypeStructuralFlags : byte
++{
++    None = 0,
++    StructuralChanges = 1 << 0,
++    ConstructorChanges = 1 << 1,
++}
++
++internal readonly record struct UnrealTypeChange(
++    BaseTypeDeclarationSyntax Declaration, ECSTypeStructuralFlags Flags);
++
++internal static class UnrealTypeChangeDetector
++{
++    // Both compilations must be the current incremental snapshots, not the
++    // Project's initial compilation. A declaration can acquire its UClass/UStruct
++    // attribute from another partial declaration in an unchanged syntax tree.
++    internal static IReadOnlyList<UnrealTypeChange> GetChanges(
++        Compilation oldCompilation, SyntaxTree? oldTree,
++        Compilation newCompilation, SyntaxTree? newTree)
++    {
++        Dictionary<string, List<BaseTypeDeclarationSyntax>> oldTypes = GetUnrealTypes(oldCompilation, oldTree);
++        Dictionary<string, List<BaseTypeDeclarationSyntax>> newTypes = GetUnrealTypes(newCompilation, newTree);
++        HashSet<string> names = new HashSet<string>(oldTypes.Keys, StringComparer.Ordinal);
++        names.UnionWith(newTypes.Keys);
++
++        List<UnrealTypeChange> changes = new List<UnrealTypeChange>();
++        foreach (string name in names)
++        {
++            oldTypes.TryGetValue(name, out List<BaseTypeDeclarationSyntax>? oldParts);
++            newTypes.TryGetValue(name, out List<BaseTypeDeclarationSyntax>? newParts);
++            oldParts ??= [];
++            newParts ??= [];
++
++            if (AreEquivalent(oldParts, newParts))
++            {
++                continue;
++            }
++
++            ECSTypeStructuralFlags flags = ECSTypeStructuralFlags.StructuralChanges;
++            if (!AreEquivalent(GetConstructors(oldParts), GetConstructors(newParts)))
++            {
++                flags |= ECSTypeStructuralFlags.ConstructorChanges;
++            }
++
++            // Include removed declarations/files: the surviving partial type
++            // must lose their reflected members during reload as well.
++            changes.Add(new UnrealTypeChange(newParts.Count > 0 ? newParts[0] : oldParts[0], flags));
++        }
++
++        return changes;
++    }
++
++    private static Dictionary<string, List<BaseTypeDeclarationSyntax>> GetUnrealTypes(
++        Compilation compilation, SyntaxTree? tree)
++    {
++        Dictionary<string, List<BaseTypeDeclarationSyntax>> types = new Dictionary<string, List<BaseTypeDeclarationSyntax>>(StringComparer.Ordinal);
++        if (tree == null)
++        {
++            return types;
++        }
++
++        SemanticModel model = compilation.GetSemanticModel(tree);
++        foreach (BaseTypeDeclarationSyntax declaration in tree.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
++        {
++            if (model.GetDeclaredSymbol(declaration) is not INamedTypeSymbol symbol || !IsUnrealType(symbol))
++            {
++                continue;
++            }
++
++            // Simple identifiers can collide across namespaces, and one tree
++            // can contain several declarations of the same partial type.
++            string name = symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
++            if (!types.TryGetValue(name, out List<BaseTypeDeclarationSyntax>? declarations))
++            {
++                declarations = new List<BaseTypeDeclarationSyntax>();
++                types.Add(name, declarations);
++            }
++
++            declarations.Add(declaration);
++        }
++
++        return types;
++    }
++
++    private static bool IsUnrealType(INamedTypeSymbol symbol)
++    {
++        foreach (AttributeData attribute in symbol.GetAttributes())
++        {
++            if (attribute.AttributeClass?.ToDisplayString() is
++                "UnrealSharp.Attributes.UClassAttribute" or
++                "UnrealSharp.Attributes.UStructAttribute" or
++                "UnrealSharp.Attributes.UEnumAttribute" or
++                "UnrealSharp.Attributes.UInterfaceAttribute")
++            {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    private static List<ConstructorDeclarationSyntax> GetConstructors(IEnumerable<BaseTypeDeclarationSyntax> parts)
++    {
++        return parts.OfType<TypeDeclarationSyntax>()
++            .SelectMany(part => part.Members.OfType<ConstructorDeclarationSyntax>())
++            .Where(constructor => constructor.ParameterList.Parameters.Count == 0)
++            .ToList();
++    }
++
++    private static bool AreEquivalent<T>(IReadOnlyList<T> oldNodes, IReadOnlyList<T> newNodes) where T : SyntaxNode
++    {
++        if (oldNodes.Count != newNodes.Count)
++        {
++            return false;
++        }
++
++        for (int i = 0; i < oldNodes.Count; i++)
++        {
++            if (!oldNodes[i].IsEquivalentTo(newNodes[i], topLevel: false))
++            {
++                return false;
++            }
++        }
++
++        return true;
++    }
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/InspectionDispatcher.cs b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/InspectionDispatcher.cs
+index 95e33540..5a6ef4ba 100644
+--- a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/InspectionDispatcher.cs
++++ b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/InspectionDispatcher.cs
+@@ -305,17 +305,34 @@ public static class InspectionDispatcher
+         }
+         else
+         {
+-            foreach (MemberDeclarationSyntax memberDeclaration in typeDeclaration.Members)
++            // The UClass/UStruct attribute belongs to the type, not just the
++            // partial declaration carrying it. Resolve each declaration in its
++            // own syntax tree while preserving member syntax for specifiers.
++            HashSet<ISymbol> inspected = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
++            foreach (SyntaxReference declarationReference in typeSymbol.DeclaringSyntaxReferences)
+             {
+-                ImmutableArray<ISymbol> memberSymbols =
+-                    GetDeclaredSymbolsForMember(memberDeclaration, ctx.SemanticModel);
+-
+-                if (memberSymbols.IsDefaultOrEmpty)
++                if (declarationReference.GetSyntax() is not TypeDeclarationSyntax declaration)
+                 {
+                     continue;
+                 }
+ 
+-                RunMemberInspections(topType, memberDeclaration, memberSymbols, ctx);
++                SemanticModel semanticModel = ctx.SemanticModel.Compilation.GetSemanticModel(declaration.SyntaxTree);
++                foreach (MemberDeclarationSyntax memberDeclaration in declaration.Members)
++                {
++                    ImmutableArray<ISymbol> memberSymbols = GetDeclaredSymbolsForMember(memberDeclaration, semanticModel);
++                    foreach (ISymbol memberSymbol in memberSymbols)
++                    {
++                        // A partial method's definition and implementation can
++                        // share attributes; emit its reflection only once.
++                        ISymbol canonical = memberSymbol is IMethodSymbol method
++                            ? method.PartialDefinitionPart ?? method
++                            : memberSymbol;
++                        if (inspected.Add(canonical))
++                        {
++                            RunMemberInspections(topType, memberDeclaration, ImmutableArray.Create(canonical), ctx);
++                        }
++                    }
++                }
+             }
+         }
+     }
+@@ -412,4 +429,4 @@ public static class InspectionDispatcher
+ 
+         inspectorData!.ApplySpecifiers(topType, attributes);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/Properties/EnumProperty.cs b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/Properties/EnumProperty.cs
+index 1a66c2a3..6408856c 100644
+--- a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/Properties/EnumProperty.cs
++++ b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/Properties/EnumProperty.cs
+@@ -1,13 +1,52 @@
+ ﻿using Microsoft.CodeAnalysis;
++using Newtonsoft.Json;
++using System.Linq;
++using UnrealSharp.GlueGenerator.Exceptions;
+ 
+ namespace UnrealSharp.GlueGenerator.NativeTypes.Properties;
+ 
+ public record EnumProperty : FieldProperty
+ {
+     public override string MarshallerType => $"EnumMarshaller<{ManagedType}>";
++    public string? BlueprintEnumPath { get; }
++    public EquatableList<byte> BlueprintEnumValues { get; }
+ 
+     public EnumProperty(ISymbol symbol, ITypeSymbol typeSymbol, UnrealType outer, SyntaxNode? syntaxNode = null)
+         : base(symbol, typeSymbol, PropertyType.Enum, outer, syntaxNode)
+     {
++        AttributeData? mapping = typeSymbol.GetAttributes().FirstOrDefault(attribute =>
++            attribute.AttributeClass?.ToDisplayString() == "UnrealSharp.Attributes.BlueprintEnumAttribute");
++        if (mapping is null) return;
++        if (typeSymbol is not INamedTypeSymbol { EnumUnderlyingType.SpecialType: SpecialType.System_Byte }
++            || typeSymbol.GetAttributes().Any(attribute =>
++                attribute.AttributeClass?.ToDisplayString() == "UnrealSharp.Attributes.UEnumAttribute"))
++            throw new ParseReflectionException($"{typeSymbol}: BlueprintEnum requires byte storage and cannot also have UEnum.");
++        BlueprintEnumPath = mapping.ConstructorArguments.FirstOrDefault().Value as string;
++        if (string.IsNullOrWhiteSpace(BlueprintEnumPath) || !BlueprintEnumPath!.StartsWith("/")
++            || !BlueprintEnumPath.Contains(".") || BlueprintEnumPath.Any(char.IsWhiteSpace))
++            throw new ParseReflectionException($"{typeSymbol}: BlueprintEnum requires an absolute asset object path.");
++        var values = typeSymbol.GetMembers().OfType<IFieldSymbol>()
++            .Where(field => field.HasConstantValue).Select(field => (byte)field.ConstantValue!).ToList();
++        if (values.Count == 0 || values.Distinct().Count() != values.Count)
++            throw new ParseReflectionException($"{typeSymbol}: BlueprintEnum requires nonempty, unique byte values in asset order.");
++        BlueprintEnumValues = new EquatableList<byte>(values);
+     }
+-}
+\ No newline at end of file
++
++    public override void CollectDependencies()
++    {
++        // The asset is owned by Unreal, not a managed assembly/type definition.
++        if (BlueprintEnumPath is null) base.CollectDependencies();
++    }
++
++    public override void PopulateJsonObject(JsonWriter jsonWriter)
++    {
++        base.PopulateJsonObject(jsonWriter);
++        if (BlueprintEnumPath is null) return;
++        jsonWriter.WritePropertyName("BlueprintEnumPath");
++        jsonWriter.WriteValue(BlueprintEnumPath);
++        jsonWriter.WritePropertyName("BlueprintEnumValues");
++        jsonWriter.WriteStartArray();
++        foreach (byte value in BlueprintEnumValues) jsonWriter.WriteValue(value);
++        jsonWriter.WriteEndArray();
++    }
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/UnrealFunctionBase.cs b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/UnrealFunctionBase.cs
+index 69753af3..a7a0b05d 100644
+--- a/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/UnrealFunctionBase.cs
++++ b/Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/NativeTypes/UnrealFunctionBase.cs
+@@ -129,11 +129,23 @@ public abstract record UnrealFunctionBase : UnrealStruct
+                     property.MakeRefParameter();
+                     hasOutParams = true;
+                     break;
++                case RefKind.In:
++                    property.MakeRefParameter();
++                    property.PropertyFlags |= EPropertyFlags.ConstParm;
++                    break;
+                 case RefKind.None:
+                     property.MakeParameter();
+                     break;
+             }
+ 
++            if (parameterSymbol.GetAttributes().Any(attribute =>
++                    attribute.AttributeClass?.ToDisplayString() == "UnrealSharp.Attributes.ConstAttribute"))
++            {
++                if (parameterSymbol.RefKind is RefKind.Out or RefKind.Ref)
++                    throw new InvalidOperationException("Const cannot annotate writable ref/out parameters; use in for a readonly reference.");
++                property.PropertyFlags |= EPropertyFlags.ConstParm;
++            }
++
+             if (parameterSymbol.HasExplicitDefaultValue && parameterSymbol.ExplicitDefaultValue != null)
+             {
+                 string defaultValue;
+@@ -288,6 +300,11 @@ public abstract record UnrealFunctionBase : UnrealStruct
+ 
+         foreach (UnrealProperty parameter in Properties)
+         {
++            if (parameter.ReferenceKind == RefKind.Out)
++            {
++                builder.AppendLine($"{parameter.ManagedTypeWithNullability} {parameter.FieldName.SourceName};");
++                continue;
++            }
+             parameter.ExportFromNative(builder, SourceGenUtilities.Buffer,
+                 $"{parameter.ManagedTypeWithNullability} {parameter.FieldName.SourceName} = ");
+         }
+@@ -299,7 +316,8 @@ public abstract record UnrealFunctionBase : UnrealStruct
+             ReturnType.ExportToNative(builder, "returnBuffer", "returnValue");
+         }
+ 
+-        foreach (UnrealProperty parameter in Properties.Where(p => p.PropertyFlags.HasFlag(EPropertyFlags.OutParm)))
++        foreach (UnrealProperty parameter in Properties.Where(p => p.PropertyFlags.HasFlag(EPropertyFlags.OutParm)
++                     && !p.PropertyFlags.HasFlag(EPropertyFlags.ConstParm)))
+         {
+             parameter.ExportToNative(builder, SourceGenUtilities.Buffer, parameter.FieldName.SourceName);
+         }
+@@ -332,9 +350,13 @@ public abstract record UnrealFunctionBase : UnrealStruct
+         builder.BeginUnsafeBlock();
+ 
+         builder.AllocateParameterBuffer(SizeVariableName);
++        builder.AppendLine($"Bind_UFunction.CallInitializeFunctionParams({FunctionNativePtr}, {SourceGenUtilities.ParamsBuffer});");
++        builder.AppendLine("try");
++        builder.OpenBrace();
+ 
+         foreach (UnrealProperty parameter in Properties)
+         {
++            if (parameter.ReferenceKind == RefKind.Out) continue;
+             builder.AppendLine();
+             parameter.ExportToNative(builder, SourceGenUtilities.ParamsBuffer, parameter.FieldName.SourceName);
+         }
+@@ -345,6 +367,12 @@ public abstract record UnrealFunctionBase : UnrealStruct
+ 
+         nativeCall(SourceGenUtilities.ParamsBuffer, returnBuffer);
+ 
++        foreach (UnrealProperty parameter in Properties.Where(p => p.ReferenceKind is RefKind.Out or RefKind.Ref))
++        {
++            builder.AppendLine();
++            parameter.ExportFromNative(builder, SourceGenUtilities.ParamsBuffer, $"{parameter.FieldName.SourceName} = ");
++        }
++
+         if (HasReturnValue)
+         {
+             string assignment = $"{ReturnType.ManagedTypeWithNullability} returnValue = ";
+@@ -352,6 +380,11 @@ public abstract record UnrealFunctionBase : UnrealStruct
+             builder.AppendLine("return returnValue;");
+         }
+ 
++        builder.CloseBrace();
++        builder.AppendLine("finally");
++        builder.OpenBrace();
++        builder.AppendLine($"Bind_UFunction.CallDestroyFunctionParams({FunctionNativePtr}, {SourceGenUtilities.ParamsBuffer});");
++        builder.CloseBrace();
+         builder.EndUnsafeBlock();
+     }
+ 
+@@ -386,4 +419,4 @@ public abstract record UnrealFunctionBase : UnrealStruct
+             ReturnType.PopulateJsonWithUnrealType(jsonWriter, "ReturnValue");
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp/Interop/Bind_BalloonRuntime.cs b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_BalloonRuntime.cs
+new file mode 100644
+index 00000000..3c66b21b
+--- /dev/null
++++ b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_BalloonRuntime.cs
+@@ -0,0 +1,17 @@
++using System;
++using UnrealSharp.Binds;
++
++namespace UnrealSharp.Interop;
++
++// Candidate destination: Managed/UnrealSharp/UnrealSharp/Interop, where the
++// plugin's existing NativeCallbacks generator supplies Call* wrappers.
++[NativeCallbacks]
++public static unsafe partial class Bind_BalloonRuntime
++{
++    public static delegate* unmanaged<IntPtr, IntPtr> GameInstance;
++    public static delegate* unmanaged<IntPtr, IntPtr> GameMode;
++    public static delegate* unmanaged<IntPtr, int, IntPtr> PlayerPawn;
++    public static delegate* unmanaged<IntPtr, int, IntPtr> PlayerController;
++    public static delegate* unmanaged<byte*, long> BeginCpuScope;
++    public static delegate* unmanaged<long, byte> EndCpuScope;
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp/Interop/Bind_FMulticastDelegateProperty.cs b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_FMulticastDelegateProperty.cs
+index cfb17ed0..9608451d 100644
+--- a/Managed/UnrealSharp/UnrealSharp/Interop/Bind_FMulticastDelegateProperty.cs
++++ b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_FMulticastDelegateProperty.cs
+@@ -7,11 +7,11 @@ namespace UnrealSharp.Interop;
+ public static unsafe partial class Bind_FMulticastDelegateProperty
+ {
+     public static delegate* unmanaged<IntPtr, IntPtr, IntPtr, string, void> AddDelegate;
+-    public static delegate* unmanaged<IntPtr, NativeBool> IsBound;
+-    public static delegate* unmanaged<IntPtr, ref UnmanagedArray, void> ToString;
++    public static delegate* unmanaged<IntPtr, IntPtr, NativeBool> IsBound;
++    public static delegate* unmanaged<IntPtr, IntPtr, ref UnmanagedArray, void> ToString;
+     public static delegate* unmanaged<IntPtr, IntPtr, IntPtr, string, void> RemoveDelegate;
+     public static delegate* unmanaged<IntPtr, IntPtr, void> ClearDelegate;
+     public static delegate* unmanaged<IntPtr, IntPtr, IntPtr, void> BroadcastDelegate;
+     public static delegate* unmanaged<IntPtr, IntPtr> GetSignatureFunction;
+     public static delegate* unmanaged<IntPtr, IntPtr, IntPtr, string, NativeBool> ContainsDelegate; 
+-}
+\ No newline at end of file
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp/Interop/Bind_UFunction.cs b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_UFunction.cs
+index f7575b9b..b228bc01 100644
+--- a/Managed/UnrealSharp/UnrealSharp/Interop/Bind_UFunction.cs
++++ b/Managed/UnrealSharp/UnrealSharp/Interop/Bind_UFunction.cs
+@@ -9,4 +9,5 @@ public static unsafe partial class Bind_UFunction
+     public static delegate* unmanaged<IntPtr, UInt16> GetNativeFunctionParamsSize;
+     public static delegate* unmanaged<IntPtr, IntPtr, IntPtr, IntPtr> CreateNativeFunctionCustomStructSpecialization;
+     public static delegate* unmanaged<IntPtr, IntPtr, void> InitializeFunctionParams;
+-}
+\ No newline at end of file
++    public static delegate* unmanaged<IntPtr, IntPtr, void> DestroyFunctionParams;
++}
+diff --git a/Managed/UnrealSharp/UnrealSharp/MulticastDelegate.cs b/Managed/UnrealSharp/UnrealSharp/MulticastDelegate.cs
+index 9d0102d6..612ac6a6 100644
+--- a/Managed/UnrealSharp/UnrealSharp/MulticastDelegate.cs
++++ b/Managed/UnrealSharp/UnrealSharp/MulticastDelegate.cs
+@@ -72,10 +72,10 @@ public abstract class MulticastDelegate<TDelegate> : DelegateBase<TDelegate> whe
+         return Bind_FMulticastDelegateProperty.CallContainsDelegate(_nativeProperty, _nativeDelegate, targetObject.NativeObject, handler.Method.Name).ToManagedBool();
+     }
+ 
+-    public override bool IsBound => Bind_FMulticastDelegateProperty.CallIsBound(_nativeDelegate).ToManagedBool();
++    public override bool IsBound => Bind_FMulticastDelegateProperty.CallIsBound(_nativeProperty, _nativeDelegate).ToManagedBool();
+ 
+     public override void Clear()
+     {
+         Bind_FMulticastDelegateProperty.CallClearDelegate(_nativeProperty, _nativeDelegate);
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Source/UnrealSharpCompiler/Private/CSCompilerContext.cpp b/Source/UnrealSharpCompiler/Private/CSCompilerContext.cpp
+index b95b57a1..d73ceba2 100644
+--- a/Source/UnrealSharpCompiler/Private/CSCompilerContext.cpp
++++ b/Source/UnrealSharpCompiler/Private/CSCompilerContext.cpp
+@@ -135,6 +135,9 @@ void FCSCompilerContext::SpawnNewClass(const FString& NewClassName)
+ 
+ 	Blueprint->SkeletonGeneratedClass = NewSkeletonClass;
+ 	NewClass = NewSkeletonClass;
++	// Native event overrides must exist in the first skeleton as well. The
++	// factory discovers inherited signatures through this superclass chain.
++	NewClass->SetSuperStruct(Blueprint->ParentClass);
+ 
+ 	// Skeleton class doesn't generate functions on the first pass.
+ 	// It's done in CleanAndSanitizeClass which doesn't run when the skeleton class is created
+@@ -165,7 +168,8 @@ void FCSCompilerContext::ValidateSimpleConstructionScript() const
+ 	
+ 	const TArray<FCSPropertyReflectionData>& Properties = GetReflectionData()->Properties;
+ 	
+-	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(MainClass, &MainClass->SimpleConstructionScript, Properties);
++	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(MainClass, &MainClass->SimpleConstructionScript,
++		Properties, !GetReflectionData()->HasMetaData(TEXT("NoDefaultSceneRoot")));
+ 	USimpleConstructionScript* SimpleConstructionScript = MainClass->SimpleConstructionScript;
+ 	Blueprint->SimpleConstructionScript = SimpleConstructionScript;
+ 
+diff --git a/Source/UnrealSharpCore/Private/Binds/Bind_BalloonRuntime.cpp b/Source/UnrealSharpCore/Private/Binds/Bind_BalloonRuntime.cpp
+new file mode 100644
+index 00000000..22c2b29a
+--- /dev/null
++++ b/Source/UnrealSharpCore/Private/Binds/Bind_BalloonRuntime.cpp
+@@ -0,0 +1,78 @@
++#include "CSBindsRegistry.h"
++#include "CSManager.h"
++#include "Engine/GameInstance.h"
++#include "Engine/World.h"
++#include "GameFramework/GameModeBase.h"
++#include "GameFramework/Pawn.h"
++#include "GameFramework/PlayerController.h"
++#include "Kismet/GameplayStatics.h"
++#include "ProfilingDebugging/CpuProfilerTrace.h"
++
++// Candidate destination: UnrealSharpCore/Private/Binds. No Balloon dependency.
++// Context is explicit: generated WorldContext metadata otherwise substitutes
++// UCSManager's current context, which need not be this session during callbacks.
++DECLARE_UNREALSHARP_BINDER(Bind_BalloonRuntime)
++{
++    void* Managed(UObject* Object)
++    {
++        return IsValid(Object) ? UCSManager::Get().FindManagedObject(Object) : nullptr;
++    }
++    void* GameInstance(UObject* Context)
++    {
++        return IsInGameThread() && IsValid(Context) ? Managed(UGameplayStatics::GetGameInstance(Context)) : nullptr;
++    }
++    void* GameMode(UObject* Context)
++    {
++        return IsInGameThread() && IsValid(Context) ? Managed(UGameplayStatics::GetGameMode(Context)) : nullptr;
++    }
++    void* PlayerPawn(UObject* Context, int32 Index)
++    {
++        return IsInGameThread() && IsValid(Context) ? Managed(UGameplayStatics::GetPlayerPawn(Context, Index)) : nullptr;
++    }
++    void* PlayerController(UObject* Context, int32 Index)
++    {
++        return IsInGameThread() && IsValid(Context) ? Managed(UGameplayStatics::GetPlayerController(Context, Index)) : nullptr;
++    }
++
++#if CPUPROFILERTRACE_ENABLED
++    struct FCpuScope { int64 Id; bool bEnabled; };
++    TArray<FCpuScope> CpuScopes;
++    int64 NextCpuScopeId = 0;
++#endif
++
++    // Direct calli binding, never a UFunction: the ProcessEvent trace scope
++    // would otherwise close while the child scope returned here remained open.
++    int64 BeginCpuScope(const uint8* Utf8Name)
++    {
++        if (!IsInGameThread() || Utf8Name == nullptr) return -1;
++        const FString Name = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Utf8Name))).TrimStartAndEnd();
++        if (Name.IsEmpty() || Name.Len() > 1024) return -1;
++#if CPUPROFILERTRACE_ENABLED
++        const FCpuScope Scope { ++NextCpuScopeId, TRACE_CPUPROFILER_EVENT_MANUAL_IS_ENABLED() };
++        if (Scope.bEnabled) FCpuProfilerTrace::OutputBeginDynamicEvent(*Name, __FILE__, __LINE__);
++        CpuScopes.Add(Scope);
++        return Scope.Id;
++#else
++        return 0;
++#endif
++    }
++    uint8 EndCpuScope(int64 Id)
++    {
++        if (Id == 0) return 1;
++        if (!IsInGameThread()) return 0;
++#if CPUPROFILERTRACE_ENABLED
++        if (CpuScopes.IsEmpty() || CpuScopes.Last().Id != Id) return 0;
++        if (CpuScopes.Last().bEnabled) FCpuProfilerTrace::OutputEndEvent();
++        CpuScopes.Pop(EAllowShrinking::No);
++        return 1;
++#else
++        return 0;
++#endif
++    }
++    BIND_UNREALSHARP_FUNCTION(GameInstance)
++    BIND_UNREALSHARP_FUNCTION(GameMode)
++    BIND_UNREALSHARP_FUNCTION(PlayerPawn)
++    BIND_UNREALSHARP_FUNCTION(PlayerController)
++    BIND_UNREALSHARP_FUNCTION(BeginCpuScope)
++    BIND_UNREALSHARP_FUNCTION(EndCpuScope)
++}
+diff --git a/Source/UnrealSharpCore/Private/Binds/Bind_FMulticastDelegateProperty.cpp b/Source/UnrealSharpCore/Private/Binds/Bind_FMulticastDelegateProperty.cpp
+index 9675b37f..4a40eac5 100644
+--- a/Source/UnrealSharpCore/Private/Binds/Bind_FMulticastDelegateProperty.cpp
++++ b/Source/UnrealSharpCore/Private/Binds/Bind_FMulticastDelegateProperty.cpp
+@@ -38,14 +38,16 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
+ 		DelegateProperty->AddDelegate(NewScriptDelegate, nullptr, Delegate);
+ 	}
+ 
+-	bool IsBound(FMulticastScriptDelegate* Delegate)
++	bool IsBound(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate)
+ 	{
+-		return Delegate->IsBound();
++		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
++		return Delegate && Delegate->IsBound();
+ 	}
+ 
+-	void ToString(FMulticastScriptDelegate* Delegate, FString* OutString)
++	void ToString(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate, FString* OutString)
+ 	{
+-		*OutString = Delegate->ToString<UObject>();
++		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
++		*OutString = Delegate ? Delegate->ToString<UObject>() : FString();
+ 	}
+ 
+ 	void RemoveDelegate(FMulticastDelegateProperty* DelegateProperty, FMulticastScriptDelegate* Delegate, UObject* Target, const char* FunctionName)
+@@ -62,6 +64,12 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
+ 	void BroadcastDelegate(FMulticastDelegateProperty* DelegateProperty, const FMulticastScriptDelegate* Delegate, void* Parameters)
+ 	{
+ 		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
++		// Unbound sparse delegates have no allocated multicast storage, including
++		// immediately after their last listener is removed. Broadcasting is a no-op.
++		if (!Delegate)
++		{
++			return;
++		}
+ #if ENGINE_MINOR_VERSION >= 8
+ 		Delegate->ProcessDelegate<UObject>(Parameters);
+ #else
+@@ -73,7 +81,7 @@ DECLARE_UNREALSHARP_BINDER(Bind_FMulticastDelegateProperty)
+ 	{
+ 		FScriptDelegate NewScriptDelegate = MakeScriptDelegate(Target, FunctionName);
+ 		Delegate = TryGetSparseMulticastDelegate(DelegateProperty, Delegate);
+-		return Delegate->Contains(NewScriptDelegate);
++		return Delegate && Delegate->Contains(NewScriptDelegate);
+ 	}
+ 
+ 	void* GetSignatureFunction(FMulticastDelegateProperty* DelegateProperty)
+diff --git a/Source/UnrealSharpCore/Private/Binds/Bind_UFunction.cpp b/Source/UnrealSharpCore/Private/Binds/Bind_UFunction.cpp
+index c42ddb87..0f9bd1a5 100644
+--- a/Source/UnrealSharpCore/Private/Binds/Bind_UFunction.cpp
++++ b/Source/UnrealSharpCore/Private/Binds/Bind_UFunction.cpp
+@@ -105,7 +105,19 @@ DECLARE_UNREALSHARP_BINDER(Bind_UFunction)
+ 	}
+ 	
+ 	BIND_UNREALSHARP_FUNCTION(GetNativeFunctionParamsSize)
++	void DestroyFunctionParams(UFunction* NativeFunction, void* Params)
++	{
++		check(NativeFunction && Params);
++		// Match InitializeFunctionParams: BP locals are outside the caller's
++		// parameter buffer and must never be destroyed here.
++		uint8 ParamsLeft = NativeFunction->NumParms;
++		for (TFieldIterator<FProperty> PropIt(NativeFunction); PropIt && ParamsLeft; ++PropIt, --ParamsLeft)
++		{
++			PropIt->DestroyValue_InContainer(Params);
++		}
++	}
++
+ 	BIND_UNREALSHARP_FUNCTION(CreateNativeFunctionCustomStructSpecialization)
+ 	BIND_UNREALSHARP_FUNCTION(InitializeFunctionParams)
++	BIND_UNREALSHARP_FUNCTION(DestroyFunctionParams)
+ }
+-
+diff --git a/Source/UnrealSharpCore/Private/Compilers/CSManagedClassCompiler.cpp b/Source/UnrealSharpCore/Private/Compilers/CSManagedClassCompiler.cpp
+index e1801981..4c105aa3 100644
+--- a/Source/UnrealSharpCore/Private/Compilers/CSManagedClassCompiler.cpp
++++ b/Source/UnrealSharpCore/Private/Compilers/CSManagedClassCompiler.cpp
+@@ -98,7 +98,8 @@ void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> Cl
+ 	FCSPropertyFactory::CreateAndAssignProperties(Field, ClassReflectionData->Properties);
+ 
+ 	// Build the construction script that will spawn the components
+-	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Field, &Field->SimpleConstructionScript, ClassReflectionData->Properties);
++	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Field, &Field->SimpleConstructionScript,
++		ClassReflectionData->Properties, !ClassReflectionData->HasMetaData(TEXT("NoDefaultSceneRoot")));
+ 
+ #if WITH_EDITOR
+ 	UBlueprint* Blueprint = Field->GetOwningBlueprint();
+@@ -232,6 +233,21 @@ void UCSManagedClassCompiler::SetupDefaultTickSettings(UObject* DefaultObject, c
+ 	
+ 	TickFunction->bCanEverTick = ParentTickFunction->bCanEverTick;
+ 	TickFunction->bStartWithTickEnabled = ParentTickFunction->bStartWithTickEnabled;
++
++	// Consult serialized managed reflection data, including during the first
++	// skeleton compile before editor-only UClass metadata has been applied.
++	for (const UClass* Candidate = Class; Candidate; Candidate = Candidate->GetSuperClass())
++	{
++		if (const UCSClass* ManagedClass = Cast<UCSClass>(Candidate))
++		{
++			const TSharedPtr<FCSManagedTypeDefinition> Definition = ManagedClass->GetManagedTypeDefinition();
++			if (Definition && Definition->GetReflectionData<FCSClassReflectionData>()->HasMetaData(TEXT("NoAutoTick")))
++			{
++				return;
++			}
++			break;
++		}
++	}
+ 	
+ 	if (TickFunction->bCanEverTick && TickFunction->bStartWithTickEnabled)
+ 	{
+diff --git a/Source/UnrealSharpCore/Private/Compilers/CSSimpleConstructionScriptCompiler.cpp b/Source/UnrealSharpCore/Private/Compilers/CSSimpleConstructionScriptCompiler.cpp
+index 317b8773..0159d706 100644
+--- a/Source/UnrealSharpCore/Private/Compilers/CSSimpleConstructionScriptCompiler.cpp
++++ b/Source/UnrealSharpCore/Private/Compilers/CSSimpleConstructionScriptCompiler.cpp
+@@ -25,12 +25,24 @@ FCSRootNodeInfo::FCSRootNodeInfo(const FObjectProperty* NativeProperty, USceneCo
+ 	ensure(OwningClass->HasAllClassFlags(CLASS_Native));
+ }
+ 
+-void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData)
++void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData, bool bCreateDefaultSceneRoot)
+ {
+ 	if (!Outer->IsChildOf(AActor::StaticClass()))
+ 	{
+ 		return;
+ 	}
++	if (!bCreateDefaultSceneRoot && !PropertiesReflectionData.ContainsByPredicate(
++		[](const FCSPropertyReflectionData& Property)
++		{
++			return Property.InnerType->PropertyType == ECSPropertyType::DefaultComponent;
++		}))
++	{
++		// USimpleConstructionScript's constructor/validation also creates a
++		// default root. A component-free layer needs no SCS at all; otherwise
++		// Editor validation can silently restore that synthetic inherited root.
++		*SimpleConstructionScript = nullptr;
++		return;
++	}
+ 	
+ 	UBlueprintGeneratedClass* GeneratedClass = static_cast<UBlueprintGeneratedClass*>(Outer);
+ 	USimpleConstructionScript* CurrentSCS = SimpleConstructionScript->Get();
+@@ -104,7 +116,7 @@ void FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(UClass
+ 	if (!ActorRootComponentInfo.IsValid())
+ 	{
+ 		// User has not specified a root component, try to find or promote one
+-		TryFindOrPromoteRootComponent(CurrentSCS, ActorRootComponentInfo, GeneratedClass, AllNodes);
++		TryFindOrPromoteRootComponent(CurrentSCS, ActorRootComponentInfo, GeneratedClass, AllNodes, bCreateDefaultSceneRoot);
+ 	}
+ 
+ 	USCS_Node* DefaultSceneRootComponent = FindObject<USCS_Node>(CurrentSCS, *DefaultSceneRoot_UnrealSharp);
+@@ -447,7 +459,7 @@ USCS_Node* FCSSimpleConstructionScriptCompiler::FindRootComponentNode(const USim
+ 	return RootNode;
+ }
+ 
+-void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes)
++void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes, bool bCreateDefaultSceneRoot)
+ {
+ 	ForEachSimpleConstructionScript(SimpleConstructionScript, [&](USimpleConstructionScript* ParentSCS)
+ 	{
+@@ -511,6 +523,11 @@ void FCSSimpleConstructionScriptCompiler::TryFindOrPromoteRootComponent(USimpleC
+ 
+ 	if (!RootComponentNode.IsValid())
+ 	{
++		// Component-free script layers can leave root ownership to a BP child.
++		if (!bCreateDefaultSceneRoot)
++		{
++			return;
++		}
+ 		// Last resort, make a default scene root
+ 		USCS_Node* Node = CreateNode(SimpleConstructionScript, Outer, USceneComponent::StaticClass(), "DefaultSceneRoot", &DefaultSceneRoot_UnrealSharp);
+ 		SimpleConstructionScript->AddNode(Node);
+diff --git a/Source/UnrealSharpCore/Private/DotNet/CSDotNetRuntimeHost.cpp b/Source/UnrealSharpCore/Private/DotNet/CSDotNetRuntimeHost.cpp
+index d2d334ac..f5622f19 100644
+--- a/Source/UnrealSharpCore/Private/DotNet/CSDotNetRuntimeHost.cpp
++++ b/Source/UnrealSharpCore/Private/DotNet/CSDotNetRuntimeHost.cpp
+@@ -8,6 +8,9 @@
+ #include "HAL/PlatformProcess.h"
+ #include "Misc/Paths.h"
+ #include "Logging/StructuredLog.h"
++#include "Dom/JsonObject.h"
++#include "Misc/FileHelper.h"
++#include "Serialization/JsonSerializer.h"
+ 
+ using namespace UnrealSharp;
+ 
+@@ -217,11 +220,68 @@ load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::ConfigureRuntime
+ 		ErrorCode = Hostfxr_InitForRuntimeConfig(reinterpret_cast<const char_t*>(RuntimeConfigConv.Get()), &InitializeParameters, &HostFXR_Handle);
+ 	}
+ 
+-	if (ErrorCode != 0 || !HostFXR_Handle)
++	// hostfxr documents 1 and 2 as successful component initialization when
++	// another managed plugin has already loaded the process runtime.
++	const bool bCompatibleExistingHost = !Layout.bSelfContained && (ErrorCode == 1 || ErrorCode == 2);
++	if ((ErrorCode != 0 && !bCompatibleExistingHost) || !HostFXR_Handle)
+ 	{
+ 		UE_LOGFMT(LogUnrealSharp, Error, "hostfxr_initialize failed with code: {0}. Set COREHOST_TRACE=1 and COREHOST_TRACEFILE=<path> for the full logging", ErrorCode);
++		if (HostFXR_Handle) Hostfxr_Close(HostFXR_Handle);
+ 		return nullptr;
+ 	}
++	if (ErrorCode == 2)
++	{
++		// Do not silently accept arbitrary runtime-option mismatches. Check the
++		// requested switches against the already active runtime, which cannot be
++		// reconfigured after another plugin has loaded it.
++		const auto GetProperty = reinterpret_cast<hostfxr_get_runtime_property_value_fn>(
++			FPlatformProcess::GetDllExport(RuntimeHost, TEXT("hostfxr_get_runtime_property_value")));
++		FString ConfigText;
++		TSharedPtr<FJsonObject> Config;
++		const TSharedPtr<FJsonObject>* Options = nullptr;
++		const TSharedPtr<FJsonObject>* Properties = nullptr;
++		bool bAcceptable = GetProperty && FFileHelper::LoadFileToString(ConfigText, *Layout.RuntimeConfigPath)
++			&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ConfigText), Config)
++			&& Config.IsValid() && Config->TryGetObjectField(TEXT("runtimeOptions"), Options);
++		if (bAcceptable && (*Options)->TryGetObjectField(TEXT("configProperties"), Properties))
++		{
++			for (const auto& Pair : (*Properties)->Values)
++			{
++				if (Pair.Value->Type != EJson::Boolean && Pair.Value->Type != EJson::String)
++				{
++					bAcceptable = false;
++					break;
++				}
++				const FString Requested = Pair.Value->Type == EJson::Boolean
++					? (Pair.Value->AsBool() ? TEXT("true") : TEXT("false")) : Pair.Value->AsString();
++				const auto Name = StringCast<DotNetUtilities::FHostChar>(*Pair.Key);
++				const char_t* ActiveValue = nullptr;
++				const int32 PropertyResult = GetProperty(nullptr, reinterpret_cast<const char_t*>(Name.Get()), &ActiveValue);
++				const FString Active = ActiveValue ? FString(StringCast<TCHAR>(
++					reinterpret_cast<const DotNetUtilities::FHostChar*>(ActiveValue)).Get()) : FString();
++				// This SDK-emitted trimming feature switch is not required by Sharp's
++				// collectible-assembly reload; it does not use MetadataUpdater.ApplyUpdate.
++				const bool bUnusedMetadataSwitch = static_cast<uint32>(PropertyResult) == 0x800080a4u
++					&& Pair.Key == TEXT("System.Reflection.Metadata.MetadataUpdater.IsSupported")
++					&& Requested == TEXT("false");
++				if (!bUnusedMetadataSwitch && (PropertyResult != 0 || !Active.Equals(Requested, ESearchCase::IgnoreCase)))
++				{
++					UE_LOGFMT(LogUnrealSharp, Error, "Existing runtime property conflicts with UnrealSharp: {0}", Pair.Key);
++					bAcceptable = false;
++					break;
++				}
++				UE_LOGFMT(LogUnrealSharp, Log, "Existing runtime property accepted: {0} ({1})", Pair.Key,
++					bUnusedMetadataSwitch ? TEXT("unused metadata-update feature switch absent") : TEXT("matching value"));
++			}
++		}
++		if (!bAcceptable)
++		{
++			UE_LOGFMT(LogUnrealSharp, Error, "Could not validate differing properties of the active .NET runtime.");
++			Hostfxr_Close(HostFXR_Handle);
++			return nullptr;
++		}
++		UE_LOGFMT(LogUnrealSharp, Log, "Reusing compatible process .NET runtime after validating requested properties.");
++	}
+ 
+ 	void* LoadAssemblyAndGetFunctionPointer = nullptr;
+ 	ErrorCode = Hostfxr_GetRuntimeDelegate(HostFXR_Handle, hdt_load_assembly_and_get_function_pointer, &LoadAssemblyAndGetFunctionPointer);
+diff --git a/Source/UnrealSharpCore/Private/Factories/PropertyGenerators/CSEnumPropertyGenerator.cpp b/Source/UnrealSharpCore/Private/Factories/PropertyGenerators/CSEnumPropertyGenerator.cpp
+index 6593e84f..e833f4e7 100644
+--- a/Source/UnrealSharpCore/Private/Factories/PropertyGenerators/CSEnumPropertyGenerator.cpp
++++ b/Source/UnrealSharpCore/Private/Factories/PropertyGenerators/CSEnumPropertyGenerator.cpp
+@@ -2,6 +2,36 @@
+ #include "CSManager.h"
+ #include "Types/CSEnum.h"
+ #include "ReflectionData/CSFieldType.h"
++#include "Engine/UserDefinedEnum.h"
++#include "Json/CSRapidJsonUtilties.h"
++
++namespace
++{
++struct FCSMappedEnumType : FCSFieldType
++{
++	FString BlueprintEnumPath;
++	TArray<int64> BlueprintEnumValues;
++
++	virtual bool Serialize(FConstObject JsonObject) override
++	{
++		if (!FCSFieldType::Serialize(JsonObject)) return false;
++		if (!UnrealSharp::RapidJson::FindMember(JsonObject, TEXT("BlueprintEnumPath")).IsSet()) return true;
++		const auto Path = UnrealSharp::RapidJson::GetStringField(JsonObject, TEXT("BlueprintEnumPath"));
++		const auto Values = UnrealSharp::RapidJson::GetArrayField(JsonObject, TEXT("BlueprintEnumValues"));
++		if (!Path.IsSet() || Path->IsEmpty() || !Values.IsSet() || Values->Empty()) return false;
++		BlueprintEnumPath = FString(*Path);
++		BlueprintEnumValues.Reset();
++		for (const UnrealSharp::RapidJson::FValue& JsonValue : *Values)
++		{
++			if (!JsonValue.IsInt64()) return false;
++			const int64 Value = JsonValue.GetInt64();
++			if (Value < 0 || Value > 255 || BlueprintEnumValues.Contains(Value)) return false;
++			BlueprintEnumValues.Add(Value);
++		}
++		return true;
++	}
++};
++}
+ 
+ UCSEnumPropertyGenerator::UCSEnumPropertyGenerator()
+ {
+@@ -11,18 +41,36 @@ UCSEnumPropertyGenerator::UCSEnumPropertyGenerator()
+ 
+ FProperty* UCSEnumPropertyGenerator::CreateProperty(UField* Outer, const FCSPropertyReflectionData& PropertyReflectionData)
+ {
+-	const TSharedPtr<FCSFieldType> EnumType = PropertyReflectionData.GetInnerTypeData<FCSFieldType>();
++	const TSharedPtr<FCSMappedEnumType> EnumType = PropertyReflectionData.GetInnerTypeData<FCSMappedEnumType>();
+ 	const FCSFieldName& FieldName = EnumType->InnerType;
+ 	
+-	UEnum* Enum;
+-	if (UEnum** FoundRedirector = EnumRedirectors.Find(FieldName.GetEngineFName()))
++	UEnum* Enum = nullptr;
++	if (!EnumType->BlueprintEnumPath.IsEmpty())
++	{
++		Enum = LoadObject<UUserDefinedEnum>(nullptr, *EnumType->BlueprintEnumPath);
++		bool bMatches = IsValid(Enum) && Enum->GetPathName() == EnumType->BlueprintEnumPath
++			&& Enum->NumEnums() == EnumType->BlueprintEnumValues.Num() + 1;
++		if (bMatches)
++		{
++			for (int32 Index = 0; Index < EnumType->BlueprintEnumValues.Num(); ++Index)
++			{
++				bMatches &= Enum->GetValueByIndex(Index) == EnumType->BlueprintEnumValues[Index];
++			}
++		}
++		if (!bMatches)
++		{
++			UE_LOGFMT(LogUnrealSharp, Fatal, "Blueprint enum mapping does not match asset {0}. PropertyName: {1}",
++				EnumType->BlueprintEnumPath, PropertyReflectionData.GetName());
++		}
++	}
++	else if (UEnum** FoundRedirector = EnumRedirectors.Find(FieldName.GetEngineFName()))
+ 	{
+ 		Enum = *FoundRedirector;
+ 	}
+ 	else
+ 	{
+ 		UCSManagedAssembly* Assembly = UCSManager::Get().FindAssembly(EnumType->InnerType.GetAssemblyName());
+-		Enum = Assembly->ResolveUField<UEnum>(FieldName);
++		Enum = IsValid(Assembly) ? Assembly->ResolveUField<UEnum>(FieldName) : nullptr;
+ 	}
+ 	
+ 	if (!IsValid(Enum))
+@@ -67,5 +115,5 @@ FProperty* UCSEnumPropertyGenerator::CreateProperty(UField* Outer, const FCSProp
+ 
+ TSharedPtr<FCSUnrealType> UCSEnumPropertyGenerator::CreatePropertyInnerTypeData(ECSPropertyType PropertyType)
+ {
+-	return MakeShared<FCSFieldType>();
++	return MakeShared<FCSMappedEnumType>();
+ }
+diff --git a/Source/UnrealSharpCore/Public/Compilers/CSSimpleConstructionScriptCompiler.h b/Source/UnrealSharpCore/Public/Compilers/CSSimpleConstructionScriptCompiler.h
+index b9d5fa2d..1d819a94 100644
+--- a/Source/UnrealSharpCore/Public/Compilers/CSSimpleConstructionScriptCompiler.h
++++ b/Source/UnrealSharpCore/Public/Compilers/CSSimpleConstructionScriptCompiler.h
+@@ -43,7 +43,7 @@ struct FCSNodeInfo
+ class FCSSimpleConstructionScriptCompiler
+ {
+ public:
+-	UNREALSHARPCORE_API static void CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData);
++	UNREALSHARPCORE_API static void CompileSimpleConstructionScript(UClass* Outer, TObjectPtr<USimpleConstructionScript>* SimpleConstructionScript, const TArray<FCSPropertyReflectionData>& PropertiesReflectionData, bool bCreateDefaultSceneRoot = true);
+ private:
+ 	static USCS_Node* CreateNode(USimpleConstructionScript* SimpleConstructionScript, UStruct* GeneratedClass, UClass* NewComponentClass, FName NewComponentVariableName, FString* OptionalName = nullptr);
+ 	static void UpdateTemplateComponent(USCS_Node* Node, UStruct* GeneratedClass, UClass* NewComponentClass, FName NewComponentVariableName);
+@@ -54,7 +54,7 @@ private:
+ 	static void ForEachSimpleConstructionScript(const USimpleConstructionScript* SimpleConstructionScript, const TFunctionRef<bool(USimpleConstructionScript*)>& Callback);
+ 	static USCS_Node* FindRootComponentNode(const USimpleConstructionScript* SimpleConstructionScript);
+ 
+-	static void TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes);
++	static void TryFindOrPromoteRootComponent(USimpleConstructionScript* SimpleConstructionScript, FCSRootNodeInfo& RootComponentNode, UBlueprintGeneratedClass* Outer, const TArray<FCSNodeInfo>& AllNodes, bool bCreateDefaultSceneRoot);
+ 	
+ 	static void DetachNodeFromOldParent(USCS_Node* Node, USimpleConstructionScript* CurrentSCS);
+ 	
+diff --git a/Source/UnrealSharpEditor/Private/CSEditorBlueprintFunctionLibrary.cpp b/Source/UnrealSharpEditor/Private/CSEditorBlueprintFunctionLibrary.cpp
+index 273261e8..e509e5c9 100644
+--- a/Source/UnrealSharpEditor/Private/CSEditorBlueprintFunctionLibrary.cpp
++++ b/Source/UnrealSharpEditor/Private/CSEditorBlueprintFunctionLibrary.cpp
+@@ -1,6 +1,21 @@
+ #include "CSEditorBlueprintFunctionLibrary.h"
+ #include "CSManager.h"
+ #include "UnrealSharpEditor.h"
++#include "Async/Async.h"
++#include "HotReload/CSHotReloadSubsystem.h"
++
++void UCSEditorBlueprintFunctionLibrary::SetProjectSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles)
++{
++	// Roslyn loads the workspace asynchronously. Directory watcher registration
++	// and all UObject access belong to the game thread.
++	AsyncTask(ENamedThreads::GameThread, [ProjectName, Files = SourceFiles]()
++	{
++		if (UCSHotReloadSubsystem* Subsystem = UCSHotReloadSubsystem::Get(); IsValid(Subsystem))
++		{
++			Subsystem->WatchLinkedSourceFiles(ProjectName, Files);
++		}
++	});
++}
+ 
+ void UCSEditorBlueprintFunctionLibrary::AddAssemblyDependencies(FName AssemblyName, const TArray<FName>& DependentAssemblyNames)
+ {
+diff --git a/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadSubsystem.cpp b/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadSubsystem.cpp
+index 8f19dee4..d1fd48ca 100644
+--- a/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadSubsystem.cpp
++++ b/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadSubsystem.cpp
+@@ -13,6 +13,7 @@
+ #include "CSProjectUtilities.h"
+ #include "HotReload/CSHotReloadUtilities.h"
+ #include "Kismet2/StructureEditorUtils.h"
++#include "Misc/App.h"
+ #include "Utilities/CSAssemblyUtilities.h"
+ #include "Utilities/CSEditorUtilities.h"
+ #include "Widgets/Notifications/SNotificationList.h"
+@@ -50,6 +51,18 @@ bool UCSHotReloadSubsystem::ShouldCreateSubsystem(UObject* Outer) const
+ 
+ void UCSHotReloadSubsystem::Deinitialize()
+ {
++	if (FDirectoryWatcherModule* Module = FModuleManager::GetModulePtr<FDirectoryWatcherModule>("DirectoryWatcher"))
++	{
++		if (IDirectoryWatcher* Watcher = Module->Get())
++		{
++			for (const FSourceDirectoryWatch& Watch : WatchingDirectories)
++			{
++				Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
++			}
++		}
++	}
++	WatchingDirectories.Reset();
++	LinkedSourceFiles.Reset();
+ 	Super::Deinitialize();
+ 	FTSTicker::GetCoreTicker().RemoveTicker(HotReloadTickDelegate);
+ }
+@@ -64,6 +77,7 @@ void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
+ 
+ void UCSHotReloadSubsystem::OnHotReloadReady()
+ {
++	bHotReloadReady = true;
+ 	ResumeHotReload();
+ 	UE_LOGFMT(LogUnrealSharpEditor, Display, "C# Hot Reload is ready.");
+ }
+@@ -85,6 +99,19 @@ bool UCSHotReloadSubsystem::HasPendingHotReloadChanges() const
+ 	return bHasPendingChanges;
+ }
+ 
++FString UCSHotReloadSubsystem::GetCompilationStatus() const
++{
++	check(IsInGameThread());
++	const bool bPending = HasPendingHotReloadChanges();
++	const bool bBusy = !bHotReloadReady || bIsHotReloadPaused || IsHotReloading() || bPending;
++	int32 LinkedCount = 0;
++	for (const auto& Pair : LinkedSourceFiles) LinkedCount += Pair.Value.Num();
++	return FString::Printf(TEXT("{\"ready\":%s,\"busy\":%s,\"pending_changes\":%s,\"paused\":%s,\"started_compiles\":%d,\"completed_compiles\":%d,\"failed_compiles\":%d,\"last_compile_result\":%d,\"watched_directories\":%d,\"linked_source_files\":%d}"),
++		bHotReloadReady ? TEXT("true") : TEXT("false"), bBusy ? TEXT("true") : TEXT("false"),
++		bPending ? TEXT("true") : TEXT("false"), bIsHotReloadPaused ? TEXT("true") : TEXT("false"),
++		StartedCompiles, CompletedCompiles, FailedCompiles, LastCompileResult, WatchingDirectories.Num(), LinkedCount);
++}
++
+ void UCSHotReloadSubsystem::PerformHotReload()
+ {
+ 	TRACE_CPUPROFILER_EVENT_SCOPE(UCSHotReloadSubsystem::PerformHotReload)
+@@ -116,6 +143,7 @@ void UCSHotReloadSubsystem::PerformHotReload()
+ 	UE_LOGFMT(LogUnrealSharpEditor, Display, "Starting C# Hot Reload...");
+ 	
+ 	CurrentHotReloadStatus = Active;
++	++StartedCompiles;
+ 	double StartTime = FPlatformTime::Seconds();
+ 
+ 	FScopedSlowTask Progress(4, LOCTEXT("HotReload", "Reloading C#..."));
+@@ -128,7 +156,14 @@ void UCSHotReloadSubsystem::PerformHotReload()
+ 	if (!FCSHotReloadUtilities::RecompileDirtyProjects(AssembliesSortedByDependencies, ExceptionMessage))
+ 	{
+ 		CurrentHotReloadStatus = FailedToCompile;
+-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(TEXT("C# Compilation Failed")));
++		++CompletedCompiles;
++		++FailedCompiles;
++		LastCompileResult = -1;
++		UE_LOG(LogUnrealSharpEditor, Error, TEXT("C# Compilation Failed: %s"), *ExceptionMessage);
++		if (FApp::CanEverRender())
++		{
++			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(TEXT("C# Compilation Failed")));
++		}
+ 		return;
+ 	}
+ 	
+@@ -165,6 +200,8 @@ void UCSHotReloadSubsystem::PerformHotReload()
+ 	}
+ 	
+ 	CurrentHotReloadStatus = Inactive;
++	++CompletedCompiles;
++	LastCompileResult = 1;
+ 	bDetectedNewManagedType = false;
+ 	ReloadedTypes.Reset();
+ 	
+@@ -250,9 +287,70 @@ bool UCSHotReloadSubsystem::Tick(float DeltaTime)
+ 	return true;
+ }
+ 
+-void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName)
++void UCSHotReloadSubsystem::WatchLinkedSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles)
+ {
+-	if (WatchingDirectories.Contains(Directory))
++	check(IsInGameThread());
++	TArray<FString> ProjectPaths;
++	UnrealSharp::Project::GetAllProjectPaths(ProjectPaths);
++	const FString* ProjectPath = ProjectPaths.FindByPredicate([ProjectName](const FString& Path)
++	{
++		return FName(*FPaths::GetBaseFilename(Path)) == ProjectName;
++	});
++	if (!ProjectPath) return;
++	const FString ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::GetPath(*ProjectPath));
++	IDirectoryWatcher* Watcher = FModuleManager::LoadModuleChecked<FDirectoryWatcherModule>("DirectoryWatcher").Get();
++	for (int32 Index = WatchingDirectories.Num() - 1; Index >= 0; --Index)
++	{
++		const FSourceDirectoryWatch& Watch = WatchingDirectories[Index];
++		if (Watch.bLinkedOnly && Watch.ProjectName == ProjectName)
++		{
++			Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
++			WatchingDirectories.RemoveAt(Index);
++		}
++	}
++	TSet<FString>& Files = LinkedSourceFiles.FindOrAdd(ProjectName);
++	Files.Reset();
++	TArray<FString> Directories;
++	for (const FString& Source : SourceFiles)
++	{
++		FString File = FPaths::ConvertRelativePathToFull(Source);
++		FPaths::NormalizeFilename(File);
++		if (!File.EndsWith(TEXT(".cs")) || FPaths::IsUnderDirectory(File, ProjectDirectory)
++			|| File.Contains(TEXT("/obj/")) || File.Contains(TEXT("/bin/")) || File.Contains(TEXT("/Intermediate/"))) continue;
++		Files.Add(File);
++		Directories.AddUnique(FPaths::GetPath(File));
++	}
++	// DirectoryWatcher is recursive. Register the shortest enclosing directories
++	// once per project, and filter every notification against its evaluated files.
++	Directories.Sort([](const FString& A, const FString& B) { return A.Len() < B.Len(); });
++	for (const FString& Directory : Directories)
++	{
++		const bool Covered = WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
++		{
++			return Watch.ProjectName == ProjectName && (Directory == Watch.Directory || FPaths::IsUnderDirectory(Directory, Watch.Directory));
++		});
++		if (!Covered) AddDirectoryToWatch(Directory, ProjectName, true);
++	}
++}
++
++void UCSHotReloadSubsystem::HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName)
++{
++	const TSet<FString>* Sources = LinkedSourceFiles.Find(ProjectName);
++	if (!Sources) return;
++	TArray<FFileChangeData> IncludedChanges;
++	for (const FFileChangeData& Change : ChangedFiles)
++	{
++		FString File = FPaths::ConvertRelativePathToFull(Change.Filename);
++		FPaths::NormalizeFilename(File);
++		if (Sources->Contains(File)) IncludedChanges.Add(Change);
++	}
++	if (!IncludedChanges.IsEmpty()) HandleScriptFileChanges(IncludedChanges, ProjectName);
++}
++
++void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly)
++{
++	if (WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
++		{ return Watch.Directory == Directory && Watch.ProjectName == ProjectName && Watch.bLinkedOnly == bLinkedOnly; }))
+ 	{
+ 		return;
+ 	}
+@@ -267,10 +365,11 @@ void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName
+ 	FDelegateHandle Handle;
+ 	DirectoryWatcherModule.Get()->RegisterDirectoryChangedCallback_Handle(
+ 		Directory,
+-		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
++		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, bLinkedOnly
++			? &UCSHotReloadSubsystem::HandleLinkedScriptFileChanges : &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
+ 		Handle);
+ 
+-	WatchingDirectories.Add(Directory);
++	WatchingDirectories.Add({ Directory, ProjectName, Handle, bLinkedOnly });
+ }
+ 
+ void UCSHotReloadSubsystem::PauseHotReload(const FString& Reason)
+@@ -302,7 +401,9 @@ void UCSHotReloadSubsystem::ResumeHotReload()
+ 		PauseNotification.Reset();
+ 	}
+ 	
+-	for (const TPair<FName, TArray<FFileChangeData>>& Pair : PendingFileChanges)
++	TMap<FName, TArray<FFileChangeData>> Changes = MoveTemp(PendingFileChanges);
++	PendingFileChanges.Reset();
++	for (const TPair<FName, TArray<FFileChangeData>>& Pair : Changes)
+ 	{
+ 		HandleScriptFileChanges(Pair.Value, Pair.Key);
+ 	}
+@@ -342,7 +443,11 @@ void UCSHotReloadSubsystem::HandleScriptFileChanges(const TArray<FFileChangeData
+ 	FString ExceptionMessage;
+ 	if (!FCSHotReloadUtilities::ApplyDirtiedFiles(ProjectName.ToString(), DirtiedFiles, ExceptionMessage))
+ 	{
+-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(TEXT("C# Hot Reload Error")));
++		UE_LOG(LogUnrealSharpEditor, Error, TEXT("C# Hot Reload Error in %s: %s"), *ProjectName.ToString(), *ExceptionMessage);
++		if (FApp::CanEverRender())
++		{
++			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(TEXT("C# Hot Reload Error")));
++		}
+ 		return;
+ 	}
+ 	
+diff --git a/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadUtilities.cpp b/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadUtilities.cpp
+index 5f84567e..45bf342e 100644
+--- a/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadUtilities.cpp
++++ b/Source/UnrealSharpEditor/Private/HotReload/CSHotReloadUtilities.cpp
+@@ -10,6 +10,7 @@
+ #include "Engine/SimpleConstructionScript.h"
+ #include "Kismet2/KismetEditorUtilities.h"
+ #include "Kismet2/StructureEditorUtils.h"
++#include "Misc/Paths.h"
+ #include "Types/CSScriptStruct.h"
+ #include "Utilities/CSAssemblyUtilities.h"
+ #include "Utilities/CSClassUtilities.h"
+@@ -38,7 +39,7 @@ void FCSHotReloadUtilities::CollectDirtiedFiles(const TArray<FFileChangeData>& C
+ 	for (const FFileChangeData& Change : ChangedFiles)
+ 	{
+ 		FString NormalizedPath = Change.Filename;
+-		NormalizedPath.ReplaceInline(TEXT("/"), TEXT("\\"));
++		FPaths::NormalizeFilename(NormalizedPath);
+ 		
+ 		if (HasFileBeenDirtied(OutDirtied, NormalizedPath, Change.Action))
+ 		{
+@@ -101,7 +102,7 @@ bool FCSHotReloadUtilities::RecompileDirtyProjects(const TArray<UCSManagedAssemb
+ 		AssemblyNames.Add(Assembly->GetName());
+ 	}
+ 	
+-	return UnrealSharpEditorModule.GetManagedEditorCallbacks().RecompileDirtyProjects(&OutExceptionMessage, AssemblyNames);
++	return UnrealSharpEditorModule.GetManagedEditorCallbacks().RecompileDirtyProjects(&OutExceptionMessage, &AssemblyNames);
+ }
+ 
+ void FCSHotReloadUtilities::RebuildDependentBlueprints(const TSet<FCSObjectID>& RebuiltTypes)
+diff --git a/Source/UnrealSharpEditor/Public/CSEditorBlueprintFunctionLibrary.h b/Source/UnrealSharpEditor/Public/CSEditorBlueprintFunctionLibrary.h
+index 80ca8bd0..08d0f5f3 100644
+--- a/Source/UnrealSharpEditor/Public/CSEditorBlueprintFunctionLibrary.h
++++ b/Source/UnrealSharpEditor/Public/CSEditorBlueprintFunctionLibrary.h
+@@ -11,4 +11,8 @@ class UCSEditorBlueprintFunctionLibrary : public UBlueprintFunctionLibrary
+ public:
+ 	UFUNCTION(meta = (ScriptMethod))
+ 	static void AddAssemblyDependencies(FName AssemblyName, const TArray<FName>& DependentAssemblyNames);
++
++	/** Register evaluated Compile documents, including linked sources outside the project directory. */
++	UFUNCTION(meta = (ScriptMethod))
++	static void SetProjectSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles);
+ };
+diff --git a/Source/UnrealSharpEditor/Public/HotReload/CSHotReloadSubsystem.h b/Source/UnrealSharpEditor/Public/HotReload/CSHotReloadSubsystem.h
+index 9a28493f..0f46925f 100644
+--- a/Source/UnrealSharpEditor/Public/HotReload/CSHotReloadSubsystem.h
++++ b/Source/UnrealSharpEditor/Public/HotReload/CSHotReloadSubsystem.h
+@@ -43,17 +43,25 @@ public:
+ 	UNREALSHARPEDITOR_API bool IsHotReloading() const { return CurrentHotReloadStatus == Active; }
+ 	UNREALSHARPEDITOR_API bool HasPendingHotReloadChanges() const;
+ 	
++	/** Coherent game-thread snapshot for editor automation and profiling. */
++	UFUNCTION(BlueprintPure, Category = "UnrealSharp|Editor")
++	UNREALSHARPEDITOR_API FString GetCompilationStatus() const;
++
++	/** Same action as the editor's Force Hot Reload command. */
++	UFUNCTION(BlueprintCallable, Category = "UnrealSharp|Editor")
+ 	UNREALSHARPEDITOR_API void PerformHotReload();
+ 	
+ 	void PauseHotReload(const FString& Reason = FString());
+ 	void ResumeHotReload();
+ 	
+ 	void RefreshDirectoryWatchers();
++	void WatchLinkedSourceFiles(FName ProjectName, const TArray<FString>& SourceFiles);
+ 	void NotifyNewType() { bDetectedNewManagedType = true;}
+ 
+ private:
+ 	
+-	void AddDirectoryToWatch(const FString& Directory, FName ProjectName);
++	void AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly = false);
++	void HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
+ 	
+ 	void HandleScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
+ 
+@@ -88,8 +96,21 @@ private:
+ 
+ 	EHotReloadStatus CurrentHotReloadStatus = Inactive;
+ 	bool bIsHotReloadPaused = false;
++	bool bHotReloadReady = false;
++	int32 StartedCompiles = 0;
++	int32 CompletedCompiles = 0;
++	int32 FailedCompiles = 0;
++	int32 LastCompileResult = 0;
+ 
+-	TArray<FString> WatchingDirectories;
++	struct FSourceDirectoryWatch
++	{
++		FString Directory;
++		FName ProjectName;
++		FDelegateHandle Handle;
++		bool bLinkedOnly;
++	};
++	TArray<FSourceDirectoryWatch> WatchingDirectories;
++	TMap<FName, TSet<FString>> LinkedSourceFiles;
+ 
+ 	TMap<FName, TArray<FFileChangeData>> PendingFileChanges;
+ 
+diff --git a/Source/UnrealSharpEditor/Public/UnrealSharpEditor.h b/Source/UnrealSharpEditor/Public/UnrealSharpEditor.h
+index b62e3c6b..0aedcf66 100644
+--- a/Source/UnrealSharpEditor/Public/UnrealSharpEditor.h
++++ b/Source/UnrealSharpEditor/Public/UnrealSharpEditor.h
+@@ -24,7 +24,8 @@ struct FCSManagedEditorCallbacks
+ {
+     FCSManagedEditorCallbacks() = default;
+     
+-    using FRecompileDirtyProjects = bool(__stdcall*)(void*, TArray<FString>);
++    // TArray is non-trivial: its by-value ABI differs from a blittable managed struct on ARM64.
++    using FRecompileDirtyProjects = bool(__stdcall*)(void*, const TArray<FString>*);
+     using FRecompileChangedFile = void(__stdcall*)(const TCHAR*, const TCHAR*, void*);
+     using FRemoveSourceFile = void(__stdcall*)(const TCHAR*, const TCHAR*);
+     
+diff --git a/Source/UnrealSharpManagedGlue/Exporters/StructExporter.cs b/Source/UnrealSharpManagedGlue/Exporters/StructExporter.cs
+index f4429624..6fcec796 100644
+--- a/Source/UnrealSharpManagedGlue/Exporters/StructExporter.cs
++++ b/Source/UnrealSharpManagedGlue/Exporters/StructExporter.cs
+@@ -31,12 +31,15 @@ public static class StructExporter
+             inheritance.GetExportedProperties(exportedProperties, getSetBackedProperties);
+         }
+         
+-        // Check there are not properties with the same name, remove otherwise
++        // Deduplicate the actual emitted member names. Parameter normalization
++        // strips boolean prefixes without property collision resolution, so it
++        // would incorrectly drop Foo beside bFoo even though GetPropertyName()
++        // emits distinct members for them.
+         List<string> propertyNames = new();
+         for (int i = 0; i < exportedProperties.Count; i++)
+         {
+             UhtProperty property = exportedProperties[i];
+-            string scriptName = property.GetParameterName();
++            string scriptName = property.GetPropertyName();
+             if (propertyNames.Contains(scriptName))
+             {
+                 exportedProperties.RemoveAt(i);
+@@ -474,4 +477,4 @@ public static class StructExporter
+         builder.EndUnsafeBlock();
+         builder.CloseBrace();
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Tests/PartialTypes/PartialTypes.Tests.csproj b/Tests/PartialTypes/PartialTypes.Tests.csproj
+new file mode 100644
+index 00000000..2e94d835
+--- /dev/null
++++ b/Tests/PartialTypes/PartialTypes.Tests.csproj
+@@ -0,0 +1,16 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <PropertyGroup>
++    <OutputType>Exe</OutputType>
++    <TargetFramework>net10.0</TargetFramework>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <Nullable>enable</Nullable>
++    <IsPublishable>false</IsPublishable>
++  </PropertyGroup>
++  <ItemGroup>
++    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
++    <PackageReference Include="Newtonsoft.Json" />
++    <ProjectReference Include="../../Managed/UnrealSharp/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator/UnrealSharp.GlueGenerator.csproj"
++                      AdditionalProperties="UseDefaultOutputPath=true" />
++    <Compile Include="../../Managed/UnrealSharp/UnrealSharp.Editor/UnrealTypeChangeDetector.cs" Link="UnrealTypeChangeDetector.cs" />
++  </ItemGroup>
++</Project>
+diff --git a/Tests/PartialTypes/Program.cs b/Tests/PartialTypes/Program.cs
+new file mode 100644
+index 00000000..2945c352
+--- /dev/null
++++ b/Tests/PartialTypes/Program.cs
+@@ -0,0 +1,134 @@
++using Microsoft.CodeAnalysis;
++using Microsoft.CodeAnalysis.CSharp;
++using UnrealSharp.Editor;
++using UnrealSharp.GlueGenerator;
++
++// Uses the actual Editor change detector and generator. No Editor/native runtime
++// is loaded here; the separate Editor reproduction covers Blueprint rebuilding.
++internal static class Program
++{
++    private const string Preamble = "using UnrealSharp.Attributes; namespace Repro; ";
++    private const string EmptyPart = Preamble + "public partial class AProbe { }";
++    private const string PropertyPart = Preamble + "public partial class AProbe { [UProperty] public partial int Value { get; set; } }";
++    private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview);
++    private static readonly MetadataReference[] References = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
++        .Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path)).ToArray();
++    private static int _passed;
++
++    private const string Contracts = """
++        namespace UnrealSharp.Attributes
++        {
++            public class UClassAttribute : System.Attribute { }
++            public class UStructAttribute : System.Attribute { }
++            public class UEnumAttribute : System.Attribute { }
++            public class UInterfaceAttribute : System.Attribute { }
++            public class UPropertyAttribute : System.Attribute { }
++            public class UFunctionAttribute : System.Attribute { }
++        }
++        namespace UnrealSharp.CoreUObject { public class UObject { } }
++        """;
++
++    private static SyntaxTree Tree(string source, string path) => CSharpSyntaxTree.ParseText(source, ParseOptions, path);
++
++    private static CSharpCompilation Compilation(params SyntaxTree[] trees) => CSharpCompilation.Create(
++        "PartialRepro", new[] { Tree(Contracts, "Contracts.cs") }.Concat(trees), References,
++        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
++
++    private static void Check(bool condition, string name)
++    {
++        if (!condition) throw new Exception("FAIL: " + name);
++        Console.WriteLine("PASS: " + name);
++        _passed++;
++    }
++
++    private static IReadOnlyList<UnrealTypeChange> Change(string before, string after, string? main = null)
++    {
++        SyntaxTree mainTree = Tree(main ?? Preamble + "[UClass] public partial class AProbe : UnrealSharp.CoreUObject.UObject { }", "Main.cs");
++        SyntaxTree oldTree = Tree(before, "Extra.cs");
++        SyntaxTree newTree = Tree(after, "Extra.cs");
++        CSharpCompilation oldCompilation = Compilation(mainTree, oldTree);
++        return UnrealTypeChangeDetector.GetChanges(oldCompilation, oldTree,
++            oldCompilation.ReplaceSyntaxTree(oldTree, newTree), newTree);
++    }
++
++    private static void Main()
++    {
++        Check(Change(EmptyPart, PropertyPart) is [{ Flags: ECSTypeStructuralFlags.StructuralChanges }],
++            "adding property in unannotated partial dirties its UClass");
++        Check(Change(PropertyPart, EmptyPart).Count == 1, "removing property in unannotated partial dirties its UClass");
++        Check(Change(PropertyPart, PropertyPart.Replace("int Value", "double Value")).Count == 1, "changing property type dirties its UClass");
++        Check(Change(EmptyPart, Preamble + "public partial class AProbe { [UFunction] public int Probe() => 42; }").Count == 1,
++            "adding reflected function dirties its UClass");
++        Check(Change(PropertyPart, PropertyPart).Count == 0, "unchanged save is not structurally dirty");
++        Check(Change(PropertyPart, "// comment\n" + PropertyPart.Replace("int Value", "int   Value")).Count == 0,
++            "whitespace and comments are not structurally dirty");
++        Check(Change("namespace Other; public partial class AProbe { }", "namespace Other; public partial class AProbe { public int Value; }").Count == 0,
++            "same simple name in an ordinary namespace is not an Unreal type");
++        Check(Change(EmptyPart, PropertyPart, Preamble + "public partial class AProbe { }").Count == 0,
++            "ordinary partial type stays outside Unreal reflection");
++        Check(Change(EmptyPart, PropertyPart, "namespace Repro; [UnrealSharp.Attributes.UClassAttribute] public partial class AProbe : UnrealSharp.CoreUObject.UObject { }").Count == 1,
++            "fully qualified type attribute is recognized");
++        Check(Change(EmptyPart, PropertyPart, "using ClassTag = UnrealSharp.Attributes.UClassAttribute; namespace Repro; [ClassTag] public partial class AProbe : UnrealSharp.CoreUObject.UObject { }").Count == 1,
++            "aliased type attribute is recognized");
++        Check(Change(EmptyPart.Replace("class", "struct"), PropertyPart.Replace("class", "struct"),
++            Preamble + "[UStruct] public partial struct AProbe { }").Count == 1, "unannotated UStruct part is recognized");
++        Check(Change(EmptyPart.Replace("class", "interface"),
++            Preamble + "public partial interface AProbe { void Probe(); }",
++            Preamble + "[UInterface] public partial interface AProbe { }").Count == 1, "unannotated UInterface part is recognized");
++
++        string ctor = Preamble + "public partial class AProbe { public AProbe() { int value = 1; } }";
++        ECSTypeStructuralFlags both = ECSTypeStructuralFlags.StructuralChanges | ECSTypeStructuralFlags.ConstructorChanges;
++        Check(Change(EmptyPart, ctor) is [{ Flags: var flags }] && flags == both, "adding constructor in partial sets constructor flag");
++        Check(Change(ctor, ctor.Replace("= 1", "= 2")) is [{ Flags: var changedFlags }] && changedFlags == both,
++            "constructor body change in partial retains constructor flag");
++        Check(Change(ctor, EmptyPart) is [{ Flags: var removedFlags }] && removedFlags == both,
++            "removing constructor in partial retains constructor flag");
++        Check(Change(EmptyPart, PropertyPart + " public partial class AProbe { public void Helper() { } }").Count == 1,
++            "multiple declarations in one file notify the type once");
++        Check(Change(PropertyPart, "") is [{ Flags: ECSTypeStructuralFlags.StructuralChanges }],
++            "removing last declaration from an existing file dirties surviving type");
++
++        SyntaxTree main = Tree(Preamble + "[UClass] public partial class AProbe : UnrealSharp.CoreUObject.UObject { }", "Main.cs");
++        SyntaxTree extra = Tree(PropertyPart, "Extra.cs");
++        CSharpCompilation initial = Compilation(main);
++        CSharpCompilation added = initial.AddSyntaxTrees(extra);
++        Check(UnrealTypeChangeDetector.GetChanges(initial, null, added, extra).Count == 1, "adding a partial file dirties existing type");
++        Check(UnrealTypeChangeDetector.GetChanges(added, extra, initial, null).Count == 1, "deleting a partial file dirties surviving type");
++
++        SyntaxTree collisions = Tree("""
++            namespace Left { [UnrealSharp.Attributes.UClass] public partial class AProbe { public AProbe() { int n = 1; } } }
++            namespace Right { [UnrealSharp.Attributes.UClass] public partial class AProbe { public AProbe() { int n = 2; } } }
++            """, "Collisions.cs");
++        SyntaxTree changedCollisions = Tree(collisions.ToString().Replace("int n = 2", "int n = 3"), "Collisions.cs");
++        CSharpCompilation collisionCompilation = Compilation(collisions);
++        Check(UnrealTypeChangeDetector.GetChanges(collisionCompilation, collisions,
++            collisionCompilation.ReplaceSyntaxTree(collisions, changedCollisions), changedCollisions).Count == 1,
++            "identically named types in different namespaces compare independently");
++
++        // Reuse one driver exactly as the Editor does. Only Extra.cs changes;
++        // the annotated Main.cs SyntaxTree is deliberately retained throughout.
++        GeneratorDriver driver = CSharpGeneratorDriver.Create(new UnrealTypeDiscoveryGenerator().AsSourceGenerator())
++            .WithUpdatedParseOptions(ParseOptions);
++        CSharpCompilation previous = initial;
++        SyntaxTree? previousTree = null;
++        string[] versions = [PropertyPart, PropertyPart.Replace("Value", "SecondValue"), EmptyPart, PropertyPart];
++        foreach (string version in versions)
++        {
++            SyntaxTree nextTree = Tree(version, "Extra.cs");
++            CSharpCompilation next = previousTree == null ? previous.AddSyntaxTrees(nextTree) : previous.ReplaceSyntaxTree(previousTree, nextTree);
++            Check(UnrealTypeChangeDetector.GetChanges(previous, previousTree, next, nextTree).Count == 1,
++                "incremental edit sends a dirty notification");
++            driver = driver.RunGeneratorsAndUpdateCompilation(next, out _, out var diagnostics);
++            Check(!diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), "incremental generator has no errors: " + string.Join("; ", diagnostics));
++            string generated = string.Join("\n", driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()));
++            string? expected = version == EmptyPart ? null : version.Contains("SecondValue") ? "SecondValue" : "Value";
++            Check(expected == null ? !generated.Contains("AProbe_Value_Offset") && !generated.Contains("AProbe_SecondValue_Offset")
++                    : generated.Contains("AProbe_" + expected + "_Offset") && generated.Contains("\"" + expected + "\""),
++                "incremental output follows partial member addition/rename/removal");
++            previous = next;
++            previousTree = nextTree;
++        }
++
++        Console.WriteLine($"All {_passed} partial reflection/reload checks passed.");
++    }
++}
+diff --git a/Tests/PartialTypes/README.md b/Tests/PartialTypes/README.md
+new file mode 100644
+index 00000000..3bd81d5a
+--- /dev/null
++++ b/Tests/PartialTypes/README.md
+@@ -0,0 +1,17 @@
++# Partial type reflection and reload regression
++
++Run `dotnet run --project Tests/PartialTypes/PartialTypes.Tests.csproj` with the
++plugin's .NET SDK. This console test links the production Editor change detector
++and references the real glue generator. It does not load Unreal or deploy plugin
++binaries. It verifies additions, removals, constructor changes, unchanged saves,
++namespace collisions, attribute aliases, and repeated generator-driver updates
++that leave the annotated declaration's syntax tree untouched.
++
++For Editor verification, start with a reflected partial Actor in one file and an
++unannotated partial declaration in a second file. Create a Blueprint child, keep
++the Editor open, and add an editable partial UProperty only to the second file.
++After the official source-save reload, check the inherited property in the child.
++Rename/change its type, remove it, and repeat. Also add/remove a separate partial
++file while the attributed declaration remains unchanged. Property and callable
++reflection must follow each change without touching the UClass file. Retain the
++Editor log; the console checks alone do not establish Blueprint reinstancing.
