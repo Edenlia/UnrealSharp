@@ -302,7 +302,9 @@ void UCSHotReloadSubsystem::ResumeHotReload()
 		PauseNotification.Reset();
 	}
 	
-	for (const TPair<FName, TArray<FFileChangeData>>& Pair : PendingFileChanges)
+	TMap<FName, TArray<FFileChangeData>> Changes = MoveTemp(PendingFileChanges);
+	PendingFileChanges.Reset();
+	for (const TPair<FName, TArray<FFileChangeData>>& Pair : Changes)
 	{
 		HandleScriptFileChanges(Pair.Value, Pair.Key);
 	}
