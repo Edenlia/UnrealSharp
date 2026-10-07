@@ -88,8 +88,14 @@ private:
 
 	EHotReloadStatus CurrentHotReloadStatus = Inactive;
 	bool bIsHotReloadPaused = false;
+	bool bDeinitializing = false;
 
-	TArray<FString> WatchingDirectories;
+	struct FSourceDirectoryWatch
+	{
+		FString Directory;
+		FDelegateHandle Handle;
+	};
+	TArray<FSourceDirectoryWatch> WatchingDirectories;
 
 	TMap<FName, TArray<FFileChangeData>> PendingFileChanges;
 

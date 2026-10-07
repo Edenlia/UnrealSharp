@@ -22,6 +22,7 @@
 void UCSHotReloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	bDeinitializing = false;
 	UCSManager& Manager = UCSManager::Get();
 	Manager.OnNewStructEvent().AddUObject(this, &UCSHotReloadSubsystem::OnStructRebuilt);
 	Manager.OnNewClassEvent().AddUObject(this, &UCSHotReloadSubsystem::OnClassRebuilt);
@@ -50,15 +51,30 @@ bool UCSHotReloadSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UCSHotReloadSubsystem::Deinitialize()
 {
-	Super::Deinitialize();
+	bDeinitializing = true;
 	FTSTicker::GetCoreTicker().RemoveTicker(HotReloadTickDelegate);
+	if (FDirectoryWatcherModule* Module = FModuleManager::GetModulePtr<FDirectoryWatcherModule>("DirectoryWatcher"))
+	{
+		if (IDirectoryWatcher* Watcher = Module->Get())
+		{
+			for (const FSourceDirectoryWatch& Watch : WatchingDirectories)
+			{
+				Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
+			}
+		}
+	}
+	WatchingDirectories.Reset();
+	Super::Deinitialize();
 }
 
 void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
 {
 	AsyncTask(ENamedThreads::GameThread, []()
 	{
-		Get()->OnHotReloadReady();
+		if (UCSHotReloadSubsystem* Subsystem = Get(); IsValid(Subsystem) && !Subsystem->bDeinitializing)
+		{
+			Subsystem->OnHotReloadReady();
+		}
 	});
 }
 
@@ -218,6 +234,11 @@ void UCSHotReloadSubsystem::AppendPendingFileChange(const TArray<FFileChangeData
 
 void UCSHotReloadSubsystem::RefreshDirectoryWatchers()
 {
+	if (bDeinitializing)
+	{
+		return;
+	}
+
 	TArray<FString> ProjectPaths;
 	UnrealSharp::Project::GetAllProjectPaths(ProjectPaths);
 
@@ -252,7 +273,8 @@ bool UCSHotReloadSubsystem::Tick(float DeltaTime)
 
 void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName)
 {
-	if (WatchingDirectories.Contains(Directory))
+	if (bDeinitializing || WatchingDirectories.ContainsByPredicate([&Directory](const FSourceDirectoryWatch& Watch)
+		{ return Watch.Directory == Directory; }))
 	{
 		return;
 	}
@@ -265,12 +287,13 @@ void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName 
 	FDirectoryWatcherModule& DirectoryWatcherModule = FModuleManager::LoadModuleChecked<FDirectoryWatcherModule>("DirectoryWatcher");
 	
 	FDelegateHandle Handle;
-	DirectoryWatcherModule.Get()->RegisterDirectoryChangedCallback_Handle(
+	if (DirectoryWatcherModule.Get()->RegisterDirectoryChangedCallback_Handle(
 		Directory,
 		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
-		Handle);
-
-	WatchingDirectories.Add(Directory);
+		Handle))
+	{
+		WatchingDirectories.Add({ Directory, Handle });
+	}
 }
 
 void UCSHotReloadSubsystem::PauseHotReload(const FString& Reason)
@@ -311,6 +334,10 @@ void UCSHotReloadSubsystem::ResumeHotReload()
 void UCSHotReloadSubsystem::HandleScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UCSHotReloadSubsystem::HandleScriptFileChanges)
+	if (bDeinitializing)
+	{
+		return;
+	}
 	
 	if (IsHotReloading())
 	{
