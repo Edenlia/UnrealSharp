@@ -4,8 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Xml;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
@@ -21,6 +19,8 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("ExtraArguments=<Arg>+<Arg>", "Additional arguments forwarded to dotnet build/publish.")]
 public class BuildUserGlue : BuildCommand
 {
+    private const string SolutionName = "UnrealSharpGlue";
+
     public override void ExecuteBuild()
     {
         if (this.IsInstalledUnrealSharpBuild())
@@ -46,13 +46,15 @@ public class BuildUserGlue : BuildCommand
 
         if (GlueProjectPaths.Count == 0)
         {
+            GlueSolutionCache.Invalidate(GetSolutionPath(SolutionDirectory));
             LoggerUtilities.LogUnrealSharpInfo("No glue projects found. Skipping glue build.");
             return;
         }
 
         GenerateSolution(command, SolutionDirectory, GlueProjectPaths);
         BuildSolution(command, SolutionDirectory, outputDirectory, buildConfig, GlueProjectPaths, extraArguments);
-        CreateSolutionStamp(SolutionDirectory, GlueProjectPaths);
+        GlueSolutionCache.Save(GetSolutionPath(SolutionDirectory), GlueProjectPaths);
+        LoggerUtilities.LogUnrealSharpInfo("Creating Solution Stamp...");
 
         if (addReferences)
         {
@@ -62,16 +64,14 @@ public class BuildUserGlue : BuildCommand
 
     private static void GenerateSolution(BuildCommand command, string solutionDirectory, List<string> glueProjectPaths)
     {
-        if (IsSolutionStampSame(solutionDirectory, glueProjectPaths))
+        if (GlueSolutionCache.IsCurrent(GetSolutionPath(solutionDirectory), glueProjectPaths))
         {
             return;
         }
         
-        const string solutionName = "UnrealSharpGlue";
-        
         List<KeyValuePair<string, string>> CommandParams = new List<KeyValuePair<string, string>>
         {
-            new("SolutionName", solutionName),
+            new("SolutionName", SolutionName),
             new("OutputFolder", solutionDirectory),
         };
 
@@ -84,46 +84,7 @@ public class BuildUserGlue : BuildCommand
         CommandUtilities.RunCommand(nameof(BuildCommands.GenerateSolution), command, CommandParams);
     }
     
-    private static string GetStampPath(string solutionDirectory) => Path.Combine(solutionDirectory, "UnrealSharpSolutionStamp.json");
-
-    private static bool IsSolutionStampSame(string solutionDirectory, List<string> glueProjectPaths)
-    {
-        string SolutionStampPath = GetStampPath(solutionDirectory);
-
-        if (!File.Exists(SolutionStampPath))
-        {
-            return false;
-        }
-
-        string SolutionStampContent = File.ReadAllText(SolutionStampPath);
-        JsonArray? GlueProjectsArray = JsonSerializer.Deserialize<JsonArray>(SolutionStampContent);
-
-        if (GlueProjectsArray == null)
-        {
-            return false;
-        }
-
-        return glueProjectPaths.ToList().SequenceEqual(glueProjectPaths);
-    }
-
-    private static void CreateSolutionStamp(string solutionPath, List<string> glueProjectPaths)
-    {
-        JsonSerializerOptions Options = new JsonSerializerOptions
-        {
-            WriteIndented = false,
-        };
-        
-        JsonArray GlueProjectArray = new JsonArray();
-        foreach (string GlueProjectPath in glueProjectPaths)
-        {
-            GlueProjectArray.Add(GlueProjectPath);
-        }
-        
-        string JsonString = JsonSerializer.Serialize(GlueProjectArray, Options);
-        File.WriteAllText(GetStampPath(solutionPath), JsonString);
-        
-        LoggerUtilities.LogUnrealSharpInfo("Creating Solution Stamp...");
-    }
+    private static string GetSolutionPath(string solutionDirectory) => Path.Combine(solutionDirectory, $"{SolutionName}.sln");
 
     private static void BuildSolution(BuildCommand buildCommand, string solutionOutputDirectory, string publishDirectory, UnrealTargetConfiguration buildConfig, List<string> glueProjectPaths, IList<string>? extraArguments)
     {

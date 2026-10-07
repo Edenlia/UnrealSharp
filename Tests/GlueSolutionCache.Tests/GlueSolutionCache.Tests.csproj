@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <CacheImplementation Condition="'$(CacheImplementation)' == ''">../../Build/Scripts/Utilities/GlueSolutionCache.cs</CacheImplementation>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(CacheImplementation)" Link="GlueSolutionCache.cs" />
+  </ItemGroup>
+</Project>
