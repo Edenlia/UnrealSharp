@@ -1,6 +1,16 @@
 #include "CSEditorBlueprintFunctionLibrary.h"
 #include "CSManager.h"
 #include "UnrealSharpEditor.h"
+#include "HotReload/CSHotReloadSubsystem.h"
+
+void UCSEditorBlueprintFunctionLibrary::SetProjectSourceFiles(FName ProjectName, const FString& ProjectFilePath, const TArray<FString>& SourceFiles)
+{
+	check(IsInGameThread());
+	if (UCSHotReloadSubsystem* Subsystem = UCSHotReloadSubsystem::Get(); IsValid(Subsystem))
+	{
+		Subsystem->WatchLinkedSourceFiles(ProjectName, ProjectFilePath, SourceFiles);
+	}
+}
 
 void UCSEditorBlueprintFunctionLibrary::AddAssemblyDependencies(FName AssemblyName, const TArray<FName>& DependentAssemblyNames)
 {

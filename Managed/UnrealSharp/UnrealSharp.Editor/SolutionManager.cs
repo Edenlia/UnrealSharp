@@ -48,9 +48,12 @@ public static class SolutionManager
     public static readonly MSBuildWorkspace UnrealSharpWorkspace = MSBuildWorkspace.Create();
     public static IList<Project> CurrentProjects => UnrealSharpWorkspace.CurrentSolution.Projects.ToList();
     private static readonly ConcurrentDictionary<ProjectId, GenState> States = new();
+    private static readonly ConcurrentQueue<(int Generation, string Name, string ProjectPath, List<string> Files)> PendingSourceFiles = new();
+    private static int SourceFileGeneration;
 
     public static async void LoadSolutionAsync(string solutionPath, IntPtr callbackPtr)
     {
+        int sourceFileGeneration = Interlocked.Increment(ref SourceFileGeneration);
         try
         {
             string fullSolutionPath = Path.GetFullPath(solutionPath);
@@ -60,7 +63,7 @@ public static class SolutionManager
         
             foreach (Project project in projects)
             {
-                await ProcessProject(project);
+                await ProcessProject(project, sourceFileGeneration);
             }
             
             BuildProjectDependencyMap(projects);
@@ -86,8 +89,9 @@ public static class SolutionManager
         }
     }
 
-    public static async Task ProcessProject(Project project)
+    public static async Task ProcessProject(Project project, int? sourceFileGeneration = null)
     {
+        int generation = sourceFileGeneration ?? Volatile.Read(ref SourceFileGeneration);
         try
         {
             GenState state = new GenState();
@@ -192,6 +196,10 @@ public static class SolutionManager
                 state.TreesByPath[document.FilePath!] = tree;
             }
 
+            if (project.FilePath is not null)
+            {
+                PendingSourceFiles.Enqueue((generation, project.Name, project.FilePath, projectDocumentPaths.ToList()));
+            }
             LogUnrealSharpEditor.Log($"Project '{project.Name}' loaded for incremental generation.");
         }
         catch (Exception exception)
@@ -200,11 +208,22 @@ public static class SolutionManager
         }
     }
     
+    // Called by the native hot reload subsystem on the game thread. UFunction dispatch itself touches UObjects.
+    public static void PublishProjectSourceFiles()
+    {
+        while (PendingSourceFiles.TryDequeue(out var pending))
+        {
+            if (pending.Generation != Volatile.Read(ref SourceFileGeneration)) continue;
+            UCSEditorBlueprintFunctionLibrary.SetProjectSourceFiles(pending.Name, pending.ProjectPath, pending.Files);
+        }
+    }
+
     public static async void AddProjectAsync(string projectPath, IntPtr callbackPtr)
     {
+        int sourceFileGeneration = Volatile.Read(ref SourceFileGeneration);
         try
         {
-            await AddProjectAsync_Internal(projectPath);
+            await AddProjectAsync_Internal(projectPath, sourceFileGeneration);
         
             unsafe
             {
@@ -218,10 +237,10 @@ public static class SolutionManager
         }
     }
     
-    private static async Task AddProjectAsync_Internal(string projectPath)
+    private static async Task AddProjectAsync_Internal(string projectPath, int sourceFileGeneration)
     {
         Project project = await UnrealSharpWorkspace.OpenProjectAsync(projectPath);
-        await ProcessProject(project);
+        await ProcessProject(project, sourceFileGeneration);
     }
     
     public static Project? GetProjectByName(string projectName)

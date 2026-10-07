@@ -31,6 +31,7 @@ struct FCSManagedEditorCallbacks
     using FForceManagedGC = void(__stdcall*)();
     using FOpenSolution = bool(__stdcall*)(const TCHAR*, void*);
     using FLoadSignature = void(__stdcall*)(const TCHAR*, void*);
+    using FPublishProjectSourceFiles = void(__stdcall*)();
 
     FRecompileDirtyProjects RecompileDirtyProjects = nullptr;
     FRecompileChangedFile RecompileChangedFile = nullptr;
@@ -41,6 +42,7 @@ struct FCSManagedEditorCallbacks
     
     FLoadSignature LoadSolutionAsync = nullptr;
     FLoadSignature LoadProject = nullptr;
+    FPublishProjectSourceFiles PublishProjectSourceFiles = nullptr;
 };
 
 DECLARE_LOG_CATEGORY_EXTERN(LogUnrealSharpEditor, Log, All);

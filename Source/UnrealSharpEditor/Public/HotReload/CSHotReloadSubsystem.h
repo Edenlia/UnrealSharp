@@ -49,11 +49,13 @@ public:
 	void ResumeHotReload();
 	
 	void RefreshDirectoryWatchers();
+	void WatchLinkedSourceFiles(FName ProjectName, const FString& ProjectFilePath, const TArray<FString>& SourceFiles);
 	void NotifyNewType() { bDetectedNewManagedType = true;}
 
 private:
 	
-	void AddDirectoryToWatch(const FString& Directory, FName ProjectName);
+	void AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly = false);
+	void HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
 	
 	void HandleScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName);
 
@@ -93,9 +95,13 @@ private:
 	struct FSourceDirectoryWatch
 	{
 		FString Directory;
+		FName ProjectName;
 		FDelegateHandle Handle;
+		bool bLinkedOnly;
 	};
 	TArray<FSourceDirectoryWatch> WatchingDirectories;
+	// Comparison key -> evaluated path; preserve the original path when forwarding to Roslyn.
+	TMap<FName, TMap<FString, FString>> LinkedSourceFiles;
 
 	TMap<FName, TArray<FFileChangeData>> PendingFileChanges;
 

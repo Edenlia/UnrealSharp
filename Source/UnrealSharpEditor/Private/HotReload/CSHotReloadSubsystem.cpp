@@ -19,6 +19,26 @@
 
 #define LOCTEXT_NAMESPACE "UCSHotReloadSubsystem"
 
+namespace
+{
+	FString NormalizeSourcePath(const FString& Path)
+	{
+		FString Result = FPaths::ConvertRelativePathToFull(Path);
+		FPaths::NormalizeFilename(Result);
+		FPaths::CollapseRelativeDirectories(Result);
+		return Result;
+	}
+
+	FString SourcePathKey(const FString& Path)
+	{
+		FString Result = NormalizeSourcePath(Path);
+#if PLATFORM_WINDOWS
+		Result.ToLowerInline();
+#endif
+		return Result;
+	}
+}
+
 void UCSHotReloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -64,6 +84,7 @@ void UCSHotReloadSubsystem::Deinitialize()
 		}
 	}
 	WatchingDirectories.Reset();
+	LinkedSourceFiles.Reset();
 	Super::Deinitialize();
 }
 
@@ -80,6 +101,7 @@ void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
 
 void UCSHotReloadSubsystem::OnHotReloadReady()
 {
+	UnrealSharpEditorModule->GetManagedEditorCallbacks().PublishProjectSourceFiles();
 	ResumeHotReload();
 	UE_LOGFMT(LogUnrealSharpEditor, Display, "C# Hot Reload is ready.");
 }
@@ -263,6 +285,11 @@ void UCSHotReloadSubsystem::OnStopPlayingPIE(bool IsSimulating)
 
 bool UCSHotReloadSubsystem::Tick(float DeltaTime)
 {
+	if (bDeinitializing)
+	{
+		return false;
+	}
+	UnrealSharpEditorModule->GetManagedEditorCallbacks().PublishProjectSourceFiles();
 	if (FCSHotReloadUtilities::ShouldHotReloadOnEditorFocus(this))
 	{
 		PerformHotReload();
@@ -271,28 +298,129 @@ bool UCSHotReloadSubsystem::Tick(float DeltaTime)
 	return true;
 }
 
-void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName)
+void UCSHotReloadSubsystem::WatchLinkedSourceFiles(FName ProjectName, const FString& ProjectFilePath, const TArray<FString>& SourceFiles)
 {
-	if (bDeinitializing || WatchingDirectories.ContainsByPredicate([&Directory](const FSourceDirectoryWatch& Watch)
-		{ return Watch.Directory == Directory; }))
+	check(IsInGameThread());
+	if (bDeinitializing)
+	{
+		return;
+	}
+
+	TArray<FString> ProjectPaths;
+	UnrealSharp::Project::GetAllProjectPaths(ProjectPaths);
+	const FString ProjectKey = SourcePathKey(ProjectFilePath);
+	if (!ProjectPaths.ContainsByPredicate([&ProjectKey](const FString& Path) { return SourcePathKey(Path) == ProjectKey; }))
+	{
+		return;
+	}
+	const FString ProjectDirectory = FPaths::GetPath(NormalizeSourcePath(ProjectFilePath));
+	IDirectoryWatcher* Watcher = FModuleManager::LoadModuleChecked<FDirectoryWatcherModule>("DirectoryWatcher").Get();
+	if (!Watcher)
+	{
+		return;
+	}
+	for (int32 Index = WatchingDirectories.Num() - 1; Index >= 0; --Index)
+	{
+		const FSourceDirectoryWatch& Watch = WatchingDirectories[Index];
+		if (Watch.bLinkedOnly && Watch.ProjectName == ProjectName)
+		{
+			Watcher->UnregisterDirectoryChangedCallback_Handle(Watch.Directory, Watch.Handle);
+			WatchingDirectories.RemoveAt(Index);
+		}
+	}
+
+	TMap<FString, FString>& Files = LinkedSourceFiles.FindOrAdd(ProjectName);
+	Files.Reset();
+	TArray<FString> Directories;
+	TSet<FString> DirectoryKeys;
+	for (const FString& Source : SourceFiles)
+	{
+		const FString File = NormalizeSourcePath(Source);
+		if (FCSHotReloadUtilities::IsSkippablePath(File) || File.Contains(TEXT("/Intermediate/"))
+			|| FPaths::IsUnderDirectory(File, ProjectDirectory))
+		{
+			continue;
+		}
+		Files.Add(SourcePathKey(File), File);
+		const FString Directory = FPaths::GetPath(File);
+		const FString DirectoryKey = SourcePathKey(Directory);
+		if (!DirectoryKeys.Contains(DirectoryKey))
+		{
+			DirectoryKeys.Add(DirectoryKey);
+			Directories.Add(Directory);
+		}
+	}
+
+	// Watch recursively once per owning project; filter notifications by evaluated Compile membership.
+	Directories.Sort([](const FString& A, const FString& B) { return A.Len() < B.Len(); });
+	for (const FString& Directory : Directories)
+	{
+		const bool bCovered = WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
+		{
+			return Watch.ProjectName == ProjectName && FPaths::IsUnderDirectory(Directory, Watch.Directory);
+		});
+		if (!bCovered)
+		{
+			AddDirectoryToWatch(Directory, ProjectName, true);
+		}
+	}
+}
+
+void UCSHotReloadSubsystem::HandleLinkedScriptFileChanges(const TArray<FFileChangeData>& ChangedFiles, FName ProjectName)
+{
+	if (bDeinitializing)
+	{
+		return;
+	}
+	const TMap<FString, FString>* Sources = LinkedSourceFiles.Find(ProjectName);
+	if (!Sources)
+	{
+		return;
+	}
+	TArray<FFileChangeData> IncludedChanges;
+	for (const FFileChangeData& Change : ChangedFiles)
+	{
+		if (const FString* EvaluatedPath = Sources->Find(SourcePathKey(Change.Filename)))
+		{
+			FFileChangeData& IncludedChange = IncludedChanges.Add_GetRef(Change);
+			IncludedChange.Filename = *EvaluatedPath;
+		}
+	}
+	if (!IncludedChanges.IsEmpty())
+	{
+		HandleScriptFileChanges(IncludedChanges, ProjectName);
+	}
+}
+
+void UCSHotReloadSubsystem::AddDirectoryToWatch(const FString& Directory, FName ProjectName, bool bLinkedOnly)
+{
+	const FString WatchDirectory = NormalizeSourcePath(Directory);
+	const FString DirectoryKey = SourcePathKey(WatchDirectory);
+	if (bDeinitializing || WatchingDirectories.ContainsByPredicate([&](const FSourceDirectoryWatch& Watch)
+		{ return SourcePathKey(Watch.Directory) == DirectoryKey && Watch.ProjectName == ProjectName && Watch.bLinkedOnly == bLinkedOnly; }))
 	{
 		return;
 	}
 	
-	if (!FPaths::DirectoryExists(Directory))
+	if (!FPaths::DirectoryExists(WatchDirectory))
 	{
-		FPlatformFileManager::Get().GetPlatformFile().CreateDirectory(*Directory);
+		if (bLinkedOnly)
+		{
+			return;
+		}
+		FPlatformFileManager::Get().GetPlatformFile().CreateDirectory(*WatchDirectory);
 	}
 
 	FDirectoryWatcherModule& DirectoryWatcherModule = FModuleManager::LoadModuleChecked<FDirectoryWatcherModule>("DirectoryWatcher");
 	
 	FDelegateHandle Handle;
 	if (DirectoryWatcherModule.Get()->RegisterDirectoryChangedCallback_Handle(
-		Directory,
-		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
+		WatchDirectory,
+		IDirectoryWatcher::FDirectoryChanged::CreateUObject(this, bLinkedOnly
+			? &UCSHotReloadSubsystem::HandleLinkedScriptFileChanges : &UCSHotReloadSubsystem::HandleScriptFileChanges, ProjectName),
 		Handle))
 	{
-		WatchingDirectories.Add({ Directory, Handle });
+		WatchingDirectories.Add({ WatchDirectory, ProjectName, Handle, bLinkedOnly });
 	}
 }
 

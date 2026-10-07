@@ -11,4 +11,8 @@ class UCSEditorBlueprintFunctionLibrary : public UBlueprintFunctionLibrary
 public:
 	UFUNCTION(meta = (ScriptMethod))
 	static void AddAssemblyDependencies(FName AssemblyName, const TArray<FName>& DependentAssemblyNames);
+
+	/** Publish evaluated Compile documents, including linked files outside the project directory. */
+	UFUNCTION(meta = (ScriptMethod))
+	static void SetProjectSourceFiles(FName ProjectName, const FString& ProjectFilePath, const TArray<FString>& SourceFiles);
 };

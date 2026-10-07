@@ -20,10 +20,24 @@ public unsafe struct FManagedUnrealSharpEditorCallbacks()
     
     public delegate* unmanaged<char*, IntPtr, void> LoadSolution = &ManagedUnrealSharpEditorCallbacks.LoadSolution;
     public delegate* unmanaged<char*, IntPtr, void> LoadProject = &ManagedUnrealSharpEditorCallbacks.LoadProject;
+    public delegate* unmanaged<void> PublishProjectSourceFiles = &ManagedUnrealSharpEditorCallbacks.PublishProjectSourceFiles;
 }
 
 public static class ManagedUnrealSharpEditorCallbacks
 {
+    [UnmanagedCallersOnly]
+    public static void PublishProjectSourceFiles()
+    {
+        try
+        {
+            SolutionManager.PublishProjectSourceFiles();
+        }
+        catch (Exception exception)
+        {
+            LogUnrealSharpEditor.LogError($"Failed to publish evaluated source files: {exception}");
+        }
+    }
+
     [UnmanagedCallersOnly]
     public static NativeBool RecompileDirtyProjects(IntPtr exceptionBuffer, UnmanagedArray pendingModifiedAssembliesBuffer)
     {
