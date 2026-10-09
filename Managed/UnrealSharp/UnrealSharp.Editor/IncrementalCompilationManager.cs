@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.Text;
+using UnrealSharp.Editor.Interop;
 using UnrealSharp.Editor.Utilities;
 using UnrealSharp.Shared;
 using UnrealSharp.UnrealSharpUtilities;
@@ -30,6 +31,62 @@ public static class IncrementalCompilationManager
                || normalized.Contains("/bin/", StringComparison.OrdinalIgnoreCase);
     }
 
+    // Matches native ECSCompileLogSeverity.
+    private const int CompileLogSeverityWarning = 1;
+    private const int CompileLogSeverityError = 2;
+
+    // Parse diagnostics are kept per file until it parses again; project diagnostics until the project is regenerated.
+    private const int CompileDiagnosticStageParse = 0;
+    private const int CompileDiagnosticStageProject = 1;
+
+    private static unsafe void ClearFileDiagnostics(string fullPath)
+    {
+        fixed (char* filePtr = fullPath)
+        {
+            Bind_FUnrealSharpEditorModule.CallClearFileCompileDiagnostics(filePtr);
+        }
+    }
+
+    private static unsafe void BeginProjectDiagnostics(string projectName)
+    {
+        fixed (char* projectPtr = projectName)
+        {
+            Bind_FUnrealSharpEditorModule.CallBeginProjectCompileDiagnostics(projectPtr);
+        }
+    }
+
+    private static void ReportDiagnostics(string projectName, IEnumerable<Diagnostic> diagnostics, int stage)
+    {
+        foreach (Diagnostic diagnostic in diagnostics)
+        {
+            if (diagnostic.IsSuppressed || diagnostic.Severity < DiagnosticSeverity.Warning)
+            {
+                continue;
+            }
+
+            FileLinePositionSpan span = diagnostic.Location.GetMappedLineSpan();
+            bool hasLocation = span.IsValid && !string.IsNullOrEmpty(span.Path);
+            string file = hasLocation ? span.Path : string.Empty;
+            int line = hasLocation ? span.StartLinePosition.Line + 1 : 0;
+            int column = hasLocation ? span.StartLinePosition.Character + 1 : 0;
+            int severity = diagnostic.Severity == DiagnosticSeverity.Error ? CompileLogSeverityError : CompileLogSeverityWarning;
+            string message = diagnostic.GetMessage();
+            string fullText = diagnostic.ToString();
+
+            unsafe
+            {
+                fixed (char* projectPtr = projectName)
+                fixed (char* filePtr = file)
+                fixed (char* codePtr = diagnostic.Id)
+                fixed (char* messagePtr = message)
+                fixed (char* fullTextPtr = fullText)
+                {
+                    Bind_FUnrealSharpEditorModule.CallReportCompileDiagnostic(projectPtr, filePtr, line, column, codePtr, severity, messagePtr, fullTextPtr, stage);
+                }
+            }
+        }
+    }
+
     public static void RemoveSourceFile(string projectName, string filepath)
     {
         Project? foundProject = SolutionManager.GetProjectByName(projectName);
@@ -51,6 +108,8 @@ public static class IncrementalCompilationManager
             return;
         }
 
+        ClearFileDiagnostics(fullPath);
+
         if (!state.TreesByPath!.TryGetValue(fullPath, out SyntaxTree? existingTree))
         {
             return;
@@ -60,7 +119,9 @@ public static class IncrementalCompilationManager
         state.TreesByPath.Remove(fullPath);
     }
 
-    public static void RecompileChangedFile(string projectName, string filepath)
+    // Returns null on success, or the compiler errors when the file is rejected.
+    // Expected compile failures are returned instead of thrown to avoid exception unwinding on every syntax error.
+    public static string? RecompileChangedFile(string projectName, string filepath)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
         Project? foundProject = SolutionManager.GetProjectByName(projectName);
@@ -79,7 +140,7 @@ public static class IncrementalCompilationManager
         string fullPath = Path.GetFullPath(filepath);
         if (IsSkippablePath(fullPath))
         {
-            return;
+            return null;
         }
 
         string fileContent = File.ReadAllText(fullPath);
@@ -104,9 +165,14 @@ public static class IncrementalCompilationManager
 
             if (builder.Length > 0)
             {
-                throw new Exception(builder.ToString());
+                // Parse warnings are reported later by Emit; only report here when the file is rejected.
+                ClearFileDiagnostics(fullPath);
+                ReportDiagnostics(projectName, newTree.GetDiagnostics(), CompileDiagnosticStageParse);
+                return builder.ToString();
             }
         }
+
+        ClearFileDiagnostics(fullPath);
 
         if (state.TreesByPath!.TryGetValue(fullPath, out SyntaxTree? existingTree))
         {
@@ -123,9 +189,11 @@ public static class IncrementalCompilationManager
 
         stopwatch.Stop();
         LogUnrealSharpEditor.Log($"Processed dirty file '{Path.GetFileName(filepath)}' in project '{projectName}' in {stopwatch.Elapsed.TotalMilliseconds:F2}ms.");
+        return null;
     }
 
-    public static void RecompileDirtyProjects(List<string> modifiedAssemblyNames)
+    // Returns null on success, or the compiler errors of the first project that failed to generate or emit.
+    public static string? RecompileDirtyProjects(List<string> modifiedAssemblyNames)
     {
         List<Project> projects = ProjectUtilities.GetProjectsFromNames(modifiedAssemblyNames, SolutionManager.CurrentProjects);
 
@@ -203,6 +271,8 @@ public static class IncrementalCompilationManager
                 state.MetadataRefCount = project.MetadataReferences.Count;
             }
 
+            BeginProjectDiagnostics(project.Name);
+
             GeneratorDriver driver = state.Driver!.RunGeneratorsAndUpdateCompilation(
                 state.InitialCompilation!,
                 out Compilation updatedCompilation,
@@ -212,6 +282,7 @@ public static class IncrementalCompilationManager
 
             if (genDiagnosticsInner.Any())
             {
+                ReportDiagnostics(project.Name, genDiagnosticsInner, CompileDiagnosticStageProject);
                 StringBuilder stringBuilder = new StringBuilder();
                 foreach (Diagnostic diagnostic in genDiagnosticsInner)
                 {
@@ -223,7 +294,10 @@ public static class IncrementalCompilationManager
                     stringBuilder.AppendLine(diagnostic.ToString());
                 }
 
-                if (stringBuilder.Length > 0) throw new Exception("Source generator failed:\n" + stringBuilder);
+                if (stringBuilder.Length > 0)
+                {
+                    return "Source generator failed:\n" + stringBuilder;
+                }
             }
 
             state.ParseOptions = parseOptions;
@@ -233,7 +307,11 @@ public static class IncrementalCompilationManager
 
             stopwatch.Stop();
             LogUnrealSharpEditor.Log($"Project '{project.Name}' generated source in {stopwatch.Elapsed.TotalSeconds:F2} seconds.");
-            EmitResultsToDisk(project, updatedCompilation);
+            string? emitError = EmitResultsToDisk(project, updatedCompilation);
+            if (emitError != null)
+            {
+                return emitError;
+            }
         }
 
         List<string> assemblies = new List<string>(SolutionManager.UnrealSharpWorkspace.CurrentSolution.Projects.Count());
@@ -247,6 +325,7 @@ public static class IncrementalCompilationManager
         
         LoadOrderOptions loadOrderOptions = new LoadOrderOptions() { Collectible = true, Priority = 0 };
         AssemblyUtilities.EmitLoadOrder(assemblies, outputDir, loadOrderOptions, "UserCode");
+        return null;
     }
 
     private static void UpdateDependentProjectsWithNewCompilation(Compilation newCompilation, Project producedProject)
@@ -334,7 +413,8 @@ public static class IncrementalCompilationManager
         return ".so.debug";
     }
 
-    private static void EmitResultsToDisk(Project project, Compilation updatedCompilation)
+    // Returns null on success, or the emit errors.
+    private static string? EmitResultsToDisk(Project project, Compilation updatedCompilation)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
 
@@ -351,6 +431,8 @@ public static class IncrementalCompilationManager
         {
             emitResult = updatedCompilation.Emit(assemblyStream, symbolsStream, options: emitOptions);
         }
+
+        ReportDiagnostics(project.Name, emitResult.Diagnostics, CompileDiagnosticStageProject);
 
         if (!emitResult.Success)
         {
@@ -381,7 +463,7 @@ public static class IncrementalCompilationManager
                 File.Delete(symbolsTempPath);
             }
 
-            throw new InvalidOperationException(stringBuilder.ToString());
+            return stringBuilder.ToString();
         }
 
         File.Move(assemblyTempPath, assemblyPath, true);
@@ -389,5 +471,6 @@ public static class IncrementalCompilationManager
 
         stopwatch.Stop();
         LogUnrealSharpEditor.Log($"Project '{project.Name}' produced an assembly in {stopwatch.Elapsed.TotalSeconds:F2} seconds.");
+        return null;
     }
 }

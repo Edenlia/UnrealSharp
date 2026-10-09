@@ -37,7 +37,12 @@ public static class ManagedUnrealSharpEditorCallbacks
 
             List<string> modifiedAssemblyNames = pendingModifiedAssembliesBuffer->ToListWithMarshaller(StringMarshaller.FromNative);
             
-            IncrementalCompilationManager.RecompileDirtyProjects(modifiedAssemblyNames);
+            string? compileError = IncrementalCompilationManager.RecompileDirtyProjects(modifiedAssemblyNames);
+            if (compileError != null)
+            {
+                StringMarshaller.ToNative(exceptionBuffer, 0, compileError);
+                return NativeBool.False;
+            }
         }
         catch (InvalidOperationException exception)
         {
@@ -130,7 +135,11 @@ public static class ManagedUnrealSharpEditorCallbacks
         {
             string projectNameStr = new string(projectName);
             string filePathStr = new string(filePath);
-            IncrementalCompilationManager.RecompileChangedFile(projectNameStr, filePathStr);
+            string? compileError = IncrementalCompilationManager.RecompileChangedFile(projectNameStr, filePathStr);
+            if (compileError != null)
+            {
+                StringMarshaller.ToNative(exceptionBuffer, 0, compileError);
+            }
         }
         catch (Exception exception)
         {
