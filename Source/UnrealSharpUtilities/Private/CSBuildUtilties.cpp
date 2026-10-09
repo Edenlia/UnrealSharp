@@ -3,6 +3,7 @@
 
 #include "CSBuildUtilties.h"
 #include "CSBuildActionUtilities.h"
+#include "CSCompileLog.h"
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
@@ -74,7 +75,29 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 		Arguments.Add(TEXT("clp"), TEXT("ErrorsOnly"));
 	}
 
-	return InvokeUnrealSharpAutomation(BuildAction::BuildUserSolution, &Arguments, OnError);
+	FString CommandArguments;
+	BuildArguments(BuildAction::BuildUserSolution, &Arguments, CommandArguments);
+
+	FCSCompileLog& CompileLog = FCSCompileLog::Get();
+	CompileLog.BeginSession();
+
+	const double StartTime = FPlatformTime::Seconds();
+	int32 ReturnCode = 0;
+	FString Output;
+	const bool bSucceeded = Process::InvokeCommand(FSerializedUATProcess::GetUATPath(), CommandArguments, ReturnCode, Output, nullptr, OnError);
+
+	const int32 ErrorCount = CompileLog.ParseMSBuildOutput(Output, TEXT("Build"));
+	if (bSucceeded)
+	{
+		CompileLog.AddMessage(ECSCompileLogSeverity::Info, TEXT("Build"),
+			FString::Printf(TEXT("C# build succeeded in %.2f seconds."), FPlatformTime::Seconds() - StartTime));
+	}
+	else if (ErrorCount == 0)
+	{
+		CompileLog.AddMessage(ECSCompileLogSeverity::Error, TEXT("Build"), TEXT("C# build failed."), Output);
+	}
+
+	return bSucceeded;
 }
 
 void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs)
