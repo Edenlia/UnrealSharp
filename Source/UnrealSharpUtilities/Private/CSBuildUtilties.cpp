@@ -80,6 +80,8 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 
 	FCSCompileLog& CompileLog = FCSCompileLog::Get();
 	CompileLog.BeginSession();
+	// A full build re-reports every project's diagnostics.
+	CompileLog.ClearAllDiagnostics();
 
 	const double StartTime = FPlatformTime::Seconds();
 	int32 ReturnCode = 0;

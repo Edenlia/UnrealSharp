@@ -1,7 +1,6 @@
 #include "CSDotnetUtilties.h"
 
 #include "CSBuildUtilties.h"
-#include "CSDialogUtilities.h"
 #include "CSInstallationUtilities.h"
 #include "CSPathsUtilities.h"
 #include "CSProjectUtilities.h"
@@ -208,7 +207,8 @@ bool UnrealSharp::DotNetUtilities::BuildUserSolution()
 		return true;
 	}
 
-	return Build::BuildUserSolution(Dialogs::MakeOkCancelDialogOnError());
+	// Failures are reported through FCSCompileLog instead of a blocking dialog.
+	return Build::BuildUserSolution();
 }
 #endif
 

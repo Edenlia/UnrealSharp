@@ -34,8 +34,8 @@ struct FCSCompileLogEntry
 // Lives in UnrealSharpUtilities because the startup build runs before UnrealSharpEditor is loaded.
 //
 // Holds two kinds of entries:
-// - Messages: status of the latest compile (completion, startup build output, fallback errors). Replaced by each new compile.
-// - Current compile state: per-file parse rejections and per-project generator/emit diagnostics.
+// - Messages: status of the latest compile (completion, unlocated build output, fallback errors). Replaced by each new compile.
+// - Current compile state: per-file parse rejections and per-project build/generator/emit diagnostics.
 //   They stay until that file or project compiles again, so a later successful compile elsewhere cannot hide them.
 class UNREALSHARPUTILITIES_API FCSCompileLog
 {
@@ -56,7 +56,12 @@ public:
 	void BeginProjectDiagnostics(const FString& Project);
 	void AddProjectDiagnostic(FCSCompileLogEntry&& Entry);
 
+	// Drops all file and project diagnostics. Used before a full build, which re-reports everything.
+	void ClearAllDiagnostics();
+
 	// Parses MSBuild "file(line,col): error CSxxxx: message [project]" lines. Returns the number of errors found.
+	// Located diagnostics with a project become project diagnostics keyed by the .csproj base name, so they stay
+	// until hot reload recompiles that project. Everything else is added as a message.
 	int32 ParseMSBuildOutput(const FString& Output, const FString& Source);
 
 	// Messages and current diagnostics merged in time order.

@@ -21,10 +21,16 @@ DEFINE_LOG_CATEGORY(LogUnrealSharp);
 void FUnrealSharpCoreModule::StartupModule()
 {
 #if WITH_EDITOR
-	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() || !UnrealSharp::DotNetUtilities::BuildUserSolution())
+	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment())
 	{
 		StartupModule();
 		return;
+	}
+
+	// Compile errors must not block the Editor; they are shown in the C# Compile Log once the Editor is up.
+	if (!UnrealSharp::DotNetUtilities::BuildUserSolution())
+	{
+		UE_LOG(LogUnrealSharp, Warning, TEXT("C# build failed; continuing to start with the last successfully built assemblies. See the C# Compile Log for errors."));
 	}
 #endif
 	

@@ -121,6 +121,20 @@ void FCSCompileLog::AddProjectDiagnostic(FCSCompileLogEntry&& Entry)
 	NotifyChanged();
 }
 
+void FCSCompileLog::ClearAllDiagnostics()
+{
+	check(IsInGameThread());
+
+	if (FileDiagnostics.IsEmpty() && ProjectDiagnostics.IsEmpty())
+	{
+		return;
+	}
+
+	FileDiagnostics.Reset();
+	ProjectDiagnostics.Reset();
+	NotifyChanged();
+}
+
 const TArray<TSharedPtr<FCSCompileLogEntry>>& FCSCompileLog::GetEntries() const
 {
 	RebuildView();
@@ -203,7 +217,8 @@ int32 FCSCompileLog::ParseMSBuildOutput(const FString& Output, const FString& So
 	// error MSB1009: message [project.csproj]
 	static const FRegexPattern UnlocatedPattern(TEXT("\\b(error|warning)\\s+([A-Z]+\\d+)\\s*:\\s*(.*)$"));
 
-	auto StripProjectSuffix = [](FString Message)
+	// Strips the trailing "[.../Name.csproj]" and returns "Name" in OutProject.
+	auto StripProjectSuffix = [](FString Message, FString& OutProject)
 	{
 		Message.TrimEndInline();
 		if (Message.EndsWith(TEXT("]")))
@@ -211,6 +226,20 @@ int32 FCSCompileLog::ParseMSBuildOutput(const FString& Output, const FString& So
 			int32 OpenIndex = INDEX_NONE;
 			if (Message.FindLastChar(TEXT('['), OpenIndex) && OpenIndex > 0)
 			{
+				FString Suffix = Message.Mid(OpenIndex + 1, Message.Len() - OpenIndex - 2).TrimStartAndEnd();
+
+				// Multi-targeted builds append "::TargetFramework=...".
+				const int32 PropertiesIndex = Suffix.Find(TEXT("::"));
+				if (PropertiesIndex != INDEX_NONE)
+				{
+					Suffix.LeftInline(PropertiesIndex);
+				}
+
+				if (Suffix.EndsWith(TEXT(".csproj"), ESearchCase::IgnoreCase))
+				{
+					OutProject = FPaths::GetBaseFilename(Suffix);
+				}
+
 				Message.LeftInline(OpenIndex);
 				Message.TrimEndInline();
 			}
@@ -235,7 +264,7 @@ int32 FCSCompileLog::ParseMSBuildOutput(const FString& Output, const FString& So
 			Entry.Column = FCString::Atoi(*LocatedMatcher.GetCaptureGroup(3));
 			Entry.Severity = LocatedMatcher.GetCaptureGroup(4) == TEXT("error") ? ECSCompileLogSeverity::Error : ECSCompileLogSeverity::Warning;
 			Entry.Code = LocatedMatcher.GetCaptureGroup(5);
-			Entry.Message = StripProjectSuffix(LocatedMatcher.GetCaptureGroup(6));
+			Entry.Message = StripProjectSuffix(LocatedMatcher.GetCaptureGroup(6), Entry.Project);
 		}
 		else
 		{
@@ -247,7 +276,7 @@ int32 FCSCompileLog::ParseMSBuildOutput(const FString& Output, const FString& So
 
 			Entry.Severity = UnlocatedMatcher.GetCaptureGroup(1) == TEXT("error") ? ECSCompileLogSeverity::Error : ECSCompileLogSeverity::Warning;
 			Entry.Code = UnlocatedMatcher.GetCaptureGroup(2);
-			Entry.Message = StripProjectSuffix(UnlocatedMatcher.GetCaptureGroup(3));
+			Entry.Message = StripProjectSuffix(UnlocatedMatcher.GetCaptureGroup(3), Entry.Project);
 		}
 
 		Entry.FullText = Line.TrimStartAndEnd();
@@ -272,7 +301,15 @@ int32 FCSCompileLog::ParseMSBuildOutput(const FString& Output, const FString& So
 			++ErrorCount;
 		}
 
-		AddEntry(MoveTemp(Entry));
+		// Kept until hot reload recompiles the project, so the next compile session cannot drop them.
+		if (Entry.HasLocation() && !Entry.Project.IsEmpty())
+		{
+			AddProjectDiagnostic(MoveTemp(Entry));
+		}
+		else
+		{
+			AddEntry(MoveTemp(Entry));
+		}
 	}
 
 	return ErrorCount;

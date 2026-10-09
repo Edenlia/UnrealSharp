@@ -9,6 +9,7 @@
 #include "CSUnrealSharpEditorSettings.h"
 #include "DirectoryWatcherModule.h"
 #include "IDirectoryWatcher.h"
+#include "Interfaces/IMainFrameModule.h"
 #include "Kismet2/DebuggerCommands.h"
 #include "Types/CSEnum.h"
 #include "Types/CSScriptStruct.h"
@@ -45,6 +46,41 @@ void UCSHotReloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	RefreshDirectoryWatchers();
 	
 	PauseHotReload(TEXT("Waiting for initial C# load..."));
+
+	// The startup build ran before this subsystem existed; its errors are already in the compile log.
+	if (FApp::CanEverRender() && FCSCompileLog::Get().GetCount(ECSCompileLogSeverity::Error) > 0)
+	{
+		IMainFrameModule& MainFrameModule = IMainFrameModule::Get();
+		if (MainFrameModule.IsWindowInitialized())
+		{
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float)
+			{
+				NotifyStartupBuildFailed();
+				return false;
+			}));
+		}
+		else
+		{
+			MainFrameModule.OnMainFrameCreationFinished().AddUObject(this, &UCSHotReloadSubsystem::OnMainFrameCreationFinished);
+		}
+	}
+}
+
+void UCSHotReloadSubsystem::OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog)
+{
+	IMainFrameModule::Get().OnMainFrameCreationFinished().RemoveAll(this);
+	NotifyStartupBuildFailed();
+}
+
+void UCSHotReloadSubsystem::NotifyStartupBuildFailed()
+{
+	if (!FApp::CanEverRender())
+	{
+		return;
+	}
+
+	UnrealSharp::CompileLog::RevealTab();
+	ShowCompileFailedNotification(LOCTEXT("StartupBuildFailedNotification", "C# build failed at startup. The Editor is running with the last successfully built C# assemblies."));
 }
 
 bool UCSHotReloadSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -56,6 +92,11 @@ void UCSHotReloadSubsystem::Deinitialize()
 {
 	Super::Deinitialize();
 	FTSTicker::GetCoreTicker().RemoveTicker(HotReloadTickDelegate);
+
+	if (IMainFrameModule* MainFrameModule = FModuleManager::GetModulePtr<IMainFrameModule>("MainFrame"))
+	{
+		MainFrameModule->OnMainFrameCreationFinished().RemoveAll(this);
+	}
 }
 
 void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
@@ -77,7 +118,7 @@ bool UCSHotReloadSubsystem::HasPendingHotReloadChanges() const
 	bool bHasPendingChanges = false;
 	for (const UCSManagedAssembly* Assembly : PendingModifiedAssemblies)
 	{
-		if (FCSAssemblyUtilities::IsRuntimeGlueAssembly(Assembly))
+		if (!Assembly || FCSAssemblyUtilities::IsRuntimeGlueAssembly(Assembly))
 		{
 			continue;
 		}
@@ -249,12 +290,17 @@ void UCSHotReloadSubsystem::ReportCompileFailure(const FString& ExceptionMessage
 
 void UCSHotReloadSubsystem::ShowCompileFailedNotification(int32 ErrorCount)
 {
+	ShowCompileFailedNotification(FText::Format(LOCTEXT("CompileFailedNotification", "C# compilation failed with {0} {0}|plural(one=error,other=errors)"), ErrorCount));
+}
+
+void UCSHotReloadSubsystem::ShowCompileFailedNotification(const FText& Text)
+{
 	if (TSharedPtr<SNotificationItem> OldNotification = CompileFailedNotification.Pin())
 	{
 		OldNotification->ExpireAndFadeout();
 	}
 
-	FNotificationInfo Info(FText::Format(LOCTEXT("CompileFailedNotification", "C# compilation failed with {0} {0}|plural(one=error,other=errors)"), ErrorCount));
+	FNotificationInfo Info(Text);
 	Info.Image = UnrealSharp::Icons::GetUnrealSharpIcon_HotReloadFailed().GetIcon();
 	Info.bFireAndForget = true;
 	Info.ExpireDuration = 6.0f;
@@ -449,6 +495,16 @@ void UCSHotReloadSubsystem::HandleScriptFileChanges(const TArray<FFileChangeData
 	}
 	
 	UCSManagedAssembly* ModifiedAssembly = UCSManager::Get().FindAssembly(ProjectName);
+	if (!ModifiedAssembly)
+	{
+		// The startup build failed for this project and no earlier build exists to load.
+		const FString Message = FString::Printf(TEXT("C# project '%s' has no loaded assembly because it has never been built successfully. Fix the compile errors and restart the Editor to build it."), *ProjectName.ToString());
+		UE_LOG(LogUnrealSharpEditor, Warning, TEXT("%s"), *Message);
+		FCSCompileLog::Get().AddMessage(ECSCompileLogSeverity::Error, TEXT("HotReload"), Message);
+		EndCompileSession();
+		return;
+	}
+
 	if (!PendingModifiedAssemblies.Contains(ModifiedAssembly))
 	{
 		PendingModifiedAssemblies.Add(ModifiedAssembly);

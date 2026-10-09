@@ -48,6 +48,7 @@ public class UnrealSharpEditor : ModuleRules
                 "ToolWidgets",
                 "ApplicationCore",
                 "LevelEditor",
+                "MainFrame",
                 "SourceCodeAccess",
                 "WorkspaceMenuStructure"
             }

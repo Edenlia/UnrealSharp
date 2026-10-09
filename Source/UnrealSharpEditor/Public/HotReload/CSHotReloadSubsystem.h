@@ -8,6 +8,8 @@
 #include "IDirectoryWatcher.h"
 #include "CSHotReloadSubsystem.generated.h"
 
+class SWindow;
+
 enum EHotReloadStatus : uint8
 {
 	// Not Hot Reloading
@@ -83,6 +85,11 @@ private:
 	void EndCompileSession() { bCompileSessionOpen = false; }
 	void ReportCompileFailure(const FString& ExceptionMessage, const FString& DialogTitle);
 	void ShowCompileFailedNotification(int32 ErrorCount);
+	void ShowCompileFailedNotification(const FText& Text);
+
+	// The startup build failed but the Editor kept loading; surface it once the main frame exists.
+	void OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog);
+	void NotifyStartupBuildFailed();
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UCSManagedAssembly>> PendingModifiedAssemblies;
