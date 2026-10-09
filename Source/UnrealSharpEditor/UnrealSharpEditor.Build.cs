@@ -45,7 +45,11 @@ public class UnrealSharpEditor : ModuleRules
                 "PlacementMode",
                 "DeveloperToolSettings",
                 "UMG",
-                "ToolWidgets"
+                "ToolWidgets",
+                "ApplicationCore",
+                "LevelEditor",
+                "SourceCodeAccess",
+                "WorkspaceMenuStructure"
             }
         );
 

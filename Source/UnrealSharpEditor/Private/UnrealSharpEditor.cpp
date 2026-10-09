@@ -5,6 +5,7 @@
 #include "CSEditorCommands.h"
 #include "CSInstallationUtilities.h"
 #include "CSStyle.h"
+#include "CompileLog/CSCompileLogTab.h"
 #include "DesktopPlatformModule.h"
 #include "IPluginBrowser.h"
 #include "ISettingsModule.h"
@@ -70,6 +71,7 @@ void FUnrealSharpEditorModule::StartupModule()
 	RegisterCommands();
 	RegisterToolbar();
     RegisterPluginTemplates();
+	UnrealSharp::CompileLog::RegisterTab();
 	
 	UCSManager::Get().AddOrExecuteOnManagerInitialized(FCSManagerInitializedEvent::FDelegate::CreateLambda([this](UCSManager& Manager)
 	{
@@ -82,6 +84,7 @@ void FUnrealSharpEditorModule::ShutdownModule()
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
     UnregisterPluginTemplates();
+	UnrealSharp::CompileLog::UnregisterTab();
 }
 
 void FUnrealSharpEditorModule::InitializeManagedEditorCallbacks(FCSManagedEditorCallbacks Callbacks)
@@ -588,6 +591,11 @@ void FUnrealSharpEditorModule::AppendBuildMenu(const FCSEditorCommands& CSComman
 	MenuBuilder.AddMenuEntry(CSCommands.HotReload, NAME_None, TAttribute<FText>(), TAttribute<FText>(),
 							 FSlateIcon(FAppStyle::Get().GetStyleSetName(), "LevelEditor.Recompile"));
 
+	MenuBuilder.AddMenuEntry(LOCTEXT("OpenCompileLog", "Open C# Compile Log"),
+							 LOCTEXT("OpenCompileLogTooltip", "Show C# compiler errors and warnings"),
+							 FSlateIcon(FAppStyle::Get().GetStyleSetName(), "Log.TabIcon"),
+							 FUIAction(FExecuteAction::CreateStatic(&UnrealSharp::CompileLog::OpenTab)));
+
 	MenuBuilder.EndSection();
 }
 
@@ -674,6 +682,11 @@ void FUnrealSharpEditorModule::RegisterToolbar()
 		{
 			if (UCSHotReloadSubsystem* HotReloadSubsystem = UCSHotReloadSubsystem::Get())
 			{
+				if (HotReloadSubsystem->HasCompileErrors())
+				{
+					return UnrealSharp::Icons::GetUnrealSharpIcon_HotReloadFailed();
+				}
+
 				if (HotReloadSubsystem->HasPendingHotReloadChanges())
 				{
 					return UnrealSharp::Icons::GetUnrealSharpIcon_Modified();

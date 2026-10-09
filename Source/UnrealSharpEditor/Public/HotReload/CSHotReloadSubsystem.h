@@ -41,6 +41,8 @@ public:
 	}
 
 	UNREALSHARPEDITOR_API bool IsHotReloading() const { return CurrentHotReloadStatus == Active; }
+	// True while the last compile failed or any file/project still has unresolved compile errors.
+	UNREALSHARPEDITOR_API bool HasCompileErrors() const;
 	UNREALSHARPEDITOR_API bool HasPendingHotReloadChanges() const;
 	
 	UNREALSHARPEDITOR_API void PerformHotReload();
@@ -76,6 +78,12 @@ private:
 	void OnStopPlayingPIE(bool IsSimulating);
 	bool Tick(float DeltaTime);
 
+	// One compile session spans the parse stage of a save and the following hot reload.
+	void BeginCompileSession();
+	void EndCompileSession() { bCompileSessionOpen = false; }
+	void ReportCompileFailure(const FString& ExceptionMessage, const FString& DialogTitle);
+	void ShowCompileFailedNotification(int32 ErrorCount);
+
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UCSManagedAssembly>> PendingModifiedAssemblies;
 
@@ -83,6 +91,8 @@ private:
 	FTSTicker::FDelegateHandle HotReloadTickDelegate;
 
 	TSharedPtr<SNotificationItem> PauseNotification;
+	TWeakPtr<SNotificationItem> CompileFailedNotification;
+	bool bCompileSessionOpen = false;
 
 	FUnrealSharpEditorModule* UnrealSharpEditorModule = nullptr;
 

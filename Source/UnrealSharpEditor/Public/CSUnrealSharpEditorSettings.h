@@ -26,6 +26,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, config, Category = "UnrealSharp | Hot Reload")
 	TEnumAsByte<EAutomaticHotReloadMethod> AutomaticHotReloading = OnScriptSave;
 
+	// Show a modal dialog when C# Hot Reload fails to compile. When disabled, errors go to the C# Compile Log with a non-blocking notification.
+	UPROPERTY(EditDefaultsOnly, config, Category = "UnrealSharp | Hot Reload")
+	bool bShowCompileErrorDialog = false;
+
 	// Should we suffix generated types' DisplayName with "TypeName (C#)"?
 	// Needs restart to take effect.
 	UPROPERTY(EditDefaultsOnly, config, Category = "UnrealSharp | Type Generation")
