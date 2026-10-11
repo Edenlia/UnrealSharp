@@ -102,7 +102,7 @@ public class FunctionExporter
         Function = function;
     }
     
-    string GetRefQualifier(UhtProperty parameter)
+    public static string GetRefQualifier(UhtProperty parameter)
     {
         if (parameter.HasAllFlags(EPropertyFlags.ConstParm))
         {

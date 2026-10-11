@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using EpicGames.Core;
 using EpicGames.UHT.Types;
+using UnrealSharpManagedGlue.Exporters;
 using UnrealSharpManagedGlue.PropertyTranslators;
 
 namespace UnrealSharpManagedGlue.Utilities;
@@ -171,6 +174,23 @@ public static class NameMapper
     
     public static string GetFunctionName(this UhtFunction function)
     {
+        // An override must use the interface's managed name, even when its class metadata
+        // differs or the interface's DisplayName would otherwise be treated as a collision.
+        if (function.Outer is UhtClass classOwner && classOwner.EngineType == UhtEngineType.Class)
+        {
+            for (UhtClass? currentClass = classOwner; currentClass != null; currentClass = currentClass.SuperClass)
+            {
+                foreach (UhtClass declaration in currentClass.GetInterfaces())
+                {
+                    UhtFunction? interfaceFunction = declaration.GetInterfaceAlternateClass().FindFunctionByName(function.SourceName);
+                    if (interfaceFunction != null && interfaceFunction.CanExportFunction() && interfaceFunction.HasSameSignature(function))
+                    {
+                        return interfaceFunction.GetFunctionName();
+                    }
+                }
+            }
+        }
+
         string functionName = function.GetScriptName();
 
         if (function.HasAnyFlags(EFunctionFlags.Delegate | EFunctionFlags.MulticastDelegate))
@@ -239,11 +259,94 @@ public static class NameMapper
 
             if (function != null)
             {
-                isConflicting = type is not UhtFunction typeAsFunction || function.HasSameSignature(typeAsFunction);
+                // C# cannot overload methods by return type alone. A BP_ wrapper may have
+                // the same parameters as an interface method but a different return value.
+                isConflicting = type is not UhtFunction typeAsFunction || HasSameManagedParameters(function, typeAsFunction);
             }
         }
 
         return isConflicting ? type.EngineName : scriptName;
+    }
+
+    static bool HasSameManagedParameters(UhtFunction function, UhtFunction otherFunction)
+    {
+        static List<string> GetGenericParameters(UhtFunction candidate)
+        {
+            List<string> genericParameters = new();
+            if (candidate.HasGenericTypeSupport())
+            {
+                genericParameters.Add("DOT");
+            }
+            if (candidate.HasCustomStructParamSupport())
+            {
+                genericParameters.AddRange(candidate.GetCustomStructParamTypes());
+            }
+            return genericParameters;
+        }
+
+        List<string> genericParameters = GetGenericParameters(function);
+        List<string> otherGenericParameters = GetGenericParameters(otherFunction);
+        if (genericParameters.Count != otherGenericParameters.Count)
+        {
+            return false;
+        }
+
+        static IEnumerable<UhtProperty> GetParameters(UhtFunction candidate) => candidate.Properties.Where(property =>
+            !property.HasAnyFlags(EPropertyFlags.ReturnParm) && (property.GetTranslator()?.ShouldBeDeclaredAsParameter ?? true));
+
+        UhtProperty[] parameters = GetParameters(function).ToArray();
+        UhtProperty[] otherParameters = GetParameters(otherFunction).ToArray();
+        if (parameters.Length != otherParameters.Length)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < parameters.Length; index++)
+        {
+            UhtProperty parameter = parameters[index];
+            UhtProperty otherParameter = otherParameters[index];
+            PropertyTranslator? translator = parameter.GetTranslator();
+            PropertyTranslator? otherTranslator = otherParameter.GetTranslator();
+            if (translator == null || otherTranslator == null)
+            {
+                return false;
+            }
+            bool isByReference = FunctionExporter.GetRefQualifier(parameter).Length != 0;
+            bool otherIsByReference = FunctionExporter.GetRefQualifier(otherParameter).Length != 0;
+            if (isByReference != otherIsByReference ||
+                GetSignatureType(parameter, translator, genericParameters) != GetSignatureType(otherParameter, otherTranslator, otherGenericParameters))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static string GetSignatureType(UhtProperty property, PropertyTranslator translator, List<string> genericParameters)
+    {
+        string managedType = translator.GetManagedType(property);
+        // These translators append reference annotations. Value-type Nullable<T> and
+        // nullable value types from custom translators must remain distinct signatures.
+        if (translator is ObjectPropertyTranslator or InterfacePropertyTranslator)
+        {
+            managedType = managedType.TrimEnd('?');
+        }
+        else if (translator is ContainerPropertyTranslator && property is UhtContainerBaseProperty container)
+        {
+            foreach (UhtProperty innerProperty in container.GetInnerProperties())
+            {
+                PropertyTranslator innerTranslator = innerProperty.GetTranslator()!;
+                managedType = managedType.Replace(innerTranslator.GetManagedType(innerProperty),
+                    GetSignatureType(innerProperty, innerTranslator, new()), StringComparison.Ordinal);
+            }
+        }
+        // Generic parameter names do not affect signatures; their ordinal positions do.
+        for (int index = 0; index < genericParameters.Count; ++index)
+        {
+            managedType = Regex.Replace(managedType, $@"\b{genericParameters[index]}\b", $"__Generic{index}");
+        }
+        return managedType;
     }
 
     static UhtFunction? FindInterfaceFunction(UhtClass classObj, string scriptName)
@@ -255,7 +358,9 @@ public static class NameMapper
                 continue;
             }
 
-            UhtFunction? function = interfaceClass.FindFunctionByName(scriptName, (uhtFunction, s) => uhtFunction.GetFunctionName() == s);
+            UhtFunction? function = interfaceClass.Functions.FirstOrDefault(candidate => candidate.CanExportFunction()
+                && (string.Equals(candidate.SourceName, scriptName, StringComparison.InvariantCultureIgnoreCase)
+                    || candidate.GetFunctionName() == scriptName));
 
             if (function != null)
             {

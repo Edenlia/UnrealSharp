@@ -23,8 +23,9 @@ public static class ClassExporter
         Dictionary<string, GetterSetterPair> getSetOverrides = new();
         List<ExtensionMethod> exportedExtensionMethods = new();
         List<UhtFunction> autocastFunctions = new();
+        List<UhtFunction> explicitInterfaceFunctions = new();
         classObj.GetExportedFunctions(exportedFunctions, exportedOverrides, exportedGetterSetters, getSetOverrides,
-            exportedExtensionMethods, autocastFunctions);
+            exportedExtensionMethods, autocastFunctions, explicitInterfaceFunctions);
 
         List<UhtProperty> exportedProperties = new List<UhtProperty>();
         Dictionary<UhtProperty, GetterSetterPair> getSetBackedProperties = new();
@@ -75,6 +76,11 @@ public static class ClassExporter
             ExportClassFunctions(stringBuilder, exportedFunctions, exportedFunctionNames);
             ExportGetSetOverrides(stringBuilder, getSetOverrides, exportedPropertyNames, exportedFunctionNames);
             ExportOverrides(stringBuilder, exportedOverrides, exportedFunctionNames);
+            foreach (UhtFunction function in explicitInterfaceFunctions)
+            {
+                ExplicitInterfaceFunctionExporter exporter = new(function);
+                exporter.Export(stringBuilder);
+            }
             stringBuilder.AppendLine();
         }
 
@@ -95,7 +101,7 @@ public static class ClassExporter
         {
             PropertyTranslator translator = property.GetTranslator()!;
             translator.ExportProperty(generatorStringBuilder, property);
-            exportedPropertyNames.Add(property.SourceName);
+            exportedPropertyNames.Add(property.GetPropertyName());
         }
     }
 

@@ -89,21 +89,22 @@ public static class ClassUtilities
         Dictionary<string, GetterSetterPair> getterSetterPairs, 
         Dictionary<string, GetterSetterPair> getSetOverrides, 
         List<ExtensionMethod> extensionMethods, 
-        List<UhtFunction> autocastFunctions)
+        List<UhtFunction> autocastFunctions,
+        List<UhtFunction>? explicitInterfaceFunctions = null)
     {
         List<UhtFunction> exportedFunctions = new();
 
-        bool HasFunction(List<UhtFunction> functionsToCheck, UhtFunction functionToTest)
+        UhtFunction? FindFunction(List<UhtFunction> functionsToCheck, UhtFunction functionToTest)
         {
             foreach (UhtFunction function in functionsToCheck)
             {
                 if (function.SourceName == functionToTest.SourceName || function.CppImplName == functionToTest.CppImplName)
                 {
-                    return true;
+                    return function;
                 }
             }
 
-            return false;
+            return null;
         }
 
         foreach (UhtFunction function in classObj.Functions)
@@ -154,8 +155,23 @@ public static class ClassUtilities
             UhtClass interfaceClass = declaration.GetInterfaceAlternateClass();
             foreach (UhtFunction function in interfaceClass.Functions)
             {
-                if (function.MakeGetterSetterPair(getSetOverrides) || HasFunction(exportedFunctions, function) || !function.CanExportFunction())
+                if (!function.CanExportFunction() || function.MakeGetterSetterPair(getSetOverrides, classObj))
                 {
+                    continue;
+                }
+
+                UhtFunction? implementation = FindFunction(exportedFunctions, function);
+                if (implementation != null)
+                {
+                    // A reflected Foo_Implementation is a different UFunction from the
+                    // interface Blueprint event Foo. Keep its public binding, but forward
+                    // the C# interface through the event wrapper to retain Blueprint dispatch.
+                    if (function.IsBlueprintNativeEvent() && implementation.SourceName == function.CppImplName
+                        && implementation.SourceName != function.SourceName
+                        && implementation.HasSameSignature(function))
+                    {
+                        explicitInterfaceFunctions?.Add(function);
+                    }
                     continue;
                 }
 

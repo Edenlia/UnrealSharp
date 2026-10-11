@@ -100,7 +100,21 @@ public static class PackageExporter
 
         if (exportAction != null)
         {
-            TaskManager.StartTask(_ => exportAction());
+            TaskManager.StartTask(_ =>
+            {
+                try
+                {
+                    exportAction();
+                }
+                catch (Exception exception)
+                {
+                    // UHT's task handler otherwise reduces exporter failures to a message
+                    // without the type or stack trace needed to diagnose the generator.
+                    ConsoleUtilities.Log($"Failed to export {type.GetNamespace()}.{type.SourceName} ({type.HeaderFile.FilePath}):");
+                    ConsoleUtilities.Log(exception.ToString());
+                    throw;
+                }
+            });
         }
     }
 
