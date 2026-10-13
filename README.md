@@ -48,6 +48,50 @@ Visit the website's [Get Started](https://www.unrealsharp.com/getting-started/qu
 
 If you want to contribute to the documentation, check out the [docs repository](https://github.com/UnrealSharp/unrealsharp.github.io)!
 
+## Source checkouts and packaged plugins
+
+The plugin descriptor's `Installed` field distinguishes a source checkout (`false`)
+from an official `BuildPlugin` distribution (`true`). This is separate from whether
+the Unreal Engine itself is an Installed Build and where the plugin is located.
+
+BuildPlugin distributes precompiled native modules, Automation commands, the UHT
+exporter and Roslyn tools. It also includes the managed runtime source and matching
+Editor/Game binding source, with a content identity for each target. Runtime DLLs
+are built on first use rather than shipped. The .NET 10 SDK is required, including
+access to the NuGet dependencies on the first restore.
+
+For installed plugins, UHT and native Editor initialization ensure that the managed
+Editor runtime is available under `~/.unrealsharp/Runtime/<identity>/Editor/Development`.
+This runtime-only build consumes the packaged Roslyn DLLs and keeps all build outputs
+out of the installed plugin directory. A completion manifest validates cached files;
+concurrent projects using the same runtime wait on a build lock. Later launches reuse
+the cache. Source changes in a new distribution produce a different identity.
+
+PackageProject publishes a self-contained Game runtime into the same user cache,
+separated by configuration and runtime identifier, then compiles project bindings
+and user C# against those Game assemblies. The finished game carries its managed
+runtime and does not require a .NET SDK. Source plugins retain their normal managed
+build and publish paths.
+
+With a source engine, source plugins can live in the project's `Plugins` directory
+or the engine's `Engine/Plugins` directory. Automation commands use the normal
+project or engine UAT build records, which track source dependencies. UBT also tracks
+the exporter's project reference to the automation project. Build native changes
+through the project's normal Unreal build entry point.
+
+Install a complete packaged plugin into the matching Installed Engine's
+`Engine/Plugins/Marketplace/UnrealSharp` directory. This path consumes the packaged
+automation module, UHT exporter and Roslyn tools without recompiling them. User C#,
+project bindings and the runtime-only solution still compile as described above.
+Missing build tools, binding identities or incompatible engine bindings require a
+complete matching package; they are not repaired by rebuilding the installed tools.
+
+BuildPlugin marks the output descriptor as installed after compilation. Source
+builds therefore prepare the precompiled automation record for packaging, but do
+not use that dependency-free record for source development. Installed plugins
+validate the supplied record without rewriting it. `Installed` alone does not
+make a binary package compatible with an arbitrary source-engine build.
+
 ## Code example
 
 A networked, interactable resource pickup written entirely in C#:

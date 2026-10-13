@@ -10,6 +10,7 @@ namespace UnrealSharp::Build
 	UNREALSHARPUTILITIES_API void InvokeUnrealSharpAutomation_Async(const FString& BuildAction, const FText& BuildActionDisplayName, const TMap<FString, FString>* ActionArgs = nullptr, const IUATHelperModule::UatTaskResultCallack& ResultCallback = IUATHelperModule::UatTaskResultCallack());
 	
 	UNREALSHARPUTILITIES_API bool BuildUserSolution(const FCSCommandError& OnError = {});
+	UNREALSHARPUTILITIES_API bool EnsurePluginRuntime(const FCSCommandError& OnError = {});
 	
 	void BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs);
 	const FSlateBrush* GetBuildActionIcon();

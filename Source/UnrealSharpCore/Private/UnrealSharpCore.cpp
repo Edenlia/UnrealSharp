@@ -4,6 +4,9 @@
 #include "CSDotnetUtilties.h"
 #include "Properties/CSPropertyGeneratorManager.h"
 #include "Modules/ModuleManager.h"
+#if WITH_EDITOR
+#include "CSBuildUtilties.h"
+#endif
 
 #if defined(__APPLE__)
 #pragma clang diagnostic push
@@ -21,6 +24,11 @@ DEFINE_LOG_CATEGORY(LogUnrealSharp);
 void FUnrealSharpCoreModule::StartupModule()
 {
 #if WITH_EDITOR
+	if (!UnrealSharp::Build::EnsurePluginRuntime())
+	{
+		UE_LOG(LogUnrealSharp, Error, TEXT("Failed to build the UnrealSharp managed runtime. Check the .NET SDK installation and build log."));
+		return;
+	}
 	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() || !UnrealSharp::DotNetUtilities::BuildUserSolution())
 	{
 		StartupModule();

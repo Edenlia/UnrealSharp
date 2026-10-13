@@ -3,6 +3,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
     <UnrealSharpPluginDir>$(MSBuildThisFileDirectory)</UnrealSharpPluginDir>
+    <UnrealSharpIsInstalled>$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('$(UnrealSharpPluginDir)UnrealSharp.uplugin')), '&quot;Installed&quot;\s*:\s*true'))</UnrealSharpIsInstalled>
+    <UnrealSharpRuntimeIdFile>$(UnrealSharpPluginDir)Intermediate/UnrealSharp/UHT/Editor/Runtime.id</UnrealSharpRuntimeIdFile>
+    <UnrealSharpRuntimeId Condition="'$(UnrealSharpIsInstalled)' == 'true' And Exists('$(UnrealSharpRuntimeIdFile)')">$([System.IO.File]::ReadAllText('$(UnrealSharpRuntimeIdFile)').Trim())</UnrealSharpRuntimeId>
+    <UnrealSharpRuntimeDirectory Condition="'$(UnrealSharpRuntimeDirectory)' == '' And '$(UnrealSharpIsInstalled)' == 'true'">$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))/.unrealsharp/Runtime/$(UnrealSharpRuntimeId)/Editor/Development/bin/$(TargetFramework)</UnrealSharpRuntimeDirectory>
+    <UnrealSharpRuntimeDirectory Condition="'$(UnrealSharpRuntimeDirectory)' == ''">$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)</UnrealSharpRuntimeDirectory>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <LangVersion>latest</LangVersion>
@@ -14,23 +19,23 @@
   <ItemGroup>
   
     <Reference Include="UnrealSharp">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.dll</HintPath>
+      <HintPath>$(UnrealSharpRuntimeDirectory)\UnrealSharp.dll</HintPath>
     </Reference>
 	
 	<Reference Include="UnrealSharp.Binds">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Binds.dll</HintPath>
+      <HintPath>$(UnrealSharpRuntimeDirectory)\UnrealSharp.Binds.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Core">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Core.dll</HintPath>
+      <HintPath>$(UnrealSharpRuntimeDirectory)\UnrealSharp.Core.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Log">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Log.dll</HintPath>
+      <HintPath>$(UnrealSharpRuntimeDirectory)\UnrealSharp.Log.dll</HintPath>
     </Reference>
 
     <Reference Include="UnrealSharp.Plugins">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Plugins.dll</HintPath>
+      <HintPath>$(UnrealSharpRuntimeDirectory)\UnrealSharp.Plugins.dll</HintPath>
     </Reference>
     
   </ItemGroup>

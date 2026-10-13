@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using EpicGames.Core;
 using UnrealBuildTool;
+using UnrealSharp.Automation.Utilities;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
@@ -51,14 +52,27 @@ public static class BuildUtilities
 
     public static void BuildBindings()
     {
-        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor || !FileExporter.HasModifiedEngineGlue)
+        if (!GeneratorStatics.IsInstalledPlugin)
+        {
+            PluginRuntimeUtilities.StageIdentity(GeneratorStatics.PluginDirectory, GeneratorStatics.TargetType);
+        }
+        else if (FileExporter.HasModifiedEngineGlue)
+        {
+            throw new BuildException("Installed UnrealSharp engine bindings differ from the packaged bindings. Install a matching plugin package, or use an UnrealSharp source checkout to rebuild them.");
+        }
+        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor)
         {
             return;
         }
 
         if (GeneratorStatics.IsInstalledPlugin)
         {
-            throw new BuildException("Installed UnrealSharp engine bindings differ from the packaged bindings. Install a matching plugin package, or use an UnrealSharp source checkout to rebuild them.");
+            PluginRuntimeUtilities.EnsureEditorRuntime(GeneratorStatics.PluginDirectory);
+            return;
+        }
+        if (!FileExporter.HasModifiedEngineGlue)
+        {
+            return;
         }
         
         ConsoleUtilities.Log("Engine glue has been modified since the last build. Rebuilding UnrealSharp bindings...");

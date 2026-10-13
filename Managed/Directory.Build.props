@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
     <OutputPath Condition="'$(UseDefaultOutputPath)' != 'true'">$(SolutionDir)..\..\Binaries\Managed\</OutputPath>
+    <BaseIntermediateOutputPath Condition="'$(UnrealSharpBuildRoot)' != ''">$(UnrealSharpBuildRoot)/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <OutputPath Condition="'$(UnrealSharpBuildRoot)' != ''">$(UnrealSharpBuildRoot)/bin/</OutputPath>
   </PropertyGroup>
 </Project>

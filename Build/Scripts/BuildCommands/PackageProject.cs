@@ -20,8 +20,6 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
-    private const string ManagedFolderName = "Managed";
-    private const string BindingsProjectFolder = "UnrealSharp";
     private const int CleanupMaxAttempts = 5;
     private const int CleanupRetryDelayMs = 1000;
 
@@ -51,9 +49,16 @@ public class PackageProject : BuildCommand
         CleanBuildArtifacts(PublishFolder);
 
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
-        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        IList<string> Arguments = PluginRuntimeUtilities.GetPublishArguments(options.TargetType,
+            options.BuildConfiguration, RuntimeIdentifier, PublishFolder);
 
-        BuildBindingsSolution(Arguments, options.BuildConfiguration);
+        string PluginDirectory = this.GetUnrealSharpRootFolder();
+        PluginRuntimeUtilities.Publish(PluginDirectory, options.TargetType,
+            options.BuildConfiguration, RuntimeIdentifier, PublishFolder);
+
+        // Compile project bindings and user code against the selected game runtime.
+        // Otherwise CopyLocal can replace the game assemblies with editor assemblies.
+        Arguments.Add($"-p:UnrealSharpRuntimeDirectory={PublishFolder}");
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
         
@@ -155,29 +160,6 @@ public class PackageProject : BuildCommand
                 System.Threading.Thread.Sleep(CleanupRetryDelayMs);
             }
         }
-    }
-
-    private static IList<string> BuildBaseArguments(string runtimeIdentifier, PackagingOptions options, string publishFolder)
-    {
-        return
-        [
-            "--runtime", runtimeIdentifier,
-
-            "-p:UseDefaultOutputPath=true",
-            
-            $"-p:PublishSelfContained={(options.NativeAot ? "false" : "true")}",
-
-            $"-p:UETargetType={options.TargetType}",
-            $"-p:UEBuildConfig={options.BuildConfiguration}",
-
-            $"-p:PublishDir=\"{publishFolder}\"",
-        ];
-    }
-
-    private void BuildBindingsSolution(IList<string> arguments, UnrealTargetConfiguration buildConfig)
-    {
-        string BindingsPath = Path.Combine(this.GetUnrealSharpRootFolder(), ManagedFolderName, BindingsProjectFolder);
-        BuildCommands.BuildSolution.RunBuild(BindingsPath, buildConfig, publish: true, arguments);
     }
 
     private void BuildUserSolution(string publishFolder, IList<string> buildArguments, PackagingOptions options)

@@ -1,0 +1,11 @@
+<Project>
+  <!-- Runtime-only builds consume the packaged Roslyn tools, including on first use. -->
+  <ItemGroup Condition="'$(UsePrecompiledUnrealSharpTools)' == 'true'">
+    <Analyzer Include="@(ProjectReference->WithMetadataValue('OutputItemType', 'Analyzer')->'$(MSBuildThisFileDirectory)../Binaries/Managed/netstandard2.0/%(Filename).dll')" />
+    <ProjectReference Remove="@(ProjectReference->WithMetadataValue('OutputItemType', 'Analyzer'))" />
+    <Reference Include="UnrealSharp.SourceGenerator.Utilities" Condition="'$(MSBuildProjectName)' == 'UnrealSharp.Editor'">
+      <HintPath>$(MSBuildThisFileDirectory)../Binaries/Managed/netstandard2.0/UnrealSharp.SourceGenerator.Utilities.dll</HintPath>
+    </Reference>
+    <ProjectReference Remove="..\UnrealSharp.SourceGenerator.Utilities\UnrealSharp.SourceGenerator.Utilities.csproj" />
+  </ItemGroup>
+</Project>

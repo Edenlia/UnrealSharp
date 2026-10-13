@@ -79,6 +79,12 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 	return InvokeUnrealSharpAutomation(BuildAction::BuildUserSolution, &Arguments, OnError);
 }
 
+bool UnrealSharp::Build::EnsurePluginRuntime(const FCSCommandError& OnError)
+{
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME);
+	return !Plugin->GetDescriptor().bInstalled || InvokeUnrealSharpAutomation(BuildAction::BuildPluginRuntime, nullptr, OnError);
+}
+
 void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs)
 {
 	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME);

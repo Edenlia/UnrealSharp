@@ -4,9 +4,13 @@
 #include "CSDotnetUtilties.h"
 #include "CSInstallationUtilities.h"
 #include "CSProjectUtilities.h"
+#include "UnrealSharpUtilities.h"
 #include "Interfaces/IPluginManager.h"
 #include "Logging/StructuredLog.h"
 #include "Misc/Paths.h"
+#include "Misc/FileHelper.h"
+#include "HAL/PlatformProcess.h"
+#include "PluginDescriptor.h"
 
 FString UnrealSharp::Paths::GetPluginDirectory()
 {
@@ -25,6 +29,22 @@ FString UnrealSharp::Paths::GetPluginAssembliesPath()
     {
         return GetUserAssemblyDirectory();
     }
+
+#if WITH_EDITOR
+    if (IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME)->GetDescriptor().bInstalled)
+    {
+        FString RuntimeId;
+        const FString IdentityPath = GetPluginDirectory() / TEXT("Intermediate/UnrealSharp/UHT/Editor/Runtime.id");
+        if (!FFileHelper::LoadFileToString(RuntimeId, *IdentityPath))
+        {
+            UE_LOGFMT(LogUnrealSharpUtilities, Error, "Installed UnrealSharp runtime identity is missing: {0}", IdentityPath);
+            return FString();
+        }
+        RuntimeId.TrimStartAndEndInline();
+        return FPaths::Combine(FPlatformProcess::UserHomeDir(), TEXT(".unrealsharp/Runtime"), RuntimeId,
+            TEXT("Editor/Development/bin"), TEXT(DOTNET_DISPLAY_NAME));
+    }
+#endif
     
     return FPaths::Combine(GetPluginDirectory(), DotNetUtilities::GetManagedBinaries());
 }
