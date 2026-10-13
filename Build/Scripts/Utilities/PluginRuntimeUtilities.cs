@@ -15,6 +15,27 @@ public static class PluginRuntimeUtilities
 {
     private const string ManifestName = "UnrealSharp.Runtime.json";
 
+    private static string GetEngineModulesPath(string pluginDirectory, TargetType targetType) =>
+        Path.Combine(PathUtilities.GetUhtGeneratedOutputPath(pluginDirectory, targetType), "EngineModules.json");
+
+    public static void StageEngineModules(string pluginDirectory, TargetType targetType, IEnumerable<string> modules)
+    {
+        string path = GetEngineModulesPath(pluginDirectory, targetType);
+        string contents = JsonSerializer.Serialize(modules.OrderBy(module => module, StringComparer.Ordinal));
+        if (!File.Exists(path) || File.ReadAllText(path) != contents)
+        {
+            File.WriteAllText(path, contents);
+        }
+    }
+
+    public static HashSet<string> GetPackagedEngineModules(string pluginDirectory, TargetType targetType)
+    {
+        string path = GetEngineModulesPath(pluginDirectory, targetType);
+        string[] modules = JsonSerializer.Deserialize<string[]>(File.ReadAllText(path))
+            ?? throw new InvalidDataException($"Invalid packaged engine module list: {path}");
+        return new HashSet<string>(modules, StringComparer.Ordinal);
+    }
+
     public static bool IsInstalled(string pluginDirectory) =>
         PluginDescriptor.FromFile(new FileReference(Path.Combine(pluginDirectory, "UnrealSharp.uplugin"))).bInstalled;
 
@@ -31,7 +52,8 @@ public static class PluginRuntimeUtilities
             .Where(file => Path.GetExtension(file) is ".cs" or ".csproj" or ".props" or ".targets" or ".sln" or ".json")
             .Concat(Directory.EnumerateFiles(pluginDirectory, "*.props"))
             .Concat(Directory.EnumerateFiles(PathUtilities.GetUhtGeneratedOutputPath(pluginDirectory, targetType), "*.cs", SearchOption.AllDirectories))
-            .Append(Path.Combine(PathUtilities.GetUhtGeneratedOutputPath(pluginDirectory, targetType), "UE5Rules.Defines.props"));
+            .Append(Path.Combine(PathUtilities.GetUhtGeneratedOutputPath(pluginDirectory, targetType), "UE5Rules.Defines.props"))
+            .Append(GetEngineModulesPath(pluginDirectory, targetType));
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (string file in files.OrderBy(file => Path.GetRelativePath(pluginDirectory, file), StringComparer.Ordinal))

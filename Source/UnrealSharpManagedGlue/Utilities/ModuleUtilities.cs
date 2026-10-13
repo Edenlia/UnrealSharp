@@ -94,11 +94,20 @@ public static class ModuleUtilities
 	private static void Build()
 	{
 		Dictionary<UhtPackage, List<UhtPackage>> referencedPackages = DiscoverModules();
+		HashSet<string>? packagedModules = GeneratorStatics.IsInstalledPlugin
+			? PluginRuntimeUtilities.GetPackagedEngineModules(GeneratorStatics.PluginDirectory, GeneratorStatics.TargetType)
+			: null;
 		
 		foreach (ModuleInfo module in PackageToModuleInfo.Values)
 		{
 			ModuleExtensions.TryGetValue(module.ModuleName, out List<ModuleInfo>? extensions);
 			module.ResolveExtensions(extensions);
+			// BuildPlugin's host may not enable every engine module used by this project.
+			// Compile those additional bindings with the project, keeping the package intact.
+			if (packagedModules != null && module.IsEngineModule && !packagedModules.Contains(module.ModuleName))
+			{
+				module.MarkEmitsToProjectDirectory();
+			}
 		}
 		
 		foreach ((UhtPackage package, List<UhtPackage> references) in referencedPackages)

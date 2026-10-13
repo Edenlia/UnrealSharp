@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -54,6 +55,8 @@ public static class BuildUtilities
     {
         if (!GeneratorStatics.IsInstalledPlugin)
         {
+            PluginRuntimeUtilities.StageEngineModules(GeneratorStatics.PluginDirectory, GeneratorStatics.TargetType,
+                ModuleUtilities.PackageToModuleInfo.Values.Where(module => module.IsPartOfEngine).Select(module => module.ModuleName));
             PluginRuntimeUtilities.StageIdentity(GeneratorStatics.PluginDirectory, GeneratorStatics.TargetType);
         }
         else if (FileExporter.HasModifiedEngineGlue)

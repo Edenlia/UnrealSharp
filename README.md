@@ -85,6 +85,9 @@ automation module, UHT exporter and Roslyn tools without recompiling them. User 
 project bindings and the runtime-only solution still compile as described above.
 Missing build tools, binding identities or incompatible engine bindings require a
 complete matching package; they are not repaired by rebuilding the installed tools.
+The package records which engine modules its runtime contains. Additional engine
+modules enabled by a consuming project generate bindings under that project's
+Intermediate directory and compile with its project glue assemblies.
 
 BuildPlugin marks the output descriptor as installed after compilation. Source
 builds therefore prepare the precompiled automation record for packaging, but do
