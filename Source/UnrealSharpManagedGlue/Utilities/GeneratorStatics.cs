@@ -20,6 +20,7 @@ public static class GeneratorStatics
 	public static UhtClass BlueprintFunctionLibrary { get; private set; } = null!;
 
 	public static string PluginDirectory { get; private set; } = "";
+	public static bool IsInstalledPlugin { get; private set; }
 	public static string EngineDirectory => Factory.Session.EngineDirectory!;
 	
 	public static string ManagedPath { get; private set; } = "";
@@ -32,6 +33,7 @@ public static class GeneratorStatics
 		_factory = factory;
 		
 		PluginDirectory = ScriptGeneratorUtilities.TryGetPluginStringDefine("PLUGIN_PATH");
+		IsInstalledPlugin = PluginDescriptor.FromFile(new FileReference(Path.Combine(PluginDirectory, "UnrealSharp.uplugin"))).bInstalled;
 		UnrealSharpSettingsUtilities.InitializeConfigFile(Factory.Session.ProjectDirectory!, PluginDirectory);
 		
 		TargetType = (TargetType) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_TYPE");

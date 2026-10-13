@@ -8,7 +8,9 @@
 #include "CSUnrealSharpUtilitiesSettings.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/App.h"
 #include "Misc/MonitoredProcess.h"
+#include "PluginDescriptor.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "UnrealSharpBuildUtilities"
@@ -79,7 +81,8 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 
 void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs)
 {
-	const FString PluginFolder = FPaths::ConvertRelativePathToFull(IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME)->GetBaseDir());
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME);
+	const FString PluginFolder = FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir());
 	const FString ProjectFolder = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
 	const FString EngineFolder = FPaths::ConvertRelativePathToFull(FPaths::EngineDir());
 	const FString ProjectFile = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
@@ -94,9 +97,12 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	}
 	else if (FPaths::IsUnderDirectory(PluginFolder, EngineFolder))
 	{
-		// Installed engines do not compile engine automation projects. Discover the
-		// precompiled module through the build record shipped inside the plugin.
-		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *PluginFolder);
+		// Only installed engine distributions need the plugin-local precompiled record.
+		// Source engines use their normal record with complete source dependencies.
+		if (FApp::IsEngineInstalled() && Plugin->GetDescriptor().bInstalled)
+		{
+			OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *PluginFolder);
+		}
 	}
 	else
 	{

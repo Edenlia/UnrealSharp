@@ -15,16 +15,27 @@ public static class BuildUtilities
             return;
         }
 
-        // Installed engines do not compile engine automation projects. Keep the
-        // already-built module and a relocatable UAT build record inside the plugin.
+        // BuildPlugin sets Installed only after compilation. Prepare the distribution
+        // record during source builds, but never replace it while consuming a package.
         string pluginDirectory = GeneratorStatics.PluginDirectory;
         string projectPath = Path.Combine(pluginDirectory, "Build", "Scripts", "UnrealSharp.Automation.csproj");
         string assemblyPath = Path.Combine(pluginDirectory, "Binaries", "Managed", "Automation", "UnrealSharp.Automation.dll");
         string recordDirectory = Path.Combine(pluginDirectory, "Intermediate", "ScriptModules");
+        string recordPath = Path.Combine(recordDirectory, "UnrealSharp.Automation.json");
         if (!File.Exists(assemblyPath))
         {
             throw new FileNotFoundException("The precompiled UnrealSharp automation module was not staged by its build.", assemblyPath);
         }
+
+        if (GeneratorStatics.IsInstalledPlugin)
+        {
+            if (!File.Exists(recordPath))
+            {
+                throw new FileNotFoundException("The installed UnrealSharp package is missing its automation build record. Reinstall a complete package for this engine version.", recordPath);
+            }
+            return;
+        }
+
         Directory.CreateDirectory(recordDirectory);
 
         CsProjBuildRecord record = new()
@@ -34,7 +45,7 @@ public static class BuildUtilities
             TargetPath = Path.GetRelativePath(Path.GetDirectoryName(projectPath)!, assemblyPath),
             TargetBuildTime = File.GetLastWriteTime(assemblyPath)
         };
-        File.WriteAllText(Path.Combine(recordDirectory, "UnrealSharp.Automation.json"),
+        File.WriteAllText(recordPath,
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true }));
     }
 
@@ -43,6 +54,11 @@ public static class BuildUtilities
         if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor || !FileExporter.HasModifiedEngineGlue)
         {
             return;
+        }
+
+        if (GeneratorStatics.IsInstalledPlugin)
+        {
+            throw new BuildException("Installed UnrealSharp engine bindings differ from the packaged bindings. Install a matching plugin package, or use an UnrealSharp source checkout to rebuild them.");
         }
         
         ConsoleUtilities.Log("Engine glue has been modified since the last build. Rebuilding UnrealSharp bindings...");
