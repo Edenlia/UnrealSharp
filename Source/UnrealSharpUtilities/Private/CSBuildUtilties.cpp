@@ -137,9 +137,9 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	}
 	else if (FPaths::IsUnderDirectory(PluginFolder, EngineFolder))
 	{
-		// Only installed engine distributions need the plugin-local precompiled record.
-		// Source engines use their normal record with complete source dependencies.
-		if (FApp::IsEngineInstalled() && Plugin->GetDescriptor().bInstalled)
+		// Installed engines discover the packaged Automation record here. UE decides
+		// whether to compile; source engines use their normal dependency-tracking records.
+		if (FApp::IsEngineInstalled())
 		{
 			OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *PluginFolder);
 		}

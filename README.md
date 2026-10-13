@@ -84,19 +84,24 @@ through the project's normal Unreal build entry point.
 
 Install a complete packaged plugin into the matching Installed Engine's
 `Engine/Plugins/Marketplace/UnrealSharp` directory. This path consumes the packaged
-automation module, UHT exporter and Roslyn tools without recompiling them. User C#,
-project bindings and the runtime-only solution still compile as described above.
-Missing build tools, binding identities or incompatible engine bindings require a
-complete matching package; they are not repaired by rebuilding the installed tools.
+Automation module and UHT exporter through UE's normal discovery and build mechanisms.
+UnrealSharp does not use the plugin's `Installed` flag to prohibit rebuilding these
+two tools. UE's Installed Engine policy can still skip compilation and source-change
+checks for engine-level script modules; editing an installed tool does not guarantee
+an automatic rebuild. Use a source checkout for the normal tool-development workflow.
+Runtime builds consume the packaged Roslyn tools. User C#, project bindings and the
+runtime-only solution still compile as described above. Missing binding identities
+or incompatible engine bindings require a complete matching package.
 The package records which engine modules its runtime contains. Additional engine
 modules enabled by a consuming project generate bindings under that project's
 Intermediate directory and compile with its project glue assemblies.
 
 BuildPlugin marks the output descriptor as installed after compilation. Source
-builds therefore prepare the precompiled automation record for packaging, but do
-not use that dependency-free record for source development. Installed plugins
-validate the supplied record without rewriting it. `Installed` alone does not
-make a binary package compatible with an arbitrary source-engine build.
+builds therefore prepare a plugin-local Automation discovery record when it is
+missing. Existing records are left untouched, regardless of the plugin's `Installed`
+flag. Source development uses UE's normal project/engine records with complete
+dependencies, not this minimal distribution record. `Installed` alone does not make
+a binary package compatible with an arbitrary source-engine build.
 
 ## Code example
 

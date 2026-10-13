@@ -17,25 +17,21 @@ public static class BuildUtilities
             return;
         }
 
-        // BuildPlugin sets Installed only after compilation. Prepare the distribution
-        // record during source builds, but never replace it while consuming a package.
+        // Supply a discovery record for packaged Automation commands. Leave existing
+        // records and all compilation decisions to UE, including source dependency tracking.
         string pluginDirectory = GeneratorStatics.PluginDirectory;
         string projectPath = Path.Combine(pluginDirectory, "Build", "Scripts", "UnrealSharp.Automation.csproj");
         string assemblyPath = Path.Combine(pluginDirectory, "Binaries", "Managed", "Automation", "UnrealSharp.Automation.dll");
         string recordDirectory = Path.Combine(pluginDirectory, "Intermediate", "ScriptModules");
         string recordPath = Path.Combine(recordDirectory, "UnrealSharp.Automation.json");
-        if (!File.Exists(assemblyPath))
+        if (File.Exists(recordPath))
         {
-            throw new FileNotFoundException("The precompiled UnrealSharp automation module was not staged by its build.", assemblyPath);
+            return;
         }
 
-        if (GeneratorStatics.IsInstalledPlugin)
+        if (!File.Exists(assemblyPath))
         {
-            if (!File.Exists(recordPath))
-            {
-                throw new FileNotFoundException("The installed UnrealSharp package is missing its automation build record. Reinstall a complete package for this engine version.", recordPath);
-            }
-            return;
+            throw new FileNotFoundException("The UnrealSharp automation module was not staged by its build.", assemblyPath);
         }
 
         Directory.CreateDirectory(recordDirectory);
