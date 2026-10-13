@@ -27,6 +27,14 @@ public static class PreprocessorExporter
         stringBuilder.AppendLine("</Project>");
 
         string propsPath = Path.Combine(GeneratorStatics.PluginModuleInfo.Module.GetUHTBaseDirectory(), "UE5Rules.Defines.props");
+        if (GeneratorStatics.IsInstalledPlugin)
+        {
+            if (!File.Exists(propsPath) || File.ReadAllText(propsPath) != stringBuilder.ToString())
+            {
+                throw new BuildException($"Installed UnrealSharp engine version definitions do not match this engine: {propsPath}. Install a matching plugin package.");
+            }
+            return;
+        }
         File.WriteAllText(propsPath, stringBuilder.ToString());
     }
 }

@@ -78,6 +78,7 @@ public static class Program
         {
             ConsoleUtilities.Log("Critical failure during export process:");
             ConsoleUtilities.Log(ex.ToString());
+            throw;
         }
     }
 }

@@ -64,6 +64,12 @@ public static class ExporterValidator
 
 		foreach (ModuleInfo module in modules)
 		{
+			// Installed packages own their engine binding inputs, even when the
+			// consumer has no local exporter timestamp or header cache yet.
+			if (GeneratorStatics.IsInstalledPlugin && module.IsPartOfEngine)
+			{
+				continue;
+			}
 			FileExporter.CleanGeneratedFolder(module.Module.GetPackageOutputDirectory());
 
 			if (module.IsPartOfEngine || !File.Exists(module.CsProjPath))

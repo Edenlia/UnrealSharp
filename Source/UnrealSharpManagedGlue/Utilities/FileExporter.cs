@@ -52,6 +52,16 @@ public static class FileExporter
 				return;
 			}
 
+			if (GeneratorStatics.IsInstalledPlugin && package.GetModuleInfo().IsPartOfEngine)
+			{
+				if (!HasModifiedEngineGlue)
+				{
+					ConsoleUtilities.Log($"Installed engine binding differs from the generated input: {absoluteFilePath}");
+				}
+				HasModifiedEngineGlue = true;
+				return;
+			}
+
 			if (!Directory.Exists(directory))
 			{
 				Directory.CreateDirectory(directory);
@@ -99,6 +109,10 @@ public static class FileExporter
 
 		foreach (ModuleInfo plugin in ModuleUtilities.PackageToModuleInfo.Values)
 		{
+			if (GeneratorStatics.IsInstalledPlugin && plugin.IsPartOfEngine)
+			{
+				continue;
+			}
 			CleanOldFilesInDirectories(plugin.GlueOutputDirectory);
 		}
 	}
