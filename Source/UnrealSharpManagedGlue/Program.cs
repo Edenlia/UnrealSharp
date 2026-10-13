@@ -48,6 +48,7 @@ public static class Program
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
         
         GeneratorStatics.Initialize(factory);
+        BuildUtilities.StageAutomationModule();
         ExportBindings();
         
         FileExporter.CleanOldExportedFiles();

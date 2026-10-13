@@ -92,7 +92,13 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 		// Reading the legacy Build/Scripts root too can load duplicate records.
 		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *ProjectFolder);
 	}
-	else if (!FPaths::IsUnderDirectory(PluginFolder, EngineFolder))
+	else if (FPaths::IsUnderDirectory(PluginFolder, EngineFolder))
+	{
+		// Installed engines do not compile engine automation projects. Discover the
+		// precompiled module through the build record shipped inside the plugin.
+		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *PluginFolder);
+	}
+	else
 	{
 		// External plugins are not covered by the default engine/project roots.
 		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *FPaths::Combine(PluginFolder, TEXT("Build"), TEXT("Scripts")));

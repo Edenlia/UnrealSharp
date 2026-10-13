@@ -51,4 +51,10 @@
 
     <Compile Include="..\..\Managed\Shared\*.cs" Link="..\..\Managed\Shared\*.cs" />
   </ItemGroup>
+  <!-- UHT loads assemblies from memory, so collect the output while MSBuild knows its path. -->
+  <Target Name="StageUnrealSharpAutomation" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(MSBuildThisFileDirectory)..\..\Binaries\Managed\Automation"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
