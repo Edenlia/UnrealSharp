@@ -66,6 +66,9 @@ This runtime-only build consumes the packaged Roslyn DLLs and keeps all build ou
 out of the installed plugin directory. A completion manifest validates cached files;
 concurrent projects using the same runtime wait on a build lock. Later launches reuse
 the cache. Source changes in a new distribution produce a different identity.
+Cook commandlets consume this prepared Editor cache without starting another UAT
+inside BuildCookRun. If the cache has been removed, open the Editor or run
+BuildPluginRuntime before cooking again.
 
 PackageProject publishes a self-contained Game runtime into the same user cache,
 separated by configuration and runtime identifier, then compiles project bindings

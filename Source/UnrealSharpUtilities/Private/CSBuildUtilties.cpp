@@ -6,11 +6,16 @@
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
+#include "UnrealSharpUtilities.h"
+#include "Dom/JsonObject.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/App.h"
 #include "Misc/MonitoredProcess.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "PluginDescriptor.h"
+#include "Serialization/JsonSerializer.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "UnrealSharpBuildUtilities"
@@ -82,7 +87,36 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 bool UnrealSharp::Build::EnsurePluginRuntime(const FCSCommandError& OnError)
 {
 	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(UE_PLUGIN_NAME);
-	return !Plugin->GetDescriptor().bInstalled || InvokeUnrealSharpAutomation(BuildAction::BuildPluginRuntime, nullptr, OnError);
+	if (!Plugin->GetDescriptor().bInstalled)
+	{
+		return true;
+	}
+	if (IsRunningCommandlet())
+	{
+		// BuildCookRun owns UAT while its cooker runs. Consume the runtime already
+		// prepared by UHT or Editor startup instead of launching a nested UAT.
+		const FString RuntimeDirectory = Paths::GetPluginAssembliesPath();
+		FString Contents;
+		TSharedPtr<FJsonObject> Manifest;
+		if (FFileHelper::LoadFileToString(Contents, *(RuntimeDirectory / TEXT("UnrealSharp.Runtime.json")))
+			&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Contents), Manifest)
+			&& Manifest.IsValid() && Manifest->HasField(TEXT("UnrealSharp.dll"))
+			&& Manifest->HasField(TEXT("UnrealSharp.Plugins.dll")))
+		{
+			bool bComplete = true;
+			for (const auto& Entry : Manifest->Values)
+			{
+				bComplete &= FPaths::FileExists(RuntimeDirectory / *Entry.Key);
+			}
+			if (bComplete)
+			{
+				return true;
+			}
+		}
+		UE_LOG(LogUnrealSharpUtilities, Error, TEXT("The installed UnrealSharp Editor runtime cache is incomplete. Open the Editor or run BuildPluginRuntime before cooking."));
+		return false;
+	}
+	return InvokeUnrealSharpAutomation(BuildAction::BuildPluginRuntime, nullptr, OnError);
 }
 
 void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs)
