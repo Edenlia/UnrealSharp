@@ -24,6 +24,7 @@ public class PackageProject : BuildCommand
     private const string BindingsProjectFolder = "UnrealSharp";
     private const int CleanupMaxAttempts = 5;
     private const int CleanupRetryDelayMs = 1000;
+    private GlueTarget _glueTarget = null!;
 
     public sealed record PackagingOptions(
         string ArchiveDirectory,
@@ -45,6 +46,8 @@ public class PackageProject : BuildCommand
         ValidateOptions(options);
         LogOptions(options);
 
+        _glueTarget = GlueTargetUtilities.Resolve(this);
+
         DotNetSdkUtilities.CopyGlobalJson(this);
 
         string PublishFolder = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
@@ -52,8 +55,13 @@ public class PackageProject : BuildCommand
 
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        foreach (string Argument in GlueTargetUtilities.BuildArguments(_glueTarget)) Arguments.Add(Argument);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
+        // Glue and user code must compile against the just-published runtime
+        // bindings, not the shared development Editor assembly.
+        Arguments.Add($"-p:UnrealSharpBindingsDirectory={PublishFolder}");
+        Arguments.Add($"-p:UnrealSharpUserAssemblyDirectory={PublishFolder}");
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
         
@@ -176,8 +184,8 @@ public class PackageProject : BuildCommand
 
     private void BuildBindingsSolution(IList<string> arguments, UnrealTargetConfiguration buildConfig)
     {
-        string BindingsPath = Path.Combine(this.GetUnrealSharpRootFolder(), ManagedFolderName, BindingsProjectFolder);
-        BuildCommands.BuildSolution.RunBuild(BindingsPath, buildConfig, publish: true, arguments);
+        List<string> FrameworkArguments = arguments.Where(argument => !argument.StartsWith("-p:UnrealSharpBuildingFramework=", StringComparison.Ordinal)).ToList();
+        GlueTargetUtilities.BuildFramework(_glueTarget, publish: true, FrameworkArguments);
     }
 
     private void BuildUserSolution(string publishFolder, IList<string> buildArguments, PackagingOptions options)
@@ -193,7 +201,7 @@ public class PackageProject : BuildCommand
         }
 
         string SolutionDirectory = GenerateUserSolution.PrepareSolution(this, Target, ProjectFiles,
-            GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser", forceGenerate: true);
+            _glueTarget.IsDistributionBuild ? Path.Combine(_glueTarget.Root, "Build", "User") : GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser", forceGenerate: true);
 
         IList<string> BuildUserSolutionArguments = buildArguments;
         if (options.UserParams is { Length: > 0 })
@@ -237,7 +245,7 @@ public class PackageProject : BuildCommand
     private void CopyInstalledGlue(string publishFolder)
     {
         string GlueFileName = AssemblyUtilities.MakeLoadOrderFileName(LoadOrderUtilities.GlueLoadOrderName);
-        string GlueSource = PathUtilities.BuildOutputPath(this.GetProjectRootFolder());
+        string GlueSource = _glueTarget.OutputDirectory;
         string GlueManifest = Path.Combine(GlueSource, GlueFileName);
 
         if (!File.Exists(GlueManifest))

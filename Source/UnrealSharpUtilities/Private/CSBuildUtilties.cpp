@@ -99,6 +99,21 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	}
 	// -Project selects the command target; -ScriptsForProject also scopes UAT script discovery.
 	OutArgs += FString::Printf(TEXT(" -ScriptsForProject=\"%s\" -Project=\"%s\""), *ProjectFile, *ProjectFile);
+	// Packaging may request Game/Shipping from an Editor/Development process.
+	// Only forward the running context when the requested target agrees with it.
+	bool bUseRunningTarget = true;
+	if (ActionArgs)
+	{
+		for (const TCHAR* Key : { TEXT("UETargetType"), TEXT("TargetType") })
+			if (const FString* Value = ActionArgs->Find(Key)) bUseRunningTarget &= Value->Equals(LexToString(FApp::GetBuildTargetType()), ESearchCase::IgnoreCase);
+		for (const TCHAR* Key : { TEXT("UEBuildConfig"), TEXT("TargetConfiguration") })
+			if (const FString* Value = ActionArgs->Find(Key)) bUseRunningTarget &= Value->Equals(LexToString(FApp::GetBuildConfiguration()), ESearchCase::IgnoreCase);
+	}
+	const FString ManagedTargetManifest = bUseRunningTarget ? Paths::GetManagedTargetManifest() : FString();
+	if (!ManagedTargetManifest.IsEmpty())
+	{
+		OutArgs += FString::Printf(TEXT(" -UnrealSharpTargetManifest=\"%s\""), *ManagedTargetManifest);
+	}
 	
 	if (ActionArgs && ActionArgs->Num() > 0)
 	{
