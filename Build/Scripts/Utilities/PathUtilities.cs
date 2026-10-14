@@ -39,6 +39,11 @@ public static class PathUtilities
     {
         return Path.Combine(root, "Intermediate", "UnrealSharp");
     }
+
+    public static string GetTargetIntermediateDirectory(string root, string platform, string architecture, string targetName, string configuration)
+    {
+        return Path.Combine(root, "Intermediate", "Build", platform, architecture, targetName, configuration);
+    }
     
     public static string GetUnrealSharpRootFolder(this BuildCommand buildCommand)
     {
