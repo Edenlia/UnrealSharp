@@ -68,7 +68,7 @@ public sealed class ModuleInfo
 	{
 		string root = EmitsToProjectDirectory ? GeneratorStatics.Factory.Session.ProjectDirectory! : ModuleRoot;
 
-		GlueOutputDirectory = PathUtilities.GetUhtGeneratedModuleOutputPath(root, GeneratorStatics.TargetType, ModuleName);
+		GlueOutputDirectory = GeneratorStatics.CreateGlueTarget().GetModuleGeneratedDirectory(root, ModuleName);
 		CsProjPath = Path.Combine(GlueOutputDirectory, $"{ModuleName}.csproj");
 	}
 	

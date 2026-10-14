@@ -5,6 +5,7 @@ using EpicGames.UHT.Types;
 using EpicGames.UHT.Utils;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
@@ -26,6 +27,11 @@ public static class GeneratorStatics
 	
 	public static TargetType TargetType { get; private set; }
 	public static UnrealTargetConfiguration TargetConfiguration;
+
+	// Capture at the call site so existing initialization order and mutable
+	// build settings retain their lifetime and behavior.
+	public static GlueTarget CreateGlueTarget() => new(TargetType.ToString(), TargetConfiguration.ToString(),
+		Factory.Session.ProjectDirectory, PluginDirectory);
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
