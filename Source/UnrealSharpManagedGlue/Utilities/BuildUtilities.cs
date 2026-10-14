@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using System.IO;
 using UnrealBuildTool;
+using UnrealSharp.Automation.Utilities;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
@@ -8,34 +8,24 @@ public static class BuildUtilities
 {
     public static void BuildBindings()
     {
-        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor || !FileExporter.HasModifiedEngineGlue)
-        {
-            return;
-        }
-        
-        ConsoleUtilities.Log("Engine glue has been modified since the last build. Rebuilding UnrealSharp bindings...");
-
-        List<KeyValuePair<string, string>> actionArgs =
-        [
-            new("Folders", Path.Combine(GeneratorStatics.ManagedPath, "UnrealSharp")),
-            new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString())
-        ];
-        
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildSolution", actionArgs);
+        // Preserve the original project workflow: non-Editor UHT generates
+        // source; PackageProject compiles it into the archive, not over Editor DLLs.
+        if (!GeneratorStatics.Target.IsDistributionBuild && GeneratorStatics.TargetType != TargetType.Editor) return;
+        // MSBuild checks deleted outputs and membership-only changes too.
+        // BuildPlugin also publishes its non-Editor distribution bundles.
+        GlueTargetUtilities.BuildFramework(GeneratorStatics.Target);
+        GlueTargetUtilities.BuildGlue(GeneratorStatics.Target);
+        GlueTargetUtilities.PublishRuntimeContext(GeneratorStatics.Target);
     }
-    
+
     public static void GenerateUserSolution()
     {
-        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor)
+        if (GeneratorStatics.TargetType != TargetType.Editor || GeneratorStatics.Target.Distribution || string.IsNullOrEmpty(GeneratorStatics.Target.ProjectFile)) return;
+        List<KeyValuePair<string, string>> arguments = new()
         {
-            return;
-        }
-        
-        List<KeyValuePair<string, string>> ActionArgs =
-        [
-            new("TargetType", GeneratorStatics.TargetType.ToString()),
-            new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString())
-        ];
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", ActionArgs);
+            new("TargetType", GeneratorStatics.TargetType.ToString()), new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString()),
+            new("TargetPlatform", GeneratorStatics.TargetPlatform.ToString()), new("UnrealSharpTargetManifest", GeneratorStatics.Target.ManifestPath)
+        };
+        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", arguments);
     }
 }

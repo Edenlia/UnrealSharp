@@ -51,9 +51,8 @@ public static class Program
         ExportBindings();
         
         FileExporter.CleanOldExportedFiles();
-        BuildUtilities.BuildBindings();
-        
         ModuleFactory.SyncModuleProjects();
+        BuildUtilities.BuildBindings();
         BuildUtilities.GenerateUserSolution();
     }
 
@@ -77,6 +76,7 @@ public static class Program
         {
             ConsoleUtilities.Log("Critical failure during export process:");
             ConsoleUtilities.Log(ex.ToString());
+            throw;
         }
     }
 }

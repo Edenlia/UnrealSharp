@@ -33,6 +33,6 @@ public static class JsonUtilities
     
     static string GetJsonOutputPath(string fileName)
     {
-        return Path.Combine(GeneratorStatics.PluginModule.OutputDirectory, fileName + ".json");
+        return Path.Combine(GeneratorStatics.Target.Root, fileName + ".json");
     }
 }
