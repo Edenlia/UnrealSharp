@@ -83,3 +83,4 @@ obj/
 !UnrealSharp.Build.props
 !UnrealSharp.AOT.props
 !UnrealSharp.Automation.props
+!UnrealSharp.Target.props

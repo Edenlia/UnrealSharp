@@ -12,8 +12,8 @@ public class UnrealSharpCore : ModuleRules
 		PublicDefinitions.Add("PLUGIN_PATH=" + PluginDirectory.Replace("\\","/"));
 		PublicDefinitions.Add("TARGET_TYPE=" + (int)Target.Type);
 		PublicDefinitions.Add("TARGET_CONFIGURATION=" + (int)Target.Configuration);
-		PublicDefinitions.Add("UNREALSHARP_TARGET_PLATFORM=" + Target.Platform);
-		PublicDefinitions.Add("UNREALSHARP_TARGET_ARCHITECTURE=" + Target.Architectures);
+		PublicDefinitions.Add("TARGET_PLATFORM=" + Target.Platform);
+		PublicDefinitions.Add("TARGET_ARCHITECTURE=" + Target.Architectures);
 		bool distribution = Environment.GetCommandLineArgs().Any(argument => argument.StartsWith("-plugin=", StringComparison.OrdinalIgnoreCase)
 			&& string.Equals(Path.GetFullPath(argument.Substring(8).Trim('"')), Path.Combine(PluginDirectory, "UnrealSharp.uplugin"), StringComparison.OrdinalIgnoreCase));
 		PublicDefinitions.Add("UNREALSHARP_DISTRIBUTION=" + (distribution ? "1" : "0"));

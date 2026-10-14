@@ -92,20 +92,8 @@ public sealed class PluginGluePolicy
 
     public IEnumerable<string> NativeModuleNames => _owners.Keys;
 
-    public bool IsFixed(UhtPackage package)
-    {
-        if (package.IsForcedAsEngineGlue()) return true;
-        if (_owners.TryGetValue(package.GetModuleShortName(), out PluginInfo? owner)) return _required.Contains(owner.Name);
-        // Includes Engine/Platforms/.../Source and restricted source extensions.
-        if (package.Module.IsPartOfEngine && !package.Module.IsPlugin) return true;
-        string relative = Path.GetRelativePath(Path.Combine(GeneratorStatics.EngineDirectory, "Source"), package.GetModule().BaseDirectory);
-        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-    }
+    public PluginInfo? GetOwner(UhtPackage package) =>
+        _owners.TryGetValue(package.GetModuleShortName(), out PluginInfo? owner) ? owner : null;
 
-    public bool IsEnginePlugin(UhtPackage package)
-    {
-        return _owners.TryGetValue(package.GetModuleShortName(), out PluginInfo? owner) && owner.LoadedFrom == PluginLoadedFrom.Engine;
-    }
-
-    public string? GetPluginDirectory(UhtPackage package) => _owners.TryGetValue(package.GetModuleShortName(), out PluginInfo? owner) ? owner.Directory.FullName : null;
+    public bool IsRequired(PluginInfo plugin) => _required.Contains(plugin.Name);
 }

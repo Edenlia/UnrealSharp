@@ -40,12 +40,12 @@ public static class GeneratorStatics
 		
 		TargetType = (TargetType) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_TYPE");
 		TargetConfiguration = (UnrealTargetConfiguration) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_CONFIGURATION");
-		TargetPlatform = UnrealTargetPlatform.Parse(ScriptGeneratorUtilities.TryGetPluginStringDefine("UNREALSHARP_TARGET_PLATFORM"));
+		TargetPlatform = UnrealTargetPlatform.Parse(ScriptGeneratorUtilities.TryGetPluginStringDefine("TARGET_PLATFORM"));
 		Target = new GlueTarget
 		{
 			Name = Factory.Session.Manifest!.TargetName,
 			Type = TargetType.ToString(), Platform = TargetPlatform.ToString(), Configuration = TargetConfiguration.ToString(),
-			Architecture = ScriptGeneratorUtilities.TryGetPluginStringDefine("UNREALSHARP_TARGET_ARCHITECTURE"),
+			Architecture = ScriptGeneratorUtilities.TryGetPluginStringDefine("TARGET_ARCHITECTURE"),
 			Distribution = ScriptGeneratorUtilities.TryGetPluginIntDefine("UNREALSHARP_DISTRIBUTION") != 0,
 			PluginDirectory = Path.GetFullPath(PluginDirectory),
 			ProjectDirectory = Path.GetFullPath(Factory.Session.ProjectDirectory ?? EngineDirectory),

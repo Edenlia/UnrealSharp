@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using EpicGames.UHT.Types;
+using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
 using UnrealSharp.Shared;
 
@@ -19,6 +20,14 @@ public sealed class ModuleInfo
 
 	public bool IsExtendingModule { get; }
 	public bool IsEngineModule { get; }
+	// Native ownership is separate from ForceAsEngineGlue and output redirection.
+	public bool IsEngineSource { get; }
+	public bool IsEnginePlugin { get; }
+	public bool IsProjectSource { get; }
+	public bool IsProjectPlugin { get; }
+	// Platform extension modules use their resolved parent plugin descriptor.
+	public string? PluginFile { get; }
+	public bool IsRequiredPlugin { get; }
 	public bool IsFixedGlue { get; private set; }
 	public bool IsMergedGlue => IsEngineModule && !IsFixedGlue && !IsExtendingModule;
 	public string AssemblyName => IsFixedGlue ? "UnrealSharp" : IsExtendingModule
@@ -49,11 +58,26 @@ public sealed class ModuleInfo
 		ModuleName = moduleName;
 		ModuleRoot = moduleRoot;
 		IsExtendingModule = package.GetPackageExtensions() != string.Empty;
-		IsEngineModule = package.IsPartOfEngine() || GeneratorStatics.PluginPolicy.IsEnginePlugin(package);
-		IsFixedGlue = GeneratorStatics.PluginPolicy.IsFixed(package);
+		PluginInfo? plugin = GeneratorStatics.PluginPolicy.GetOwner(package);
+		PluginFile = plugin?.File.FullName;
+		IsEnginePlugin = plugin?.LoadedFrom == PluginLoadedFrom.Engine;
+		IsProjectPlugin = plugin != null && !IsEnginePlugin;
+		IsEngineSource = plugin == null && IsNativeEngineSource(package);
+		IsProjectSource = plugin == null && !IsEngineSource;
+		IsRequiredPlugin = plugin != null && GeneratorStatics.PluginPolicy.IsRequired(plugin);
+		IsEngineModule = package.IsPartOfEngine() || IsEnginePlugin;
+		IsFixedGlue = package.IsForcedAsEngineGlue() || IsRequiredPlugin || IsEngineSource;
 		ScriptPath = Path.Combine(moduleRoot, CommonUnrealSharpSettings.ScriptDirectoryName, moduleName);
 	}
 	
+	private static bool IsNativeEngineSource(UhtPackage package)
+	{
+		// Preserve support for Engine/Platforms and restricted source extensions.
+		if (package.Module.IsPartOfEngine && !package.Module.IsPlugin) return true;
+		string relative = Path.GetRelativePath(Path.Combine(GeneratorStatics.EngineDirectory, "Source"), package.GetModule().BaseDirectory);
+		return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+	}
+
 	internal void ResolveExtensions(IReadOnlyList<ModuleInfo>? extensions)
 	{
 		Extensions = extensions ?? [];
@@ -244,7 +268,7 @@ public static class ModuleUtilities
 		}
 
 		string moduleName = package.GetModuleShortName();
-		string moduleRoot = GeneratorStatics.PluginPolicy.GetPluginDirectory(package) ??
+		string moduleRoot = GeneratorStatics.PluginPolicy.GetOwner(package)?.Directory.FullName ??
 			(package.IsPartOfEngine() ? GeneratorStatics.PluginDirectory : package.GetBaseDirectoryForPackage());
 
 		ModuleInfo moduleInfo = new(moduleName, moduleRoot, package);
