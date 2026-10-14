@@ -10,6 +10,9 @@ public class UnrealSharpCore : ModuleRules
 		PublicDefinitions.Add("PLUGIN_PATH=" + PluginDirectory.Replace("\\","/"));
 		PublicDefinitions.Add("TARGET_TYPE=" + (int)Target.Type);
 		PublicDefinitions.Add("TARGET_CONFIGURATION=" + (int)Target.Configuration);
+		PublicDefinitions.Add("TARGET_PLATFORM=" + Target.Platform);
+		PublicDefinitions.Add("TARGET_ARCHITECTURE=" + Target.Architectures);
+		PublicDefinitions.Add("TARGET_BUILD_ALL_MODULES=" + (Target.bBuildAllModules ? "1" : "0"));
 		
 		PublicDependencyModuleNames.AddRange(
 			new string[]

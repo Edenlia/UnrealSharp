@@ -4,6 +4,7 @@ using System.Linq;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
 using UnrealSharpManagedGlue.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharpManagedGlue;
 
@@ -75,11 +76,17 @@ public static class ModuleFactory
 			return false;
 		}
 
+		GlueTarget target = GeneratorStatics.CreateGlueTarget();
 		List<KeyValuePair<string, string>> commandArgs = new List<KeyValuePair<string, string>>
 		{
-			new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString()),
-			new("TargetType", GeneratorStatics.TargetType.ToString()),
-			new("OutputDirectory", PathUtilities.BuildOutputPath(GeneratorStatics.Factory.Session.ProjectDirectory!)),
+			new("TargetConfiguration", target.Configuration),
+			new("TargetType", target.Type),
+			new("TargetName", target.Name ?? string.Empty),
+			new("TargetPlatform", target.Platform ?? string.Empty),
+			new("TargetArchitecture", target.Architecture ?? string.Empty),
+			new("BuildAllModules", target.BuildAllModules.ToString()),
+			new("PluginDirectory", target.PluginDirectory ?? string.Empty),
+			new("OutputDirectory", target.GetProjectOutputDirectory(DotNetUtilities.Version)),
 			new("AddReferences", "true")
 		};
 

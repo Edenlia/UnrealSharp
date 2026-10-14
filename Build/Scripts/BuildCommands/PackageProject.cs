@@ -219,7 +219,9 @@ public class PackageProject : BuildCommand
         }
 
         LoggerUtilities.LogUnrealSharpInfo("Source build detected. Building glue from generated projects and emitting glue load order...");
-        BuildUserGlue.Build(this, options.TargetType, options.BuildConfiguration, publishFolder, false, buildArguments);
+        GlueTarget target = GlueTargetUtilities.Create(this, options.TargetType, options.BuildConfiguration,
+            options.TargetPlatform.ToString(), options.TargetArchitecture.ToString());
+        BuildUserGlue.Build(this, target, publishFolder, false, buildArguments);
     }
 
     private static void EmitUserLoadOrder(string publishFolder, List<FileInfo> projectFiles)

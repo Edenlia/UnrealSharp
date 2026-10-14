@@ -23,6 +23,8 @@ public class StageUnrealSharp : BuildCommand
             new("TargetArchitecture", ParseParamValue("TargetArchitecture", string.Empty))
         ];
         
+        string? targetName = ParseParamValue("TargetName");
+        if (targetName != null) ActionArgs.Add(new("TargetName", targetName));
         CommandUtilities.RunCommand(nameof(PackageProject), this, ActionArgs);
     }
 }
