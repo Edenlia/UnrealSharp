@@ -243,17 +243,9 @@ public static class NameMapper
             {
                 if (type is UhtFunction classFunction)
                 {
-                    bool sameSignature = function.HasSameSignature(classFunction);
-                    bool implementsSameNativeMethod =
-                        outerClass.EngineType == UhtEngineType.Class
-                        && function.SourceName == classFunction.SourceName
-                        && sameSignature;
-
-                    // Matching native declarations implement the interface contract.
                     // C# cannot distinguish overloads by return type alone.
                     // Compare parameters without the return type when checking for name collisions.
-                    isConflicting = !implementsSameNativeMethod
-                        && function.HasSameSignature(classFunction, includeReturnType: false);
+                    isConflicting = function.HasSameSignature(classFunction, includeReturnType: false);
                 }
                 else
                 {
