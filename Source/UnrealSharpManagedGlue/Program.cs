@@ -91,6 +91,8 @@ public static class Program
         {
             ConsoleUtilities.Log("Critical failure during export process:");
             ConsoleUtilities.Log(ex.ToString());
+            GeneratorStatics.Factory.Session.LogError("UnrealSharp C# bindings export failed.");
+            throw;
         }
     }
 }

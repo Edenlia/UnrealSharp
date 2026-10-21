@@ -19,6 +19,12 @@ public static class PackageExporter
         }
         
         tasks.WaitForTasks();
+
+        // UHT records worker exceptions on the session instead of faulting the tasks.
+        if (GeneratorStatics.Factory.Session.HasErrors)
+        {
+            throw new InvalidOperationException("UnrealSharp C# bindings export failed.");
+        }
     }
     
     private static void ExportPackage(UhtPackage package, TaskManager tasks, FileExporter files, PackageHeadersTracker headers)
