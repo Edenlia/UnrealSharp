@@ -12,7 +12,7 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class InterfaceExporter
 {
-    public static void ExportInterface(UhtClass interfaceObj)
+    public static void ExportInterface(UhtClass interfaceObj, FileExporter files)
     {
         GeneratorStringBuilder stringBuilder = new();
         string interfaceName = interfaceObj.GetStructName();
@@ -99,7 +99,7 @@ public static class InterfaceExporter
         stringBuilder.CloseBrace();
         
         stringBuilder.EndGlueFile(interfaceObj);
-        FileExporter.SaveGlueToDisk(interfaceObj, stringBuilder);
+        files.SaveGlueToDisk(interfaceObj, stringBuilder);
     }
 
     static void ExportInterfaceProperties(GeneratorStringBuilder stringBuilder,

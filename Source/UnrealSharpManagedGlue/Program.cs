@@ -6,6 +6,7 @@ using System.Runtime.Loader;
 using EpicGames.UHT.Tables;
 using EpicGames.UHT.Utils;
 using UnrealSharpManagedGlue;
+using UnrealSharpManagedGlue.PropertyTranslators;
 using UnrealSharpManagedGlue.Utilities;
 
 [UnrealHeaderTool]
@@ -48,16 +49,29 @@ public static class Program
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
         
         GeneratorStatics.Initialize(factory);
-        ExportBindings();
-        
-        FileExporter.CleanOldExportedFiles();
-        BuildUtilities.BuildBindings();
-        
-        ModuleFactory.SyncModuleProjects();
-        BuildUtilities.GenerateUserSolution();
+        PropertyTranslatorManager.Initialize();
+        TaskManager tasks = new(factory);
+        using FileExporter files = new();
+        PackageHeadersTracker headers = new(factory.PluginModule!.OutputDirectory);
+
+        try
+        {
+            ExportBindings(tasks, files, headers);
+
+            files.CleanOldExportedFiles(headers);
+            BuildUtilities.BuildBindings(files.HasModifiedEngineGlue);
+
+            ModuleFactory.SyncModuleProjects();
+            BuildUtilities.GenerateUserSolution();
+        }
+        finally
+        {
+            // Generation can throw after starting tasks but before reaching its normal wait.
+            tasks.WaitForTasks();
+        }
     }
 
-    private static void ExportBindings()
+    private static void ExportBindings(TaskManager tasks, FileExporter files, PackageHeadersTracker headers)
     {
         ConsoleUtilities.Log("Starting C# bindings export...");
 
@@ -65,8 +79,8 @@ public static class Program
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
             
-            GlueGenerator.GenerateBindings();
-            TaskManager.WaitForTasks();
+            GlueGenerator.GenerateBindings(tasks, files, headers);
+            tasks.WaitForTasks();
 
             stopwatch.Stop();
             

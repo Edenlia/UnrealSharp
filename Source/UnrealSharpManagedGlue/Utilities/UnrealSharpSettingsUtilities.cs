@@ -11,11 +11,6 @@ public static class UnrealSharpSettingsUtilities
     
     public static void InitializeConfigFile(string projectRoot, string unrealSharpRoot)
     {
-        if (_config != null)
-        {
-            return;
-        }
-        
         string pluginConfigPath = GetConfigFile(unrealSharpRoot);
         string projectConfigPath = GetConfigFile(projectRoot);
 

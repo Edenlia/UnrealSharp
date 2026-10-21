@@ -13,32 +13,31 @@ public class PackageHeaders
     public bool HasBeenExported;
 }
 
-public static class PackageHeadersTracker
+public class PackageHeadersTracker
 {
     const string PackageDataFileName = "UnrealSharpPackagesData.json";
     
-    private static Dictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
+    private Dictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
+    private readonly string OutputPath;
+
+    public PackageHeadersTracker(string outputDirectory)
+    {
+        OutputPath = Path.Combine(outputDirectory, PackageDataFileName);
+    }
     
-    public static void DeserializeModuleHeaders()
+    public void DeserializeModuleHeaders()
     {
         if (_packageHeadersWriteRecord.Count > 0)
         {
             return;
         }
         
-        if (!Directory.Exists(GeneratorStatics.PluginDirectory))
+        if (!File.Exists(OutputPath))
         {
             return;
         }
 
-        string outputPath = Path.Combine(GeneratorStatics.PluginModule.OutputDirectory, PackageDataFileName);
-
-        if (!File.Exists(outputPath))
-        {
-            return;
-        }
-
-        using FileStream fileStream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using FileStream fileStream = new FileStream(OutputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         Dictionary<string, PackageHeaders>? jsonValue = JsonSerializer.Deserialize<Dictionary<string, PackageHeaders>>(fileStream);
         fileStream.Close();
 
@@ -50,15 +49,14 @@ public static class PackageHeadersTracker
         _packageHeadersWriteRecord = new Dictionary<string, PackageHeaders?>(jsonValue!);
     }
     
-    public static void SerializeModuleData()
+    public void SerializeModuleData()
     {
-        string outputPath = Path.Combine(GeneratorStatics.PluginModule.OutputDirectory, PackageDataFileName);
-        using FileStream filestream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+        using FileStream filestream = new FileStream(OutputPath, FileMode.Create, FileAccess.Write);
         JsonSerializer.Serialize(filestream, _packageHeadersWriteRecord);
         filestream.Close();
     }
     
-    public static bool HasModuleBeenExported(string packageName)
+    public bool HasModuleBeenExported(string packageName)
     {
         if (_packageHeadersWriteRecord.TryGetValue(packageName, out PackageHeaders? headers))
         {
@@ -68,7 +66,7 @@ public static class PackageHeadersTracker
         return false;
     }
     
-    public static bool HasHeaderFileChanged(string packageName, UhtHeaderFile headerPath)
+    public bool HasHeaderFileChanged(string packageName, UhtHeaderFile headerPath)
     {
         if (!_packageHeadersWriteRecord.TryGetValue(packageName, out PackageHeaders? headers))
         {
@@ -83,7 +81,7 @@ public static class PackageHeadersTracker
         return recordedWriteTime != File.GetLastWriteTimeUtc(headerPath.FilePath);
     }
     
-    public static void RecordPackageHeadersWriteTime(string packageName, IEnumerable<UhtHeaderFile> headerPaths)
+    public void RecordPackageHeadersWriteTime(string packageName, IEnumerable<UhtHeaderFile> headerPaths)
     {
         foreach (UhtHeaderFile headerPath in headerPaths)
         {
@@ -91,7 +89,7 @@ public static class PackageHeadersTracker
         }
     }
 
-    private static void RecordHeaderWriteTime(string packageName, UhtHeaderFile headerPath)
+    private void RecordHeaderWriteTime(string packageName, UhtHeaderFile headerPath)
     {
         DateTime currentWriteTime = File.GetLastWriteTimeUtc(headerPath.FilePath);
         

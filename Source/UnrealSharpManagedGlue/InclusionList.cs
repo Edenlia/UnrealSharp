@@ -11,6 +11,14 @@ public static class InclusionLists
     private static readonly HashSet<string> BannedArithmetic = new();
     private static readonly HashSet<string> BannedConstructors = new();
 
+    public static void Reset()
+    {
+        BannedProperties.Clear();
+        BannedFunctions.Clear();
+        BannedArithmetic.Clear();
+        BannedConstructors.Clear();
+    }
+
     public static void BanProperty(string structName, string propertyName)
     {
         if (!BannedProperties.TryGetValue(structName, out var propertySet))

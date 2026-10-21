@@ -13,10 +13,14 @@ namespace UnrealSharpManagedGlue.PropertyTranslators;
 public static class PropertyTranslatorManager
 {
     private static readonly Dictionary<Type, List<PropertyTranslator>?> RegisteredTranslators = new();
-    public static SpecialTypeInfo SpecialTypeInfo { get; } = new();
+    public static SpecialTypeInfo SpecialTypeInfo { get; private set; } = new();
     
-    static PropertyTranslatorManager()
+    public static void Initialize()
     {
+        RegisteredTranslators.Clear();
+        SpecialTypeInfo = new();
+        InclusionLists.Reset();
+
         string? projectDirectory = GeneratorStatics.Factory.Session.ProjectDirectory;
         string configDirectory = Path.Combine(projectDirectory!, "Config");
         

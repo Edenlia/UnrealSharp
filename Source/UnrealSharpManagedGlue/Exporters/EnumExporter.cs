@@ -9,7 +9,7 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class EnumExporter
 {
-    public static void ExportEnum(UhtEnum enumObj)
+    public static void ExportEnum(UhtEnum enumObj, FileExporter files)
     {
         GeneratorStringBuilder stringBuilder = new GeneratorStringBuilder();
         
@@ -41,7 +41,7 @@ public static class EnumExporter
         stringBuilder.CloseBrace();
         stringBuilder.EndGlueFile(enumObj);
         
-        FileExporter.SaveGlueToDisk(enumObj, stringBuilder);
+        files.SaveGlueToDisk(enumObj, stringBuilder);
     }
 
     private static string UnderlyingEnumTypeToString(UhtEnumUnderlyingType underlyingType)

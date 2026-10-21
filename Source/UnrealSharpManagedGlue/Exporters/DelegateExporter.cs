@@ -8,7 +8,7 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class DelegateExporter
 {
-    public static void ExportDelegate(UhtFunction function)
+    public static void ExportDelegate(UhtFunction function, FileExporter files)
     {
         string delegateName = DelegateBasePropertyTranslator.GetDelegateName(function);
         
@@ -44,7 +44,7 @@ public static class DelegateExporter
         FunctionExporter.ExportDelegateExtensions(stringBuilder, functionExporter, superClass);
 
         stringBuilder.EndGlueFile(function);
-        FileExporter.SaveGlueToDisk(function.Package, function.Package.GetPackageOutputDirectory(), delegateName, stringBuilder.ToString());
+        files.SaveGlueToDisk(function.Package, function.Package.GetPackageOutputDirectory(), delegateName, stringBuilder.ToString());
     }
 
     private static void ExportDelegateFunctionStaticConstruction(GeneratorStringBuilder builder, UhtFunction function)

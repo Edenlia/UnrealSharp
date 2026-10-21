@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using EpicGames.UHT.Types;
+using EpicGames.UHT.Utils;
 using UnrealSharp.Automation.Utilities;
 
 namespace UnrealSharpManagedGlue.Utilities;
@@ -82,22 +84,23 @@ public sealed class ModuleInfo
 
 public static class ModuleUtilities
 {
-	public static readonly Dictionary<UhtPackage, ModuleInfo> PackageToModuleInfo = new();
-	private static readonly Dictionary<string, ModuleInfo> BySourceName = new(StringComparer.OrdinalIgnoreCase);
-	private static readonly Dictionary<string, List<ModuleInfo>> ModuleExtensions = new();
+	private static readonly ConditionalWeakTable<UhtSession, Dictionary<UhtPackage, ModuleInfo>> ModulesBySession = new();
+	public static Dictionary<UhtPackage, ModuleInfo> PackageToModuleInfo => ModulesBySession.GetOrCreateValue(GeneratorStatics.Factory.Session);
 
-	static ModuleUtilities()
+	public static void Initialize()
 	{
+		PackageToModuleInfo.Clear();
 		Build();
 	}
 
 	private static void Build()
 	{
-		Dictionary<UhtPackage, List<UhtPackage>> referencedPackages = DiscoverModules();
+		Dictionary<string, List<ModuleInfo>> moduleExtensions = new();
+		Dictionary<UhtPackage, List<UhtPackage>> referencedPackages = DiscoverModules(moduleExtensions);
 		
 		foreach (ModuleInfo module in PackageToModuleInfo.Values)
 		{
-			ModuleExtensions.TryGetValue(module.ModuleName, out List<ModuleInfo>? extensions);
+			moduleExtensions.TryGetValue(module.ModuleName, out List<ModuleInfo>? extensions);
 			module.ResolveExtensions(extensions);
 		}
 		
@@ -127,7 +130,7 @@ public static class ModuleUtilities
 
 	public static ModuleInfo GetModuleInfo(this UhtPackage package)
 	{
-		if (PackageToModuleInfo.TryGetValue(package, out ModuleInfo? moduleInfo))
+		if (ModulesBySession.GetOrCreateValue(package.Session).TryGetValue(package, out ModuleInfo? moduleInfo))
 		{
 			return moduleInfo;
 		}
@@ -148,10 +151,11 @@ public static class ModuleUtilities
 	public static bool TryGetModuleInfo(string packageName, [NotNullWhen(true)] out ModuleInfo? moduleInfo)
 	{
 		string sourceName = packageName.StartsWith("/Script/", StringComparison.OrdinalIgnoreCase) ? packageName : $"/Script/{packageName}";
-		return BySourceName.TryGetValue(sourceName, out moduleInfo);
+		moduleInfo = PackageToModuleInfo.Values.FirstOrDefault(module => string.Equals(module.Module.SourceName, sourceName, StringComparison.OrdinalIgnoreCase));
+		return moduleInfo != null;
 	}
 
-	private static Dictionary<UhtPackage, List<UhtPackage>> DiscoverModules()
+	private static Dictionary<UhtPackage, List<UhtPackage>> DiscoverModules(Dictionary<string, List<ModuleInfo>> moduleExtensions)
 	{
 		Dictionary<UhtPackage, List<UhtPackage>> referencedPackages = new();
 		Queue<UhtPackage> pending = new();
@@ -174,7 +178,7 @@ public static class ModuleUtilities
 				continue;
 			}
 
-			if (TryRegisterModule(package) == null)
+			if (TryRegisterModule(package, moduleExtensions) == null)
 			{
 				continue;
 			}
@@ -194,7 +198,7 @@ public static class ModuleUtilities
 		return referencedPackages;
 	}
 
-	private static ModuleInfo? TryRegisterModule(UhtPackage package)
+	private static ModuleInfo? TryRegisterModule(UhtPackage package, Dictionary<string, List<ModuleInfo>> moduleExtensions)
 	{
 		if (PackageToModuleInfo.TryGetValue(package, out ModuleInfo? existing))
 		{
@@ -212,13 +216,12 @@ public static class ModuleUtilities
 		ModuleInfo moduleInfo = new(moduleName, moduleRoot, package);
 
 		PackageToModuleInfo.Add(package, moduleInfo);
-		BySourceName[package.SourceName] = moduleInfo;
-		RegisterExtensionTargets(moduleInfo, package);
+		RegisterExtensionTargets(moduleInfo, package, moduleExtensions);
 
 		return moduleInfo;
 	}
 
-	private static void RegisterExtensionTargets(ModuleInfo moduleInfo, UhtPackage package)
+	private static void RegisterExtensionTargets(ModuleInfo moduleInfo, UhtPackage package, Dictionary<string, List<ModuleInfo>> moduleExtensions)
 	{
 		string extendedModuleName = package.GetPackageExtensions();
 		if (string.IsNullOrEmpty(extendedModuleName))
@@ -226,10 +229,10 @@ public static class ModuleUtilities
 			return;
 		}
 		
-		if (!ModuleExtensions.TryGetValue(extendedModuleName, out List<ModuleInfo>? extenders))
+		if (!moduleExtensions.TryGetValue(extendedModuleName, out List<ModuleInfo>? extenders))
 		{
 			extenders = new List<ModuleInfo>();
-			ModuleExtensions[extendedModuleName] = extenders;
+			moduleExtensions[extendedModuleName] = extenders;
 		}
 
 		extenders.Add(moduleInfo);

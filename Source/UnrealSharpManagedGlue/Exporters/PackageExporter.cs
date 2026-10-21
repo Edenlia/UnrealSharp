@@ -11,17 +11,17 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class PackageExporter
 {
-    public static void ExportPackages()
+    public static void ExportPackages(TaskManager tasks, FileExporter files, PackageHeadersTracker headers)
     {
         foreach (ModuleInfo moduleInfo in ModuleUtilities.PackageToModuleInfo.Values)
         {
-            ExportPackage(moduleInfo.Module);
+            ExportPackage(moduleInfo.Module, tasks, files, headers);
         }
         
-        TaskManager.WaitForTasks();
+        tasks.WaitForTasks();
     }
     
-    private static void ExportPackage(UhtPackage package)
+    private static void ExportPackage(UhtPackage package, TaskManager tasks, FileExporter files, PackageHeadersTracker headers)
     {
         string packageName = package.GetModuleShortName();
         string generatedPath = package.GetPackageOutputDirectory();
@@ -33,8 +33,8 @@ public static class PackageExporter
         for (int i = 0; i < childrenCount; i++)
         {
             UhtType child = package.Children[i];
-            bool hasChanged = !generatedGlueFolderExists || PackageHeadersTracker.HasHeaderFileChanged(packageName, child.HeaderFile);
-            Action<UhtType> processAction = hasChanged ? ExportType : FileExporter.AddUnchangedType;
+            bool hasChanged = !generatedGlueFolderExists || headers.HasHeaderFileChanged(packageName, child.HeaderFile);
+            Action<UhtType> processAction = hasChanged ? type => ExportType(type, tasks, files) : files.AddUnchangedType;
 
             processAction(child);
 
@@ -46,10 +46,10 @@ public static class PackageExporter
             processedHeaders[i] = child.HeaderFile;
         }
         
-        PackageHeadersTracker.RecordPackageHeadersWriteTime(packageName, processedHeaders);
+        headers.RecordPackageHeadersWriteTime(packageName, processedHeaders);
     }
 
-    private static void ExportType(UhtType type)
+    private static void ExportType(UhtType type, TaskManager tasks, FileExporter files)
     {
         SpecialStructInfo specialStructs = PropertyTranslatorManager.SpecialTypeInfo.Structs;
 
@@ -70,12 +70,12 @@ public static class PackageExporter
                 if (classObj.ClassType is UhtClassType.Interface ||
                     (type == GeneratorStatics.Factory.Session.IInterface && !CanExportReflectedRootInterface(specialStructs)))
                 {
-                    exportAction = () => InterfaceExporter.ExportInterface(classObj);
+                    exportAction = () => InterfaceExporter.ExportInterface(classObj, files);
                 }
             }
             else
             {
-                exportAction = () => ClassExporter.ExportClass(classObj, isManualExport);
+                exportAction = () => ClassExporter.ExportClass(classObj, isManualExport, files);
             }
         }
         else if (type is UhtEnum enumObj)
@@ -85,25 +85,25 @@ public static class PackageExporter
                 return;
             }
             
-            exportAction = () => EnumExporter.ExportEnum(enumObj);
+            exportAction = () => EnumExporter.ExportEnum(enumObj, files);
         }
         else if (type is UhtScriptStruct structObj)
         {
             bool isBlittable = specialStructs.BlittableTypes.TryGetValue(structObj.SourceName, out BlittableStructInfo info) && info.ManagedType is not null;
-            exportAction = () => StructExporter.ExportStruct(structObj, isBlittable);
+            exportAction = () => StructExporter.ExportStruct(structObj, isBlittable, files);
         }
         else if (IsDelegateType(type))
         {
             UhtFunction delegateFunction = (UhtFunction)type;
             if (!isManualExport && delegateFunction.ReturnProperty == null && delegateFunction.CanExportParameters())
             {
-                exportAction = () => DelegateExporter.ExportDelegate(delegateFunction);
+                exportAction = () => DelegateExporter.ExportDelegate(delegateFunction, files);
             }
         }
 
         if (exportAction != null)
         {
-            TaskManager.StartTask(_ => exportAction());
+            tasks.StartTask(_ => exportAction());
         }
     }
 

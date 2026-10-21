@@ -9,14 +9,16 @@ using UnrealSharpManagedGlue.SourceGeneration;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
-public static class FileExporter
+public class FileExporter : IDisposable
 {
-	private static readonly ReaderWriterLockSlim ReadWriteLock = new();
-	private static readonly HashSet<string> AffectedFiles = new(StringComparer.OrdinalIgnoreCase);
+	private readonly ReaderWriterLockSlim ReadWriteLock = new();
+	private readonly HashSet<string> AffectedFiles = new(StringComparer.OrdinalIgnoreCase);
     
-	public static bool HasModifiedEngineGlue { get; private set; }
+	public bool HasModifiedEngineGlue { get; private set; }
 
-	public static void SaveGlueToDisk(UhtType type, GeneratorStringBuilder stringBuilder)
+	public void Dispose() => ReadWriteLock.Dispose();
+
+	public void SaveGlueToDisk(UhtType type, GeneratorStringBuilder stringBuilder)
 	{
 		string directory = type.Package.GetModuleInfo().GlueOutputDirectory;
 		SaveGlueToDisk(type.Package, directory, type.EngineName, stringBuilder.ToString());
@@ -27,7 +29,7 @@ public static class FileExporter
 		return Path.Combine(directory, $"{typeName}.generated.cs");
 	}
 
-	public static void SaveGlueToDisk(UhtPackage package, string directory, string typeName, string text)
+	public void SaveGlueToDisk(UhtPackage package, string directory, string typeName, string text)
 	{
 		string absoluteFilePath = GetFilePath(typeName, directory);
 		bool needsWrite = true;
@@ -70,7 +72,7 @@ public static class FileExporter
 		}
 	}
 
-	public static void AddUnchangedType(UhtType type)
+	public void AddUnchangedType(UhtType type)
 	{
 		string engineName = type is UhtFunction function ? DelegateBasePropertyTranslator.GetDelegateName(function) : type.EngineName;
 
@@ -92,13 +94,13 @@ public static class FileExporter
 		}
 	}
 
-	public static void CleanOldExportedFiles()
+	public void CleanOldExportedFiles(PackageHeadersTracker headers)
 	{
 		ConsoleUtilities.Log("Cleaning up old generated C# glue files...");
 
 		foreach (ModuleInfo plugin in ModuleUtilities.PackageToModuleInfo.Values)
 		{
-			CleanOldFilesInDirectories(plugin.GlueOutputDirectory);
+			CleanOldFilesInDirectories(plugin.GlueOutputDirectory, headers);
 		}
 	}
 
@@ -123,21 +125,21 @@ public static class FileExporter
 		}
 	}
 
-	private static void CleanOldFilesInDirectories(string path)
+	private void CleanOldFilesInDirectories(string path, PackageHeadersTracker headers)
 	{
 		if (!Directory.Exists(path))
 		{
 			return;
 		}
 
-		if (!PackageHeadersTracker.HasModuleBeenExported(Path.GetFileName(path)))
+		if (!headers.HasModuleBeenExported(Path.GetFileName(path)))
 		{
 			return;
 		}
         
 		foreach (string directory in Directory.GetDirectories(path))
 		{
-			CleanOldFilesInDirectories(directory);
+			CleanOldFilesInDirectories(directory, headers);
 		}
         
 		string[] files = Directory.GetFiles(path);

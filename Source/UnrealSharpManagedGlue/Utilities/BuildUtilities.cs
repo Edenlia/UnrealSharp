@@ -6,9 +6,9 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class BuildUtilities
 {
-    public static void BuildBindings()
+    public static void BuildBindings(bool hasModifiedEngineGlue)
     {
-        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor || !FileExporter.HasModifiedEngineGlue)
+        if (GeneratorStatics.TargetType != TargetRules.TargetType.Editor || !hasModifiedEngineGlue)
         {
             return;
         }

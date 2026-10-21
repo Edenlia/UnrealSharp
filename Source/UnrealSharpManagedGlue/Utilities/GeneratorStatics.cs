@@ -29,6 +29,7 @@ public static class GeneratorStatics
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
+		// UBT waits for the previous target's UHT run before starting this one.
 		_factory = factory;
 		
 		PluginDirectory = ScriptGeneratorUtilities.TryGetPluginStringDefine("PLUGIN_PATH");
@@ -41,6 +42,7 @@ public static class GeneratorStatics
 		
 		BlueprintFunctionLibrary = (Factory.Session.FindType(null, UhtFindOptions.SourceName | UhtFindOptions.Class, "UBlueprintFunctionLibrary") as UhtClass)!;
 		
+		ModuleUtilities.Initialize();
 		PluginModuleInfo = ModuleUtilities.GetModuleInfo(factory.PluginModule!.Name);
 
 		PathUtilities.InitPaths(factory.Session.EngineDirectory!);

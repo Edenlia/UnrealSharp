@@ -11,7 +11,7 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class StructExporter
 {
-    public static void ExportStruct(UhtScriptStruct structObj, bool isManualExport)
+    public static void ExportStruct(UhtScriptStruct structObj, bool isManualExport, FileExporter files)
     {
         GeneratorStringBuilder stringBuilder = new();
         List<UhtProperty> exportedProperties = new();
@@ -160,7 +160,7 @@ public static class StructExporter
         }
         
         stringBuilder.EndGlueFile(structObj);
-        FileExporter.SaveGlueToDisk(structObj, stringBuilder);
+        files.SaveGlueToDisk(structObj, stringBuilder);
     }
 
     public static void ExportConstructor(UhtStruct structObj, string structName, GeneratorStringBuilder stringBuilder, List<UhtProperty> exportedProperties)

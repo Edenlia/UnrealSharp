@@ -29,13 +29,13 @@ public static class ExporterValidator
 		return executingAssemblyLastWriteTime > savedTimestampUtc;
 	}
 
-	public static void ValidateExporter()
+	public static void ValidateExporter(PackageHeadersTracker headers)
 	{
 		ConsoleUtilities.Log("Validating exporter...");
 
 		if (!HasAssemblyRecentlyChanged())
 		{
-			PackageHeadersTracker.DeserializeModuleHeaders();
+			headers.DeserializeModuleHeaders();
 			return;
 		}
 

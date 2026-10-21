@@ -13,7 +13,7 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class ClassExporter
 {
-    public static void ExportClass(UhtClass classObj, bool isManualExport)
+    public static void ExportClass(UhtClass classObj, bool isManualExport, FileExporter files)
     {
         GeneratorStringBuilder stringBuilder = new();
 
@@ -85,7 +85,7 @@ public static class ClassExporter
         ExportExtensionMethods(stringBuilder, classObj.Package, classObj, exportedExtensionMethods);
         AutocastExporter.ExportAutocast(stringBuilder, autocastFunctions);
 
-        FileExporter.SaveGlueToDisk(classObj, stringBuilder);
+        files.SaveGlueToDisk(classObj, stringBuilder);
     }
 
     static void ExportClassProperties(GeneratorStringBuilder generatorStringBuilder,
