@@ -12,6 +12,8 @@ using UnrealSharpManagedGlue.Utilities;
 [UnrealHeaderTool]
 public static class Program
 {
+    private static readonly object ExporterLock = new();
+
     static Program()
     {
         AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
@@ -45,6 +47,16 @@ public static class Program
     
     [UhtExporter(Name = "UnrealSharpCore", Description = "Exports C++ to C# code", Options = UhtExporterOptions.Default, ModuleName = "UnrealSharpCore")]
     private static void Main(IUhtExportFactory factory)
+    {
+        // UBT serializes codegen within an AppName group, but runs different groups in parallel.
+        // Keep the remaining per-run statics stable until all exporter tasks and builds finish.
+        lock (ExporterLock)
+        {
+            RunExporter(factory);
+        }
+    }
+
+    private static void RunExporter(IUhtExportFactory factory)
     {
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
         

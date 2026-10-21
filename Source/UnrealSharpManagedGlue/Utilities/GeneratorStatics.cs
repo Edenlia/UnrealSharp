@@ -29,7 +29,7 @@ public static class GeneratorStatics
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
-		// UBT waits for the previous target's UHT run before starting this one.
+		// Program holds the exporter lock while this run uses the shared state.
 		_factory = factory;
 		
 		PluginDirectory = ScriptGeneratorUtilities.TryGetPluginStringDefine("PLUGIN_PATH");
