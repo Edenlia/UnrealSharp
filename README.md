@@ -48,6 +48,30 @@ Visit the website's [Get Started](https://www.unrealsharp.com/getting-started/qu
 
 If you want to contribute to the documentation, check out the [docs repository](https://github.com/UnrealSharp/unrealsharp.github.io)!
 
+## Managed staging (UE 5.8)
+
+BuildCookRun publishes UnrealSharp managed code during staging for Mac and Win64 Game,
+Client and Server targets. Build the native target first so its receipt and generated
+bindings are available. The .NET SDK is required on the packaging host.
+
+Engine plugins are discovered by UAT automatically. For a project plugin with a source
+engine, add `-scriptdir="<Project>/Plugins/UnrealSharp/Build/Scripts"` to the UAT command.
+This also works as an explicit entry point for CI. Without this argument, that source
+engine/project-plugin combination retains the existing manual packaging workflow.
+
+The handler uses the staged target receipt's type, platform, configuration and architecture.
+It publishes into `Intermediate/UnrealSharp/Stage` and registers all published files as
+loose NonUFS files under `<ProjectName>/Binaries/Managed/<TargetFramework>`. Unreal's Mac
+packaging then incorporates them into the app before signing; do not run the manual
+UnrealSharp Package Project action again on that signed app.
+
+Stage one target, configuration and architecture at a time. Universal Mac builds and
+mobile platforms are not supported by this handler. DLC staging does not republish the
+base game's managed runtime. `-skipstage` reuses the staged files without publishing
+again. Engines without `CustomStagingHandler` keep the existing manual `PackageProject`
+command. Signing identities, entitlements and notarization remain the responsibility
+of the project's Unreal platform configuration.
+
 ## Code example
 
 A networked, interactable resource pickup written entirely in C#:
