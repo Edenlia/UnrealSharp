@@ -30,6 +30,8 @@ public record UnrealModule : UnrealType
 
         builder.StartModuleInitializer($"{FieldName.SourceName}ModuleRegistrar");
 
+        builder.AppendLine($"public static void Initialize() => ModuleInitializerJobManager.AddJob(typeof({FieldName.SourceName}ModuleRegistrar), ModuleInitializerJobType.ModuleInterfaceInit, Register);");
+
         builder.AppendLine("public static void Register()");
         builder.OpenBrace();
         builder.AppendLine($"Plugin hostPlugin = PluginLoader.FindPlugin(typeof({FieldName.SourceName}))!;");

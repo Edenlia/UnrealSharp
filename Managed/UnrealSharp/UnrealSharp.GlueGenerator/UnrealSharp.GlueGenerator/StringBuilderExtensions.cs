@@ -65,6 +65,7 @@ public static class StringBuilderExtensions
         string registrationMethodName = $"Register_{safeName}";
 
         builder.StartModuleInitializer(registrarClassName);
+        builder.AppendLine($"public static void Initialize() => ModuleInitializerJobManager.AddJob(typeof({registrarClassName}), ModuleInitializerJobType.TypeRegistration, {registrationMethodName});");
 
         builder.AppendLine(
             $"public static void {registrationMethodName}() => " +

@@ -34,9 +34,11 @@ public class PackageProject : BuildCommand
         bool NativeAot,
         string[]? UserParams = null);
 
+    public PackagingOptions Options { get; private set; } = null!;
+
     public override void ExecuteBuild()
     {
-        PackagingOptions Options = ParseOptionsFromCommandLine();
+        ParseOptionsFromCommandLine();
         StartPackaging(Options);
     }
 
@@ -47,22 +49,35 @@ public class PackageProject : BuildCommand
 
         DotNetSdkUtilities.CopyGlobalJson(this);
 
-        string PublishFolder = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
-        CleanBuildArtifacts(PublishFolder);
+        string OutputDirectory = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
+        string PublishDirectory = OutputDirectory;
+
+        if (options.NativeAot)
+        {
+            PublishDirectory = Path.Combine(this.GetAOTIntermediateDirectory());
+        }
+
+        CleanBuildArtifacts(PublishDirectory);
 
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
-        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishDirectory);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
-        BuildUserBindings(PublishFolder, options, Arguments);
-        BuildUserSolution(PublishFolder, Arguments, options);
-        
-        EmitInstalledFlagFile(PublishFolder);
+        BuildUserBindings(PublishDirectory, options, Arguments);
+        BuildUserSolution(PublishDirectory, Arguments, options);
 
-        LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
+        EmitInstalledFlagFile(PublishDirectory);
+
+        if (!options.NativeAot)
+        {
+            LoggerUtilities.LogUnrealSharpInfo("Packaging complete. Packaged assemblies published to: " + PublishDirectory);
+            return;
+        }
+
+        NativeAOTUtilities.RunAOT(this, PublishDirectory, OutputDirectory);
     }
 
-    private PackagingOptions ParseOptionsFromCommandLine()
+    private void ParseOptionsFromCommandLine()
     {
         string ArchiveDirectory = ParseRequiredStringParam("ArchiveDirectory");
         TargetType TargetType = ParseRequiredEnumParamEnum<TargetType>("UETargetType");
@@ -78,7 +93,7 @@ public class PackageProject : BuildCommand
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        Options = new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -104,11 +119,6 @@ public class PackageProject : BuildCommand
         if (!Directory.Exists(options.ArchiveDirectory))
         {
             throw new DirectoryNotFoundException($"Archive directory does not exist: {options.ArchiveDirectory}");
-        }
-
-        if (options.NativeAot)
-        {
-            throw new NotSupportedException("Native AOT packaging is not currently supported. This option is reserved for future use and should not be set.");
         }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
@@ -144,14 +154,14 @@ public class PackageProject : BuildCommand
                 Directory.Delete(folder, recursive: true);
                 return;
             }
-            catch (Exception Ex)
+            catch (Exception Exception)
             {
                 if (Attempt == CleanupMaxAttempts)
                 {
-                    throw new IOException($"Failed to clean output directory '{folder}' after {CleanupMaxAttempts} attempts. See inner exception for details.", Ex);
+                    throw new IOException($"Failed to clean output directory '{folder}' after {CleanupMaxAttempts} attempts. See inner exception for details.", Exception);
                 }
 
-                LoggerUtilities.LogUnrealSharpWarning($"Attempt {Attempt} to clean output directory '{folder}' failed. Retrying... Exception: {Ex.Message}");
+                LoggerUtilities.LogUnrealSharpWarning($"Attempt {Attempt} to clean output directory '{folder}' failed. Retrying... Exception: {Exception.Message}");
                 System.Threading.Thread.Sleep(CleanupRetryDelayMs);
             }
         }
@@ -164,11 +174,13 @@ public class PackageProject : BuildCommand
             "--runtime", runtimeIdentifier,
 
             "-p:UseDefaultOutputPath=true",
-            
+
             $"-p:PublishSelfContained={(options.NativeAot ? "false" : "true")}",
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",
+
+            $"-p:BuildingAOT={options.NativeAot.ToString().ToLower()}",
 
             $"-p:PublishDir=\"{publishFolder}\"",
         ];
@@ -206,7 +218,7 @@ public class PackageProject : BuildCommand
         }
 
         BuildCommands.BuildSolution.RunBuild(SolutionDirectory, options.BuildConfiguration, publish: true, BuildUserSolutionArguments);
-        
+
         EmitUserLoadOrder(publishFolder, ProjectFiles);
     }
 
