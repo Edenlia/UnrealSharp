@@ -158,6 +158,15 @@ loader-negative-b3 passed all three expected failures: failed dlopen, missing In
 
 Earlier loader-negative-b / b2 were inconclusive because the asynchronous log thread had not written the fatal diagnostic before termination. Their logs are retained; the test now uses the existing runtime options NoLogThread and forcelogflush to capture evidence. No production workaround was added. restored.json verifies identical production SHA-256 before/after. loader-negative-restored-b then passed all **68** positive checks again.
 
+## Repeated native World and UObject lifetimes
+
+The shared native fixture supports TestIterations (1–10). Every round runs all managed cases in a new World, releases FStructOnScope argument storage, destroys the World, performs full native GC and requires weak references to its World, two Actors and test UObject to become invalid. Subsequent iterations exercise registrations, dispatch and wrapper construction after native deletion callbacks have disposed the previous objects.
+
+- Final canonical builds: worlds-editor-a2 / worlds-editor-b3 and worlds-game-a2 / worlds-game-b2, all successful through unchanged Installed AutoBuild entries. Both Editor glue outputs were restored with ordinary UAT before JIT probes.
+- worlds-jit-b initially returned process status 1 despite three successful functional/GC reports: the commandlet treated the deliberately logged exception fixture as an unexpected error. The test commandlet now uses its explicit result and rejects every logged error except the exact expected callback diagnostic. This does not suppress logs or alter production exception handling.
+- worlds-jit-a / worlds-jit-b2 exited 0 with **198 identical PASS lines**: 65 managed checks and one native-GC check per round, three rounds. No native ensure/assertion was present.
+- worlds-archive-b completed in 76.03 seconds; worlds-publish-b passed in 67.02 seconds. worlds-aot-b passed **207 checks** in one standalone process: the same 198 common results plus 9 AOT-only results, with all three Worlds collected. comparison.json verifies counts and ordered common results, no native errors and no JIT runtime images.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.

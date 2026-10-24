@@ -84,4 +84,5 @@ Deliver a working, opt-in NativeAOT path on the available macOS arm64 environmen
 - Native parameter destruction and container-parameter ownership now pass 63 common checks and 3 AOT-only checks, including recovery after input marshaling throws. The matching native binding and generator prerequisite are present in both slots.
 - Unmanaged exception containment and recovery pass 65 common checks plus 3 AOT-only checks; no dispatcher change was necessary.
 - Invalid library, missing export and initialization failure all terminate with the expected diagnostic and no JIT fallback. The preserved production payload is restored byte-for-byte and again passes all 68 checks.
-- Remaining: repeated native world/object lifetimes, standalone JIT fallback and final usage/limitations documentation. Next native changes must use the existing Installed AutoBuild entries, with sequential builds and verification.
+- Repeated native lifetimes pass in both JIT slots (198 common checks) and standalone AOT (207 checks). All three transient Worlds, Actors and test UObjects are collected, and each subsequent iteration retains working registrations and callbacks.
+- Remaining: standalone JIT fallback and final usage/limitations documentation. Production implementation and planned NativeAOT functional gates are complete for Mac arm64 Development.

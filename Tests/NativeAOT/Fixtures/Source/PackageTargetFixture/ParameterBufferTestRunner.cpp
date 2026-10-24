@@ -7,6 +7,7 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "UObject/StructOnScope.h"
+#include "UObject/GarbageCollection.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UnrealType.h"
 
@@ -79,24 +80,51 @@ int32 RunParameterBufferTests(const FString& Params)
 		return Finish(2);
 	}
 
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
-	AActor* FirstActor = World ? World->SpawnActor<AActor>() : nullptr;
-	AActor* SecondActor = World ? World->SpawnActor<AActor>() : nullptr;
-	if (!FirstActor || !SecondActor)
+	int32 Iterations = 1;
+	FParse::Value(*Params, TEXT("TestIterations="), Iterations);
+	if (Iterations < 1 || Iterations > 10)
 	{
-		if (World) World->DestroyWorld(false);
-		Report += TEXT("FAIL temporary Actor creation\n");
+		Report += TEXT("FAIL TestIterations must be between 1 and 10\n");
 		return Finish(2);
 	}
 
-	UObject* Tests = NewObject<UObject>(GetTransientPackage(), TestsClass);
-	FStructOnScope Arguments(RunTests);
-	First->SetObjectPropertyValue_InContainer(Arguments.GetStructMemory(), FirstActor);
-	Second->SetObjectPropertyValue_InContainer(Arguments.GetStructMemory(), SecondActor);
-	Tests->ProcessEvent(RunTests, Arguments.GetStructMemory());
-	const bool Passed = Result->GetPropertyValue_InContainer(Arguments.GetStructMemory());
-	Report += TEXT("\nMANAGED CLASS ") + TestsClass->GetPathName() + TEXT("\n");
-	Report += ManagedReport->GetPropertyValue_InContainer(Tests);
-	World->DestroyWorld(false);
-	return Finish(Passed ? 0 : 1);
+	for (int32 Iteration = 0; Iteration < Iterations; ++Iteration)
+	{
+		UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+		AActor* FirstActor = World ? World->SpawnActor<AActor>() : nullptr;
+		AActor* SecondActor = World ? World->SpawnActor<AActor>() : nullptr;
+		if (!FirstActor || !SecondActor)
+		{
+			if (World) World->DestroyWorld(false);
+			Report += TEXT("FAIL temporary Actor creation\n");
+			return Finish(2);
+		}
+
+		UObject* Tests = NewObject<UObject>(GetTransientPackage(), TestsClass);
+		TWeakObjectPtr<UObject> WeakTests(Tests);
+		TWeakObjectPtr<UWorld> WeakWorld(World);
+		TWeakObjectPtr<AActor> WeakFirst(FirstActor), WeakSecond(SecondActor);
+		bool Passed;
+		{
+			// Release argument storage before destroying its referenced world.
+			FStructOnScope Arguments(RunTests);
+			First->SetObjectPropertyValue_InContainer(Arguments.GetStructMemory(), FirstActor);
+			Second->SetObjectPropertyValue_InContainer(Arguments.GetStructMemory(), SecondActor);
+			Tests->ProcessEvent(RunTests, Arguments.GetStructMemory());
+			Passed = Result->GetPropertyValue_InContainer(Arguments.GetStructMemory());
+			Report += FString::Printf(TEXT("\nITERATION %d MANAGED CLASS %s\n"), Iteration + 1, *TestsClass->GetPathName());
+			Report += ManagedReport->GetPropertyValue_InContainer(Tests);
+		}
+		World->DestroyWorld(false);
+		if (!Passed) return Finish(1);
+		CollectGarbage(RF_NoFlags, true);
+		if (WeakTests.IsValid() || WeakWorld.IsValid() || WeakFirst.IsValid() || WeakSecond.IsValid())
+		{
+			Report += TEXT("FAIL transient world/actors/test object survived native GC\n");
+			return Finish(1);
+		}
+		Report += TEXT("PASS transient world/actors/test object released by native GC\n");
+	}
+	Report += FString::Printf(TEXT("WORLDS %d PASS\n"), Iterations);
+	return Finish(0);
 }
