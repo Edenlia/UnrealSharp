@@ -82,6 +82,10 @@ Added five real generated-function cases: bool/FName/ref/out/return, false bool,
 
 No production dispatch change was required. Static UFunction through UE reflection, broader features and AOT unload rejection remain subsequent steps.
 
+## Static UFunction through native reflection
+
+The next fixture calls a generated static UFunction using its real native function pointer, reflected parameter offsets and the class default object through InvokeNativeStaticFunction. It does not directly invoke the C# static body. live-static-a and live-static-b both passed 28 checks after normal Editor Hot Reload; static-publish-b succeeded in 65.23 seconds, and static-runtime-b passed the identical 28 checks in the standalone AOT Game. No production dispatcher/generator change was needed.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
