@@ -17,6 +17,13 @@ public static class NativeAOTUtilities
 	{
 		CreateAOTProject(command, publishDirectory);
 		PublishAOT(command, publishDirectory, outputDirectory);
+		// NativeAOT still uses logical assembly names and the existing registration order.
+		foreach (string Manifest in Directory.EnumerateFiles(publishDirectory, "*.LoadOrder.json"))
+		{
+			File.Copy(Manifest, Path.Combine(outputDirectory, Path.GetFileName(Manifest)), true);
+		}
+		File.Copy(Path.Combine(publishDirectory, BuildUtilities.UnrealSharpBuildFlagFileName),
+			Path.Combine(outputDirectory, BuildUtilities.UnrealSharpBuildFlagFileName), true);
 	}
 	
 	public static void CreateAOTProject(BuildCommand buildCommand, string directory)
@@ -29,22 +36,32 @@ public static class NativeAOTUtilities
 			new KeyValuePair<string, string>("ProjectFolder", directory)
 		};
 
-		List<FileInfo> ProjectFiles = buildCommand.GetManagedProjectFiles();
-		
-		foreach (FileInfo ProjectFile in ProjectFiles)
+		// The emitted manifests already reflect target/plugin/editor-only filtering.
+		// Include native glue even when no user assembly directly references it.
+		SortedSet<string> Assemblies = new();
+		foreach (string Manifest in Directory.EnumerateFiles(directory, "*.LoadOrder.json"))
 		{
-			string FileName = Path.Combine(directory, Path.GetFileNameWithoutExtension(ProjectFile.Name) + ".dll");
+			Assemblies.UnionWith(UnrealSharp.Shared.AssemblyUtilities.ReadLoadOrder(Manifest));
+		}
+		
+		foreach (string Assembly in Assemblies)
+		{
+			string FileName = Path.Combine(directory, Assembly + ".dll");
+			if (!File.Exists(FileName))
+			{
+				throw new FileNotFoundException("NativeAOT manifest assembly was not published.", FileName);
+			}
 			Arguments.Add(new KeyValuePair<string, string>("References", FileName));
 		}
 
 		CommandUtilities.RunCommand(nameof(GenerateProject), buildCommand, Arguments);
 		
 		string CsprojPath = Path.Combine(directory, $"{ProjectName}.csproj");
-		AddTrimmerRootAssemblies(CsprojPath, ProjectFiles);
+		AddTrimmerRootAssemblies(CsprojPath, Assemblies);
 		CreateInitializeClass(directory);
 	}
 
-	public static void AddTrimmerRootAssemblies(string csprojPath, List<FileInfo> projectFiles)
+	public static void AddTrimmerRootAssemblies(string csprojPath, IEnumerable<string> assemblies)
 	{
 		XmlDocument Document = new XmlDocument();
 		Document.Load(csprojPath);
@@ -52,10 +69,10 @@ public static class NativeAOTUtilities
 		XmlElement ItemGroup = Document.CreateElement("ItemGroup", Document.DocumentElement!.NamespaceURI);
 		Document.DocumentElement.AppendChild(ItemGroup);
 		
-		foreach (FileInfo ProjectFile in projectFiles)
+		foreach (string Assembly in assemblies)
 		{
 			XmlElement TrimmerRootAssembly = Document.CreateElement("TrimmerRootAssembly", Document.DocumentElement.NamespaceURI);
-			TrimmerRootAssembly.SetAttribute("Include", Path.GetFileNameWithoutExtension(ProjectFile.Name));
+			TrimmerRootAssembly.SetAttribute("Include", Assembly);
 			ItemGroup.AppendChild(TrimmerRootAssembly);
 		}
 		
@@ -68,6 +85,11 @@ public static class NativeAOTUtilities
 		{
 			"--runtime=" + DotNetSdkUtilities.GetDotNetRuntimeIdentifier(command.Options.TargetPlatform, command.Options.TargetArchitecture),
 			"-p:PublishAot=true",
+			"-p:NativeLib=Shared",
+			"-p:BuildingAOT=true",
+			$"-p:UETargetType={command.Options.TargetType}",
+			$"-p:UEBuildConfig={command.Options.BuildConfiguration}",
+			"-p:TrimmerSingleWarn=false",
 			$"-p:PublishDir=\"{outputDirectory}\"",
 		};
 			

@@ -47,9 +47,15 @@ Historical dispatch-probe-b2 passed 31 checks including bootstrap. Explicitly ro
 
 Keep the current ABI. Test-only roots isolate the mechanism from the remaining application trimming and generated-metadata gates.
 
-## Publish metadata work in progress
+## Target-aware publish metadata
 
-Before the environment correction, upstream-aot-package-b produced a 114 MiB Game dylib but omitted load-order manifests/installed flag; its final root defaulted to Editor properties. The uncommitted fix references/roots emitted manifest assemblies (including otherwise unreferenced glue), carries target/configuration to final publish, copies manifests/flag and expands warnings. Old-environment manifest-aot-package-b published successfully. This change still needs Installed UE verification and is not committed.
+Before the environment correction, upstream-aot-package-b produced a 114 MiB Game dylib but omitted load-order manifests/installed flag; its final root defaulted to Editor properties. The fix references/roots emitted manifest assemblies (including otherwise unreferenced glue), carries target/configuration to final publish, copies manifests/flag and expands warnings.
+
+Installed verification: installed-package-b used ordinary production UAT with PackageProject -NativeAOT -UETargetType=Game -UEBuildConfig=Development -TargetPlatform=Mac -TargetArchitecture=arm64. It exited 0 in 120.52 seconds. archives/installed-manifest-b/Binaries/Managed/net10.0 contains the 114 MiB SharpTestProject1.AOT.dylib, GlueCode.LoadOrder.json (PackageTargetFixture), UserCode.LoadOrder.json (PackagingManagedProbe, SharpTestProject1.RuntimeGlue) and UnrealSharpBuild.flag. The aggregate project explicitly references and roots all three manifest assemblies; no Editor-only module appears in the manifests.
+
+The existing installed-dispatch-b/caller was then run with `dotnet run --project <evidence>/runs/installed-dispatch-b/caller/Caller.csproj -c Release -- <evidence>/archives/installed-manifest-b/Binaries/Managed/net10.0/SharpTestProject1.AOT.dylib package`. The actual package's production export passed all 17 applicable bootstrap checks and exited 0. No test-only export is required in package mode. This is export validation, not yet UE game startup.
+
+All 13 publish warnings are preserved: seven core reflection/type/constructor sites, two delegate wrapper discovery/construction sites, two legacy exported-function reflection sites, and two dynamic-load methods retained by the whole-assembly root. They are not suppressed; exercise the generated game path next and remove incompatible code from the AOT path in a separate step.
 
 ## Installed UE verification
 

@@ -34,7 +34,7 @@ unsafe class Program
         // NativeAOT libraries must remain loaded for the lifetime of this process.
         nint library = NativeLibrary.Load(args[0]);
         var initialize = (delegate* unmanaged<byte*, nint*, nint, nint*, Result*, void>)NativeLibrary.GetExport(library, "InitializeAotRuntime");
-        var verify = (delegate* unmanaged<byte*, int>)NativeLibrary.GetExport(library, "VerifyBootstrap");
+        bool package = args.Length > 1 && args[1] == "package";
         Check(!NativeLibrary.TryGetExport(library, "MissingExport", out _), "native symbol lookup");
         Check(sizeof(Result) == 4097, "initialization result ABI size");
 
@@ -52,7 +52,11 @@ unsafe class Program
             Check(plugins[1] != 0 && plugins[2] != 0, "plugin callbacks initialized");
             for (int i = 1; i < 10; i++) Check(callbacks[i] != 0, "managed callback " + i);
             Check(plugins[0] == 0x5678 && plugins[3] == 0x5678 && callbacks[0] == 0x5678 && callbacks[10] == 0x5678, "callback table boundaries");
-            Check(verify(path) == 0, "UTF-8 working directory and UTF-16 native bind callback");
+            if (!package)
+            {
+                var verify = (delegate* unmanaged<byte*, int>)NativeLibrary.GetExport(library, "VerifyBootstrap");
+                Check(verify(path) == 0, "UTF-8 working directory and UTF-16 native bind callback");
+            }
             if (args.Length > 1 && args[1] == "dispatch")
             {
                 var dispatch = (delegate* unmanaged<int>)NativeLibrary.GetExport(library, "VerifyManagedDispatch");
