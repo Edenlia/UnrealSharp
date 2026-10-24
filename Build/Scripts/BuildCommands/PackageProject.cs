@@ -47,19 +47,34 @@ public class PackageProject : BuildCommand
 
         DotNetSdkUtilities.CopyGlobalJson(this);
 
-        string PublishFolder = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
-        CleanBuildArtifacts(PublishFolder);
+        string OutputDirectory = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
+        string PublishDirectory = OutputDirectory;
+
+        if (options.NativeAot)
+        {
+            PublishDirectory = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), "NativeAOT");
+        }
+
+        CleanBuildArtifacts(PublishDirectory);
 
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
-        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishDirectory);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
-        BuildUserBindings(PublishFolder, options, Arguments);
-        BuildUserSolution(PublishFolder, Arguments, options);
-        
-        EmitInstalledFlagFile(PublishFolder);
+        BuildUserBindings(PublishDirectory, options, Arguments);
+        BuildUserSolution(PublishDirectory, Arguments, options);
 
-        LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
+        EmitInstalledFlagFile(PublishDirectory);
+
+        if (!options.NativeAot)
+        {
+            LoggerUtilities.LogUnrealSharpInfo("Packaging complete. Packaged assemblies published to: " + PublishDirectory);
+            return;
+        }
+
+        CleanBuildArtifacts(OutputDirectory);
+        NativeAOTUtilities.RunAOT(this, options, PublishDirectory, OutputDirectory);
+        EmitInstalledFlagFile(OutputDirectory);
     }
 
     private PackagingOptions ParseOptionsFromCommandLine()
@@ -108,7 +123,14 @@ public class PackageProject : BuildCommand
 
         if (options.NativeAot)
         {
-            throw new NotSupportedException("Native AOT packaging is not currently supported. This option is reserved for future use and should not be set.");
+            bool WindowsTarget = OperatingSystem.IsWindows() && options.TargetPlatform == UnrealTargetPlatform.Win64 &&
+                options.TargetArchitecture == UnrealArch.X64;
+            bool MacTarget = OperatingSystem.IsMacOS() && options.TargetPlatform == UnrealTargetPlatform.Mac &&
+                options.TargetArchitecture == UnrealArch.Arm64;
+            if (options.TargetType == TargetType.Editor || !(WindowsTarget || MacTarget))
+            {
+                throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 or Mac arm64 target on the matching host OS. Use JIT for Editor and managed Hot Reload.");
+            }
         }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
@@ -164,11 +186,13 @@ public class PackageProject : BuildCommand
             "--runtime", runtimeIdentifier,
 
             "-p:UseDefaultOutputPath=true",
-            
+
             $"-p:PublishSelfContained={(options.NativeAot ? "false" : "true")}",
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",
+
+            $"-p:BuildingAOT={(options.NativeAot ? "true" : "false")}",
 
             $"-p:PublishDir=\"{publishFolder}\"",
         ];
@@ -182,6 +206,14 @@ public class PackageProject : BuildCommand
 
     private void BuildUserSolution(string publishFolder, IList<string> buildArguments, PackagingOptions options)
     {
+        if (options.NativeAot)
+        {
+            // Shared.props must resolve the target's published runtime and glue, not Editor output.
+            buildArguments = new List<string>(buildArguments)
+            {
+                $"-p:UnrealSharpPackageDirectory=\"{publishFolder}\""
+            };
+        }
         ManagedBuildTarget Target = new(options.TargetPlatform, options.TargetType, options.BuildConfiguration);
         List<FileInfo> ProjectFiles = this.GetManagedProjectFiles(Target)
             .Where(file => !ProjectUtilities.IsEditorOnlyProject(file.FullName))
@@ -206,12 +238,19 @@ public class PackageProject : BuildCommand
         }
 
         BuildCommands.BuildSolution.RunBuild(SolutionDirectory, options.BuildConfiguration, publish: true, BuildUserSolutionArguments);
-        
+
         EmitUserLoadOrder(publishFolder, ProjectFiles);
     }
 
     private void BuildUserBindings(string publishFolder, PackagingOptions options, IList<string> buildArguments)
     {
+        if (options.NativeAot)
+        {
+            buildArguments = new List<string>(buildArguments)
+            {
+                $"-p:UnrealSharpPackageDirectory=\"{publishFolder}\""
+            };
+        }
         if (this.IsInstalledUnrealSharpBuild())
         {
             CopyInstalledGlue(publishFolder);
