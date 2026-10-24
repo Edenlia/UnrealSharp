@@ -1,5 +1,9 @@
 # UnrealSharp
 
+Windows BuildCookRun can include managed publishing during staging. See
+[Windows managed staging](Docs/WindowsStaging.md) for UE 5.7+ automatic discovery,
+the UE 5.6 opt-in, and supported target/output boundaries.
+
 UnrealSharp is a free, open-source plugin for writing Unreal Engine 5 games in C# on top of .NET 10.
 
 [Workflow Showcase](https://www.youtube.com/watch?v=xR7M2XgCuNU)
