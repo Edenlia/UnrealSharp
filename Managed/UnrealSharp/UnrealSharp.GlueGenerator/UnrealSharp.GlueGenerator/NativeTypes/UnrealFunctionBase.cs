@@ -340,6 +340,7 @@ public abstract record UnrealFunctionBase : UnrealStruct
         builder.BeginUnsafeBlock();
 
         builder.AllocateParameterBuffer(SizeVariableName);
+        builder.AppendLine($"Bind_UFunction.CallInitializeFunctionParams({FunctionNativePtr}, {SourceGenUtilities.ParamsBuffer});");
 
         foreach (UnrealProperty parameter in Properties)
         {

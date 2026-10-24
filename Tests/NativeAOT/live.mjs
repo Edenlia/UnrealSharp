@@ -64,6 +64,9 @@ try {
     await until(() => fs.existsSync(path.join(dir, 'after-reload.json')), 60, 'reflected tests');
     const result = JSON.parse(read(path.join(dir, 'after-reload.json')));
     if (!result.passed || result.checks !== expected) throw Error('Unexpected test result: ' + JSON.stringify(result));
+    if (/Handled ensure|Assertion failed|=== Critical error/.test(log().slice(start))) {
+        throw Error('Native ensure/assertion during reload or tests; inspect ' + dir);
+    }
     console.log('LIVE PASS ' + slot + ' ' + expected + ' checks');
 } catch (error) {
     failure = error;

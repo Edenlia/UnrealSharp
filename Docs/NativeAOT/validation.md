@@ -110,6 +110,18 @@ UnrealFunction.ExportWrapperMethod now resolves all interface methods on the ins
 
 This fixes an existing JIT defect exposed by the AOT coverage expansion; it is not an Engine/Project plugin-selection workaround.
 
+## Delegate parameter marshaling and native initialization
+
+live-delegates-a / live-delegates-b reproduced a native FScriptDelegate access-detector ensure in both slots. Checkpoints showed property assignment succeeded and the fault occurred while marshaling the function parameter. DelegateProperty incorrectly ignored its supplied buffer, addressed NativeObject plus the parameter offset, and cached parameter values as though they were properties. Roslyn callers also passed uninitialized stack storage, unlike the existing UHT wrapper path.
+
+Delegate fields retain their property cache; delegate parameters now decode each invocation from the actual parameter buffer, and all delegate writes honor that buffer. Roslyn calls initialize native parameter values through the existing InitializeFunctionParams binding before marshaling. No C++ change was needed. These matching prerequisites were applied to baseline A after the reproductions. Parameter destruction is a separate follow-up.
+
+- delegates-generator-b / delegates-generator-a: normal managed BuildSolution succeeded (38.39 / 7.57 seconds).
+- live-delegates-fixed-a / live-delegates-fixed-b: **56 matching checks** after Hot Reload, including single binding, actual delegate-parameter invocation, repeated calls, unbound delegate without stale caching, two multicast targets after GC, removal and clear.
+- delegates-publish-b: production AOT publish succeeded in 89.88 seconds; delegates-runtime-b passed the same 56 checks in the standalone Game. All three positive logs were explicitly checked for native ensure/assertion/critical-error markers and contained none. The live driver now rejects those markers even if a managed report passes.
+
+The failed task-owned Editors were stopped after they remained blocked on the ensure despite SIGTERM; raw failure logs remain preserved. No unrelated processes were terminated.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
