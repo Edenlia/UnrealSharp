@@ -99,23 +99,18 @@ public static class GeneratorStringBuilderUtilities
         stringBuilder.CloseBrace();
     }
     
-    
-    public static void StartGlueFile(this GeneratorStringBuilder stringBuilder, UhtField type, bool blittable = false)
+    public static void StartGlueFile(this GeneratorStringBuilder stringBuilder, UhtField type)
     {
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.AttributeNamespace);
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.CoreNamespace);
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.CoreAttributeNamespace);
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.UnrealSharpInteropNamespace);
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.CoreInteropNamespace);
+        stringBuilder.DeclareDirective(ScriptGeneratorUtilities.InteropServicesNamespace);
         stringBuilder.DeclareDirective(ScriptGeneratorUtilities.MarshallerNamespace);
         
         stringBuilder.AppendLine($"using static UnrealSharp.Interop.{ExporterCallbacks.Bind_FProperty};");
         stringBuilder.AppendLine("#nullable enable");
-        
-        if (blittable)
-        {
-            stringBuilder.DeclareDirective(ScriptGeneratorUtilities.InteropServicesNamespace);
-        }
 
         stringBuilder.AppendLine();
         BeginNamespace(stringBuilder, type);

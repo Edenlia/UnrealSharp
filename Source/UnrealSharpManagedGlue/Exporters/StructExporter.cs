@@ -57,7 +57,7 @@ public static class StructExporter
         bool isCopyable = structObj.IsStructNativelyCopyable();
         bool isDestructible = structObj.IsStructNativelyDestructible();
         
-        stringBuilder.StartGlueFile(structObj, isBlittable);
+        stringBuilder.StartGlueFile(structObj);
                 
         stringBuilder.AppendTooltip(structObj);
         
