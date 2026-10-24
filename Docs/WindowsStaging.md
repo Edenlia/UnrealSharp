@@ -19,6 +19,13 @@ An explicit `-ScriptDir=<UnrealSharp>/Build/Scripts` also loads the plugin's com
 and handler. It does not cause a second managed publish when the generated project
 entry is present.
 
+Cook commandlets launched by UAT reuse its already-built AutomationTool and script
+modules when building C# for asset loading. They use UAT's child-instance protocol
+and separate log directories so they neither replace loaded tool assemblies nor
+contend with the parent packaging process for its instance lock or logs. Editor commands use
+normal project-plugin discovery in installed engines and a scoped plugin script
+path where source/external plugin discovery requires it.
+
 The generated project entry must remain available to UAT, including CI builds that
 skip native compilation. It is generated from the plugin location used by UBT and
 does not overwrite a user-authored automation project. If the plugin is removed,

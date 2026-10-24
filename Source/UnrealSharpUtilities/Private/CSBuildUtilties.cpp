@@ -6,8 +6,11 @@
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
+#include "HAL/PlatformMisc.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/App.h"
+#include "Misc/Guid.h"
 #include "Misc/MonitoredProcess.h"
 #include "Styling/SlateStyleRegistry.h"
 
@@ -86,15 +89,20 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	
 	OutArgs.Reset();
 	OutArgs += BuildAction;
-	if (FPaths::IsUnderDirectory(PluginFolder, ProjectFolder))
+	const FString ParentLogFolder = FPlatformMisc::GetEnvironmentVariable(TEXT("uebp_LogFolder"));
+	if (IsRunningCommandlet() && !ParentLogFolder.IsEmpty())
 	{
-		// Use the same discovery and build-record root as -ScriptsForProject.
-		// Reading the legacy Build/Scripts root too can load duplicate records.
-		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *ProjectFolder);
+		// Match UAT's recursive invocation: reuse the parent's tools, allow this
+		// child instance, and keep its log cleanup separate from the parent's logs.
+		const FString ChildLogFolder = FPaths::Combine(ParentLogFolder, TEXT("UnrealSharp"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+		OutArgs += TEXT(" -nocompileuat -nocompile uebp_UATMutexNoWait=1 uebp_UATChildInstance=1");
+		OutArgs += FString::Printf(TEXT(" uebp_LogFolder=\"%s\" uebp_FinalLogFolder=\"%s\""), *ChildLogFolder, *ChildLogFolder);
 	}
-	else if (!FPaths::IsUnderDirectory(PluginFolder, EngineFolder))
+	const bool bProjectPlugin = FPaths::IsUnderDirectory(PluginFolder, ProjectFolder);
+	if (!FPaths::IsUnderDirectory(PluginFolder, EngineFolder) && !(bProjectPlugin && FApp::IsEngineInstalled()))
 	{
-		// External plugins are not covered by the default engine/project roots.
+		// Installed UAT discovers project plugins itself. Source/external plugins
+		// need an explicit path; scanning the whole project also finds backup copies.
 		OutArgs += FString::Printf(TEXT(" -ScriptDir=\"%s\""), *FPaths::Combine(PluginFolder, TEXT("Build"), TEXT("Scripts")));
 	}
 	// -Project selects the command target; -ScriptsForProject also scopes UAT script discovery.
