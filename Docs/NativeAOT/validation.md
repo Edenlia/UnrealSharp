@@ -57,6 +57,20 @@ The existing installed-dispatch-b/caller was then run with `dotnet run --project
 
 All 13 publish warnings are preserved: seven core reflection/type/constructor sites, two delegate wrapper discovery/construction sites, two legacy exported-function reflection sites, and two dynamic-load methods retained by the whole-assembly root. They are not suppressed; exercise the generated game path next and remove incompatible code from the AOT path in a separate step.
 
+## Native host and first standalone Game
+
+Non-Editor targets look for `<Project>.AOT.<platform module extension>` in the managed output directory before resolving hostfxr. The AOT export shares the existing bootstrap ABI. A present library with a load/export error is fatal, rather than falling through to JIT. NativeAOT's handle remains loaded until process exit; embedded logical assemblies no longer require separate DLLs and are noncollectible. Editor retains JIT. The original JIT host loading implementation is moved unchanged into ResolveJitEntryPoint.
+
+The shared parameter fixture now runs in a Runtime module, exposed through the original Editor commandlet and a Game-only `-ParameterBufferTests` startup hook. The managed fixture no longer references the unused Editor-only probe assembly. Native builds use the same canonical entries; archive performs cook/stage/package only with skipbuild/skipbuildeditor/nocompileeditor.
+
+- loader-editor-b / loader-game-b: Installed canonical builds passed (144.24 / 73.33 seconds). loader-jit-b retained all 22 Editor checks.
+- loader-archive-b stopped after a successful cook: a pre-task generated project Automation binary still contained a staging adapter whose production type is absent from this branch. Its existing csproj already disables the adapter when its source is absent. A normal `dotnet build <B>/Build/UnrealSharp/UnrealSharpProject.Automation.csproj -c Development -p:EngineDir=<Installed>/Engine` rebuilt the expected empty module. No production change, Engine modification, native cache cleanup, or AutoBuild edit was made.
+- loader-archive-b2 succeeded in 89.49 seconds; standard Mac staging/package Xcode tasks performed copying/signing, with no C++ compile/link action. loader-publish-b then published AOT directly into the app's Contents/UE/SharpTestProject1 payload, exit 0 (129.27 seconds).
+- loader-runtime-b reached the tests but could not write the external report from the app sandbox. Mac's graceful RequestExitWithStatus ignored status 3, so process exit 0 was not acceptance. loader-runtime-b2 caught a second test-infrastructure error: extra literal quotes duplicated macOS argument quoting. Both failed attempts are preserved.
+- loader-runtime-b3 passed **22/22 checks**, exactly matching baseline A's Installed JIT check names, and exited normally (1.33 seconds). The report is written inside the app's normal container Saved directory and copied into evidence. The runner now requires a passing report independently of process exit status. DYLD_PRINT_LIBRARIES recorded SharpTestProject1.AOT.dylib and **zero hostfxr/CoreCLR/hostpolicy images**. The package contains logical load-order manifests and no managed runtime DLLs. comparison.json records the check/image comparison.
+
+This proves the real generated Game path for current scalar/string/struct/object/ref/out cases. Broader generated features, explicit unload rejection, negative loader cases and JIT hot reload remain separate gates.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.

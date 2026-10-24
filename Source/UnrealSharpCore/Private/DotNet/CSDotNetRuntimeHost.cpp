@@ -7,6 +7,7 @@
 #include "CSPathsUtilities.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
+#include "Misc/App.h"
 #include "Logging/StructuredLog.h"
 
 using namespace UnrealSharp;
@@ -20,34 +21,34 @@ FCSDotNetRuntimeHost::~FCSDotNetRuntimeHost()
 
 bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 {
-	load_assembly_and_get_function_pointer_fn LoadAssemblyAndGetFunctionPointer = InitializeHost();
-	if (!LoadAssemblyAndGetFunctionPointer)
-	{
-		UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to initialize Runtime Host. Check logs for more details.");
-	}
-
-	const FString EntryPointClassName = TEXT("UnrealSharp.Plugins.Main, UnrealSharp.Plugins");
-	const FString EntryPointFunctionName = TEXT("InitializeUnrealSharp");
-	const FString UnrealSharpLibraryAssembly = FPaths::ConvertRelativePathToFull(Paths::GetUnrealSharpPluginsPath());
-	const FString UserWorkingDirectory = FPaths::ConvertRelativePathToFull(Paths::GetUserAssemblyDirectory());
-
-	DotNetUtilities::FHostStringConversion AssemblyPathConv = StringCast<DotNetUtilities::FHostChar>(*UnrealSharpLibraryAssembly);
-	DotNetUtilities::FHostStringConversion EntryPointClassConv = StringCast<DotNetUtilities::FHostChar>(*EntryPointClassName);
-	DotNetUtilities::FHostStringConversion EntryPointFunctionConv = StringCast<DotNetUtilities::FHostChar>(*EntryPointFunctionName);
-
 	FInitializeUnrealSharp InitializeUnrealSharp = nullptr;
-	const int32 ErrorCode = LoadAssemblyAndGetFunctionPointer(
-		reinterpret_cast<const char_t*>(AssemblyPathConv.Get()),
-		reinterpret_cast<const char_t*>(EntryPointClassConv.Get()),
-		reinterpret_cast<const char_t*>(EntryPointFunctionConv.Get()),
-		UNMANAGEDCALLERSONLY_METHOD,
-		nullptr,
-		reinterpret_cast<void**>(&InitializeUnrealSharp));
-
-	if (ErrorCode != 0 || !InitializeUnrealSharp)
+#if !WITH_EDITOR
+	const FString AotLibraryPath = Paths::GetUserAssemblyDirectory() /
+		(FString(FApp::GetProjectName()) + TEXT(".AOT.") + FPlatformProcess::GetModuleExtension());
+	if (FPaths::FileExists(AotLibraryPath))
 	{
-		UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to load assembly '{0}'. hostfxr error code: {1}", UnrealSharpLibraryAssembly, ErrorCode);
+		NativeAotLibrary = FPlatformProcess::GetDllHandle(*AotLibraryPath);
+		if (!NativeAotLibrary)
+		{
+			UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to load NativeAOT library: {0}", AotLibraryPath);
+		}
+
+		InitializeUnrealSharp = reinterpret_cast<FInitializeUnrealSharp>(
+			FPlatformProcess::GetDllExport(NativeAotLibrary, TEXT("InitializeAotRuntime")));
+		if (!InitializeUnrealSharp)
+		{
+			UE_LOGFMT(LogUnrealSharp, Fatal, "NativeAOT library is missing InitializeAotRuntime: {0}", AotLibraryPath);
+		}
+		UE_LOGFMT(LogUnrealSharp, Display, "Using NativeAOT runtime: {0}", AotLibraryPath);
 	}
+#endif
+
+	if (!InitializeUnrealSharp)
+	{
+		InitializeUnrealSharp = ResolveJitEntryPoint();
+	}
+
+	const FString UserWorkingDirectory = FPaths::ConvertRelativePathToFull(Paths::GetUserAssemblyDirectory());
 
 	const FTCHARToUTF8 WorkingDirectoryUtf8(*UserWorkingDirectory);
 
@@ -73,6 +74,39 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 #endif
 
 	return true;
+}
+
+FInitializeUnrealSharp FCSDotNetRuntimeHost::ResolveJitEntryPoint()
+{
+	load_assembly_and_get_function_pointer_fn LoadAssemblyAndGetFunctionPointer = InitializeHost();
+	if (!LoadAssemblyAndGetFunctionPointer)
+	{
+		UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to initialize Runtime Host. Check logs for more details.");
+	}
+
+	const FString EntryPointClassName = TEXT("UnrealSharp.Plugins.Main, UnrealSharp.Plugins");
+	const FString EntryPointFunctionName = TEXT("InitializeUnrealSharp");
+	const FString UnrealSharpLibraryAssembly = FPaths::ConvertRelativePathToFull(Paths::GetUnrealSharpPluginsPath());
+
+	DotNetUtilities::FHostStringConversion AssemblyPathConv = StringCast<DotNetUtilities::FHostChar>(*UnrealSharpLibraryAssembly);
+	DotNetUtilities::FHostStringConversion EntryPointClassConv = StringCast<DotNetUtilities::FHostChar>(*EntryPointClassName);
+	DotNetUtilities::FHostStringConversion EntryPointFunctionConv = StringCast<DotNetUtilities::FHostChar>(*EntryPointFunctionName);
+
+	FInitializeUnrealSharp InitializeUnrealSharp = nullptr;
+	const int32 ErrorCode = LoadAssemblyAndGetFunctionPointer(
+		reinterpret_cast<const char_t*>(AssemblyPathConv.Get()),
+		reinterpret_cast<const char_t*>(EntryPointClassConv.Get()),
+		reinterpret_cast<const char_t*>(EntryPointFunctionConv.Get()),
+		UNMANAGEDCALLERSONLY_METHOD,
+		nullptr,
+		reinterpret_cast<void**>(&InitializeUnrealSharp));
+
+	if (ErrorCode != 0 || !InitializeUnrealSharp)
+	{
+		UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to load assembly '{0}'. hostfxr error code: {1}", UnrealSharpLibraryAssembly, ErrorCode);
+	}
+
+	return InitializeUnrealSharp;
 }
 
 void FCSDotNetRuntimeHost::ShutdownManagedRuntime()

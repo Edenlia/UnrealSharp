@@ -11,6 +11,7 @@ class FUnrealSharpCoreModule : public IModuleInterface
 public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+	bool IsNativeAOT() const { return DotNetRuntimeHost.IsNativeAOT(); }
 private:
 	FCSDotNetRuntimeHost DotNetRuntimeHost;
 };

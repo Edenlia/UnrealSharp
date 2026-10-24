@@ -48,9 +48,11 @@ public:
 
 	bool InitializeManagedRuntime();
 	void ShutdownManagedRuntime();
+	bool IsNativeAOT() const { return NativeAotLibrary != nullptr; }
 
 private:
 	static FCSDotNetLayout ResolveDotNetLayout(const FString& PluginAssemblyPath);
+	FInitializeUnrealSharp ResolveJitEntryPoint();
 
 	load_assembly_and_get_function_pointer_fn InitializeHost();
 	load_assembly_and_get_function_pointer_fn ConfigureRuntime(const FCSDotNetLayout& Layout) const;
@@ -68,4 +70,6 @@ private:
 	hostfxr_close_fn Hostfxr_Close = nullptr;
 
 	void* RuntimeHost = nullptr;
+	// NativeAOT does not support unloading. Keep this library loaded until process exit.
+	void* NativeAotLibrary = nullptr;
 };
