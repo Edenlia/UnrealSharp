@@ -4,7 +4,7 @@
 
 Implement on `eden-main` in small, reviewable steps. Each functional change needs a focused executable check before its own commit. Record what changed, the exact source identity, commands, results and limitations. Never describe a successful build as successful runtime validation. No push or remote publication is authorized.
 
-The user explicitly authorized UnrealSuperAgent and the existing `SharpTestProject` / `SharpTestProject1` projects for A/B testing. Their canonical AutoBuild entries are immutable. Native builds and Editor/game verification are sequential; preserve unrelated processes, project fixtures and workspace changes.
+The user explicitly authorized UnrealSuperAgent and the existing `SharpTestProject` / `SharpTestProject1` projects for A/B testing. On 2026-10-24 the user clarified that both projects must use **Installed UE 5.8**, not the source Engine checkout. Use their existing Installed AutoBuild entries unchanged. Native builds and Editor/game verification are sequential; preserve unrelated processes, project fixtures and workspace changes.
 
 ## Baseline and sources (2026-10-23, America/Los_Angeles)
 
@@ -13,8 +13,8 @@ The user explicitly authorized UnrealSuperAgent and the existing `SharpTestProje
 - A: `/Users/shuyangzhang/Workspace/UEProjects/SharpTestProject/SharpTestProject.uproject`.
 - B: `/Users/shuyangzhang/Workspace/UEProjects/SharpTestProject1/SharpTestProject1.uproject`.
 - Both projects are existing non-Git test directories. Preserve their existing source and plugin contents before deployment. Keep task fixtures reproducible in this repository.
-- Native verification: existing `AutoBuild_Source_Editor_Mac.sh` and `AutoBuild_Source_Game_Mac.sh` and matching JSON, using `/Users/shuyangzhang/Workspace/UnrealEngine`. Each JSON fixes cwd, project, Target, Mac Development, default architecture, `-WaitMutex` and `-FromMSBuild`. Read each entry/config before first use; never switch engine or options after failure.
-- Integrated Engine plugin is a separate tracked copy. Do not automatically synchronize it: use project-local test plugins for this task.
+- Native verification: existing `AutoBuild_Mac.sh` / `AutoBuild.json` (Editor) and `AutoBuild_Game_Mac.sh` / `AutoBuild_Game.json`, using `/Users/Shared/Epic Games/UE_5.8` (5.8.3, CL 58210709). Each JSON fixes cwd, project, Target, Mac Development, default architecture, `-WaitMutex` and `-FromMSBuild`. The source-engine runs performed before the clarification are historical only. This engine correction is explicitly requested by the user, not a build-failure workaround.
+- Installed UE contains no UnrealSharp plugin; both tests use their project-local copy. Do not modify the integrated source-Engine plugin. Remove the abandoned dual-installation fix and source-linked Automation workaround.
 - Existing workspace changes: Balloon, Dripping, ProjectToy submodules, untracked EdenGameplayExtension and Tests. Preserve all.
 
 ### Research references
@@ -72,9 +72,7 @@ Deliver a working, opt-in NativeAOT path on the available macOS arm64 environmen
 
 - Research and local inventory complete; upstream fetched.
 - Plan checkpoint `9781aedd`; upstream merge `4899400f` (committed externally during validation; contents verified against deployment).
-- Canonical Editor builds succeeded in A and B. Corrected project-plugin selection in `8e1b3a7f`, also applied as a common baseline prerequisite.
-- Added a uniquely named UAT test driver linking each slot's exact production sources: ordinary UAT can resolve the Engine's same-named Automation assembly instead of the project copy. The driver records assembly/plugin identity; it does not validate ordinary Editor-menu UAT dispatch in this dual-installation layout.
-- Regenerated and built both slots' glue/user assemblies with the identified driver. The existing empty FString bug is fixed in `d3e9377c`; both A and B now pass 22 runtime checks with that common prerequisite.
-- Step 2a implemented: actual AOT dylib export passes 18 ABI/bootstrap checks; original JIT hostfxr entry still passes 22 UE checks. Seven reflection trimming warnings are preserved for the next stages.
-- Core method/constructor mechanism probe passes in actual AOT: 31 checks including bootstrap. Keep the existing ABI; explicit fixture roots isolate this evidence from the remaining trimming problem.
-- Next: connect the portable native loader and target-aware publish path for the full UE fixture, then validate generated functions and module/type retention together.
+- Removed `8e1b3a7f` from local eden-main history at the user's request. Subsequent local commits were replayed; no push occurred. Removed that prerequisite from baseline A and removed the generic renamed Automation dispatcher.
+- Current commits: `ca5e79d5` test infrastructure; `a9346f98` FString length fix; `d9132e0c` shared UTF-8 bootstrap/export; `c0cde37e` actual AOT core-dispatch probe. Initial source-engine evidence is preserved separately and is not Installed UE validation.
+- Historical executable evidence: 22 UE JIT checks in each slot, 18 AOT export checks, 31 AOT bootstrap/dispatch checks. Keep the proven current call ABI; explicit fixture roots do not yet solve full-application trimming.
+- Installed correction verified: both canonical Editor builds passed; normal UAT and both JIT probes passed (22 checks each); production-generated AOT bootstrap/dispatch passed 31 checks. Continue target-aware publish metadata, portable native loader and complete UE/Game fixture.

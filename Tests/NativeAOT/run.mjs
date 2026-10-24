@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspace = path.resolve(repo, '../..');
-const engine = path.join(workspace, 'UnrealEngine');
-const evidence = path.join(engine, 'Tests/NativeAOT/eden-main');
+const engine = '/Users/Shared/Epic Games/UE_5.8';
+const evidence = path.join(workspace, 'UnrealEngine/Tests/NativeAOT/eden-main');
 const [mode, slot, round, ...extra] = process.argv.slice(2);
 if (!['A', 'B'].includes(slot) || !/^[a-z0-9-]+$/.test(round ?? '')) {
     throw Error('Usage: node Tests/NativeAOT/run.mjs <preserve|deploy|native|probe|uat> <A|B> <unique-round> [args]');
@@ -96,9 +96,9 @@ if (mode === 'deploy') {
 let command, args, gate;
 if (mode === 'native') {
     const target = extra[0] ?? 'Editor';
-    if (!['Editor', 'Game', 'Shipping', 'Server', 'Client'].includes(target)) throw Error('Unknown canonical target');
-    const configFile = path.join(project, `AutoBuild_Source_${target}.json`);
-    const entry = path.join(project, `AutoBuild_Source_${target}_Mac.sh`);
+    if (!['Editor', 'Game'].includes(target)) throw Error('Unknown canonical target');
+    const configFile = path.join(project, target === 'Editor' ? 'AutoBuild.json' : 'AutoBuild_Game.json');
+    const entry = path.join(project, target === 'Editor' ? 'AutoBuild_Mac.sh' : 'AutoBuild_Game_Mac.sh');
     const config = JSON.parse(fs.readFileSync(configFile));
     if (config.engine !== engine || config.cwd !== project || config.project !== path.join(project, name + '.uproject')) throw Error('Unexpected canonical build configuration');
     command = entry;
@@ -107,32 +107,31 @@ if (mode === 'native') {
     json(path.join(dir, 'canonical.json'), { config, configSha256: hash(fs.readFileSync(configFile)), entrySha256: hash(fs.readFileSync(entry)) });
 } else if (mode === 'uat') {
     if (!['GenerateAOTBootstrap', 'GenerateProject', 'GenerateSolution', 'BuildSolution', 'BuildUserGlue', 'BuildUserSolution', 'PackageProject'].includes(extra[0])) throw Error('Unsupported managed UAT command');
-    const harness = path.join(evidence, 'automation', slot);
-    fs.mkdirSync(harness, { recursive: true });
-    const writeChanged = (file, text) => {
-        if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
-    };
-    const productionProject = path.join(plugin, 'Build/Scripts/UnrealSharp.Automation.csproj');
-    let projectText = fs.readFileSync(productionProject, 'utf8');
-    projectText = projectText.replace('<Project Sdk="Microsoft.NET.Sdk">', `<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><EngineDir>${engine}/Engine</EngineDir><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>`)
-        .replaceAll('..\\..\\UnrealSharp.Automation.props', plugin + '/UnrealSharp.Automation.props')
-        .replace('<AssemblyName>UnrealSharp.Automation</AssemblyName>', `<AssemblyName>NativeAOTSlot${slot}.Automation</AssemblyName>`)
-        .replace(/<Compile Include="\.\.\\\.\.\\Managed\\Shared\\\*\.cs"[^>]*\/>/, `<Compile Include="${plugin}/Managed/Shared/*.cs" />`)
-        .replace('</Project>', `<ItemGroup><Compile Include="${plugin}/Build/Scripts/**/*.cs" Exclude="${plugin}/Build/Scripts/**/bin/**;${plugin}/Build/Scripts/**/obj/**" /><Compile Include="Driver.cs" /></ItemGroup>\n</Project>`);
-    writeChanged(path.join(harness, `NativeAOTSlot${slot}.Automation.csproj`), projectText);
-    writeChanged(path.join(harness, 'Driver.cs'), fs.readFileSync(path.join(repo, 'Tests/NativeAOT/AutomationDriver.cs.template'), 'utf8').replace('NativeAOTValidateSLOT', 'NativeAOTValidate' + slot));
-    json(path.join(dir, 'automation-sources.json'), files(path.join(plugin, 'Build/Scripts')).filter(file => file.endsWith('.cs')).map(file => ({ path: file, sha256: hash(fs.readFileSync(path.join(plugin, 'Build/Scripts', file))) })));
     command = path.join(engine, 'Engine/Build/BatchFiles/RunUAT.sh');
-    args = ['NativeAOTValidate' + slot, '-NativeAOTAction=' + extra[0], '-ScriptDir=' + harness, '-ScriptsForProject=' + path.join(project, name + '.uproject'), '-Project=' + path.join(project, name + '.uproject'), ...extra.slice(1)];
+    args = [extra[0], '-ScriptDir=' + project, '-ScriptsForProject=' + path.join(project, name + '.uproject'), '-Project=' + path.join(project, name + '.uproject'), ...extra.slice(1)];
+    if (extra[0] === 'GenerateAOTBootstrap') {
+        // Test entry only: references the ordinary production assembly, never recompiles its sources under another name.
+        const harness = path.join(evidence, 'bootstrap-generation', slot);
+        fs.mkdirSync(harness, { recursive: true });
+        const source = fs.readFileSync(path.join(repo, 'Tests/NativeAOT/BootstrapGeneration.cs.template'), 'utf8');
+        const projectText = fs.readFileSync(path.join(repo, 'Tests/NativeAOT/BootstrapGeneration.csproj.template'), 'utf8')
+            .replaceAll('ENGINE_ROOT', engine).replaceAll('PLUGIN_ROOT', plugin);
+        for (const [file, text] of [['Driver.cs', source], ['NativeAOTTests.Automation.csproj', projectText]]) {
+            const destination = path.join(harness, file);
+            if (!fs.existsSync(destination) || fs.readFileSync(destination, 'utf8') !== text) fs.writeFileSync(destination, text);
+        }
+        args[0] = 'NativeAOTGenerateBootstrap';
+        args[1] = '-ScriptDir=' + harness;
+    }
 } else if (mode === 'probe') {
     const success = JSON.parse(fs.readFileSync(path.join(evidence, slot + '-Editor-success.json')));
-    if (success.exitCode !== 0) throw Error('Canonical build must succeed first');
+    if (success.exitCode !== 0 || success.engine !== engine) throw Error('Canonical Installed UE build must succeed first');
     if (JSON.stringify(nativeSources()) !== JSON.stringify(success.nativeSources)) throw Error('Native inputs changed since successful build');
     command = path.join(engine, 'Engine/Binaries/Mac/UnrealEditor-Cmd');
     args = [path.join(project, name + '.uproject'), '-run=ParameterBufferExamples', '-nullrhi', '-unattended', '-nosound', '-nop4', '-nosplash', '-stdout', '-FullStdOutLogOutput', '-abslog=' + path.join(dir, 'editor.log'), '-TestReport=' + path.join(dir, 'checks.txt'), ...extra];
 } else throw Error('Unknown mode: ' + mode);
 
-const identity = { mode, slot, command, args, cwd: project, started: new Date().toISOString(), nativeSources: nativeSources() };
+const identity = { mode, slot, engine, command, args, cwd: project, started: new Date().toISOString(), nativeSources: nativeSources() };
 json(path.join(dir, 'command.json'), identity);
 const log = fs.createWriteStream(path.join(dir, 'console.log'));
 let pending = '';
@@ -140,7 +139,7 @@ const output = bytes => {
     log.write(bytes);
     pending += bytes;
     const lines = pending.split('\n'); pending = lines.pop();
-    for (const line of lines) if (/error|exception|Result:|BUILD SUCCESS|BUILD FAILED|Compile \[|Link \[|ROUND RESULT|^RESULT |NATIVEAOT-|TOTAL .*PASS|ParameterBufferExamples exit/i.test(line)) console.log(line.slice(0, 1600));
+    for (const line of lines) if (/error|exception|Result:|BUILD SUCCESS|BUILD FAILED|ROUND RESULT|^RESULT |NATIVEAOT-|TOTAL .*PASS|ParameterBufferExamples exit/i.test(line)) console.log(line.slice(0, 1600));
 };
 const start = performance.now();
 const child = spawn(command, args, { cwd: project, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -1,84 +1,60 @@
 # NativeAOT change and verification journal
 
-## Plan checkpoint — 9781aedd
+## Current verification authority
 
-Created the phased implementation plan after inspecting upstream/nativeaot, current main, the open trimming draft, Microsoft NativeAOT documentation, both test projects and their existing AutoBuild authority. No runtime support is claimed by this documentation commit.
+The user clarified on 2026-10-24 that both SharpTestProject slots must use **Installed UE 5.8**, not the source Engine checkout. The existing Editor/Game AutoBuild entries point to /Users/Shared/Epic Games/UE_5.8 (5.8.3, CL 58210709); their commands/options remain unchanged. Installed UE has no UnrealSharp plugin. Project-local plugins are the test subjects.
 
-Toolchain: macOS arm64, .NET SDK 10.0.401 / runtime 10.0.12; source UE reports 5.8.3. The explicit user scope includes the fork and both test projects. No additional repository-local guidance exists there.
+Earlier source-Engine results are historical, not Installed UE acceptance. The detailed journal is preserved at <WORKSPACE>/UnrealEngine/Tests/NativeAOT/eden-main/source-engine-history.md, alongside raw evidence in runs/.
+
+## Removed environment workaround
+
+The source Engine's own UnrealSharp copy caused plugin-selection and same-named Automation collisions. At the user's request, dedicated fix 8e1b3a7f was removed from local eden-main history and baseline A. The generic renamed/source-linked UAT dispatcher was removed. Normal commands now use Installed UE's ordinary UAT dispatcher. No push occurred.
+
+Only our subsequent commits were replayed; externally created merge 4899400f was retained. Historical IDs map as follows:
+
+| Historical ID | Current ID | Change |
+| --- | --- | --- |
+| 0043c08f | ca5e79d5 | A/B fixtures and evidence |
+| d3e9377c | a9346f98 | FString length |
+| 97767123 | d9132e0c | Shared bootstrap/export ABI |
+| 8a2e1d50 | c0cde37e | Actual AOT dispatch/construction probe |
 
 ## Upstream merge — 4899400f
 
-Parents: current eden-main (plan checkpoint) and upstream/nativeaot `b19374cee4cf25a6a98fc3e0fda4ab063b80cfdd`.
+Merged upstream/nativeaot b19374cee4cf25a6a98fc3e0fda4ab063b80cfdd. Preserve current UTF-8 initialization/result ABI, hostfxr conversion, invocation ABI and ref/out fixes. Adapt delayed registration to current FieldName/RegisterManagedType; preserve target-aware packaging, project/DLL references, existing BuildingAOT/NATIVE_AOT mapping and explicit AOT opt-in.
 
-Conflict resolution decisions:
+The prototype's old loader/export ABI and incomplete static UHT invocation change were deferred. This merge alone is not complete AOT support. It was committed externally during testing; all 816 deployed files matched the reviewed candidate.
 
-- Keep current UTF-8 initialization/result ABI, hostfxr path conversion and error reporting. The prototype's old loader/export ABI is deferred to the separately tested bootstrap/host steps; this merge alone is not runnable NativeAOT support.
-- Keep current `Invoke_*` ABI and the current ref/out fixes. Upstream changes UHT wrappers without changing the managed dispatcher or Roslyn wrappers; importing only that half would break JIT callbacks. Evaluate and implement the complete call path in the function step.
-- Adapt delayed type/module registration to current `FieldName`, current JSON serialization and current `RegisterManagedType` signature.
-- Preserve current target-aware packaging and project/DLL-reference support; add upstream's aggregate AOT publishing code.
-- Retain current Build.props, which already defines `NATIVE_AOT` for `BuildingAOT=true`, and current conditional imports. Keep packaging opt-in instead of forcing NativeAOT through the Editor button.
-- Preserve plugin duplicate-load guard while adding the upstream precompiled-assembly branch.
+Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with only the common FString prerequisite; B is the current fork. Deployment records HEAD, patch hash and every copied file hash.
 
-Preservation / reproducibility:
+## FString length — a9346f98
 
-- Original test source snapshots and SHA-256 manifests: `<UE_ROOT>/Tests/NativeAOT/eden-main/original/A` and `B` (857 / 852 files). No Unreal binary asset contents were read or modified.
-- A source checkout is fixed at `cb8577e3`; B is deployed from the reviewed merge worktree. Deployment manifests record source HEAD, patch hash and every copied file's hash.
-- Six existing parameter regression files from A are preserved in `Tests/NativeAOT/Fixtures` and applied to B. These cover native/managed calls, Unicode strings, POD/non-POD structs, bitfields, object identity/nulls, ref/out and mixed return values.
-- `Tests/NativeAOT/run.mjs` records exact commands, output and exits under `<UE_ROOT>/Tests/NativeAOT/eden-main/runs`. It invokes the existing AutoBuild entries; it does not modify their options or configuration. It checks process occupancy and gates Editor probes on a successful canonical build with matching native source hashes.
+Both source-Engine controls failed after 18 checks: the cleared UObject was null, but an empty FString still returned old text. FromNative ignored ArrayNum while FString retained storage. It now returns empty for ArrayNum <= 1 and copies exactly ArrayNum - 1 UTF-16 units otherwise.
 
-The merge was committed externally while validation was running. Its 816 deployed plugin files exactly match the pre-commit B deployment hashes. The commit has not been rewritten.
+Historical corrected A/B each passed 22 real UE checks, covering Unicode, 8192-character output, null objects, ref/out and mixed returns. Installed UE revalidation is pending below.
 
-Initial evidence (all under the evidence runs directory):
+## Bootstrap/export — d9132e0c
 
-| Run | Result | Interpretation |
-| --- | --- | --- |
-| `merge-jit-a` | Canonical Editor build exit 0, 99.54 s | Baseline native / managed glue compilation passed |
-| `merge-jit-b` | Canonical Editor build exit 0, 93.99 s | Merge native / managed glue compilation passed |
-| `merge-jit-probe-a` | Exit 1; 17 checks pass, then empty-string/null combined check fails | Pre-existing runtime behavior needs diagnosis; suite did not pass |
-| `merge-jit-probe-b` | Exit 2; managed fixture absent | B had no UserCode manifest; not a valid runtime comparison yet |
+RuntimeBootstrap.Initialize shares the result layout and implementation between JIT and AOT. Keep the original hostfxr class/method/ABI. The generated root exports void InitializeAotRuntime with UTF-8 path, callbacks and result pointer. AOT skips Editor MSBuild discovery; JIT retains it.
 
-Generated project inspection also found that both slots' glue imported the integrated Engine plugin instead of the intended project-local source. Do not treat the initial runtime probes as a completed merge regression. Fix source selection and use official generation/build commands to prepare current glue and user manifests before repeating the comparison. No generated glue is manually edited.
+Historical bootstrap-export-b published actual runtime project references into an osx-arm64 NativeAOT dylib (compiler/runtime pack 10.0.12). The caller passed 18 checks: symbol resolution, 4097-byte result, all 11 callback pointers and sentinels, Unicode directory/native bind callback, duplicate-init failure and bounded error text. JIT retained 22 UE checks. The test never unloads the AOT library.
 
-## Project plugin selection prerequisite
+Seven reflection trimming warnings were preserved, not suppressed: wrapper/function/struct method lookup, assembly type lookup, struct/object construction. Bootstrap success does not prove full game-type retention or packaged startup.
 
-`GetUnrealSharpUPlugin` enumerated plugins and returned the first matching filename. With both the integrated and project copies present, it selected the Engine copy. Reuse the existing `ReadAvailablePlugins` helper, which applies UnrealBuildTool's version/override selection, and retrieve the selected UnrealSharp plugin by name.
+## Existing dispatch — c0cde37e
 
-Focused validation: existing `GenerateProject` UAT command in B exits 0 (`precedence-generate-b`) and now writes `../../../../../Plugins/UnrealSharp/UnrealSharp.Shared.props`. The previously generated file referenced `../../../../../../../UnrealEngine/Engine/Plugins/UnrealSharp/UnrealSharp.Shared.props`. No native build options, engine selection or project definition changed.
+Historical dispatch-probe-b2 passed 31 checks including bootstrap. Explicitly rooted mechanism fixtures call the actual unmanaged table: type lookup, uninitialized allocation, constructor ordering, inherited/private methods, virtual calls, input/ref/out/return buffers, no-argument calls after GC, static bodies, Wrap, struct initialization, DynamicInvoke and disposal. Production dispatch needed no change. The first fixture attempt failed with CS1686 and was corrected before the passing run.
 
-Negative control: the same official GenerateProject path in unchanged A exits 0 (`precedence-generate-a`) but imports the Engine plugin. This directly reproduces the source-selection error and distinguishes the corrected B result. The existing UBT filtered-plugin helper continues to support engine-only installations; that fallback is source-inspected, not separately exercised in another project.
+Keep the current ABI. Test-only roots isolate the mechanism from the remaining application trimming and generated-metadata gates.
 
-### Source-identity correction and reproducible A/B driver
+## Publish metadata work in progress
 
-The initial direct-UAT evidence above is insufficient on its own: `controlled-glue-a` later failed inside the integrated Engine plugin's `GlueTargetUtilities`, a class absent from the deployed fork. UAT selects the first assembly/command with a given name. Preserve that failure; do not delete caches to make the test select another assembly.
+Before the environment correction, upstream-aot-package-b produced a 114 MiB Game dylib but omitted load-order manifests/installed flag; its final root defaulted to Editor properties. The uncommitted fix references/roots emitted manifest assemblies (including otherwise unreferenced glue), carries target/configuration to final publish, copies manifests/flag and expands warnings. Old-environment manifest-aot-package-b published successfully. This change still needs Installed UE verification and is not committed.
 
-The test driver now links the slot's unmodified production Automation sources into a uniquely named assembly and calls commands through its unique entry. `NATIVEAOT-AUTOMATION` and `NATIVEAOT-PLUGIN` record both identities. This is managed UAT compilation, not an alternate native build. It changes no production source logic. Ordinary Editor/menu dispatch with two installed plugin copies remains a separate unvalidated boundary.
+## Installed UE verification
 
-`pinned-selection-b` confirms the fixed selector with explicit assembly identity. The `pinned-fixture`, `pinned-probe`, `pinned-solution`, `pinned-glue` and `pinned-user` rounds all exit 0 for both A and B, with project-local plugin identities and imports. A is the fixed `cb8577e3` baseline plus only the common `8e1b3a7f` source-selection prerequisite; B includes the upstream merge and that fix.
-
-`pinned-runtime-a` / `pinned-runtime-b` both exit 1 after the same 18 passing checks. Their diagnostics show `StoredActor == null` is true, but `LastMessage` remains `input: 中文` after assigning an empty string. `StringMarshaller.FromNative` checks only the pointer, ignoring `ArrayNum`; an empty FString may retain allocated storage containing old bytes. This is a baseline bug, not a difference introduced by the NativeAOT merge. The remaining string checks have not yet run.
-
-## FString length prerequisite
-
-`StringMarshaller.FromNative` now returns empty when `ArrayNum <= 1` and otherwise copies exactly `ArrayNum - 1` UTF-16 code units, excluding the terminator. This respects FString's length even when its storage remains allocated. The fixture counts only PASS records, excluding diagnostic lines.
-
-Focused negative controls are the two `pinned-runtime` failures above. B's `string-build-b` managed production solution build exits 0 (22 existing analyzer/trimming warnings, no errors); `string-user-b` exits 0; `string-runtime-b` exits 0 with **22 PASS**. The previously failing nonempty-to-empty assignment now passes, as do Unicode, 8192-character output, null UObject, ref/out and mixed return checks. No native inputs changed, so the successful canonical Editor build still gates this runtime probe. This establishes a passing merged JIT path for the fixture; it does not yet establish NativeAOT support.
-
-The same length fix is now a second explicit baseline prerequisite alongside plugin selection. A's `string-build-a`, `string-user-a` and `string-runtime-a` all exit 0, with **22 PASS**. Baseline and merge therefore pass the same controlled JIT suite.
-
-## NativeAOT bootstrap/export ABI
-
-Move shared initialization into `RuntimeBootstrap.Initialize`, exposing the existing sequential result struct to the final AOT assembly. Preserve hostfxr's original class, method, unmanaged-call convention and parameters. The production root generator now emits a void `InitializeAotRuntime` export with UTF-8 path, callback pointers and result pointer; it delegates to the same bootstrap. AOT skips Editor MSBuild SDK discovery, while JIT retains it.
-
-`bootstrap-export-b`: the production generator runs through the identified UAT assembly, then .NET 10.0.401 publishes the actual runtime project references with `BuildingAOT=true`, Editor bindings and isolated artifact paths. NativeAOT compiler/runtime pack 10.0.12 produces a 1.9 MiB osx-arm64 dylib. Publish exits 0 in 45.63 s. A separate caller loads that library, resolves the export and calls it through an unmanaged function pointer: **18 PASS**, `BOOTSTRAP PASS`, exit 0. Checks include 4097-byte result layout, all 11 callbacks and surrounding sentinels, UTF-8 directory, UTF-16 bind callback, duplicate-init failure and bounded null-terminated error text. The library remains loaded until process exit.
-
-Seven trimming warnings remain: IL2075 (wrapper/function/struct method discovery), IL2026 (assembly type lookup), IL2072 (struct constructor), IL2070 and IL2067 (object constructors/uninitialized allocation). They are preserved, not suppressed. Export success does not prove those reflection paths, packaged startup, or the aggregate PackageProject pipeline. Those remain later test gates.
-
-JIT regression after the shared-bootstrap change: `bootstrap-jit-build-b`, `bootstrap-jit-user-b` and `bootstrap-jit-runtime-b` all exit 0, with **22 PASS** through the original hostfxr entry.
-
-## Existing dispatch and construction under NativeAOT
-
-`dispatch-probe-b2` publishes the actual runtime with explicitly rooted, small mechanism fixtures. The exported test calls the production unmanaged callback table rather than invoking reflection helpers directly. Publish exits 0 (37.14 s); native caller exits 0 with **31 PASS**, `DISPATCH PASS` and `BOOTSTRAP PASS`.
-
-Verified: assembly/type lookup; uninitialized allocation and constructor invocation; NativeObject already set inside the base constructor; private inherited/declared method lookup; instance function pointers; virtual dispatch; input/ref/out/return buffers; no-argument calls after GC; instance wrappers around static bodies; reflection Wrap factory; struct constructor and ToNative; DynamicInvoke; disposal clearing NativeObject. The initial `dispatch-probe-b` attempt only failed to compile the test's captured address-taken local (CS1686); correcting the fixture to use a static helper resolved it. Production dispatch required **no change**.
-
-Decision: keep current method and constructor ABI. NativeAOT supports these paths when their metadata and code are retained. The open work is proving retention and generated wrappers in a complete Unreal runtime, not replacing the ABI based on the old upstream experiment. Test-only DynamicDependency annotations do not solve application trimming; warnings remain visible.
+- installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
+- installed-editor-a / installed-editor-b: canonical Installed Editor builds succeeded, 129.28 / 129.61 seconds. Both used the existing AutoBuild_Mac.sh without option changes.
+- installed-glue-a / installed-managed-a / installed-glue-b / installed-managed-b: ordinary production UAT completed successfully with no renamed/source-linked dispatcher.
+- installed-runtime-a / installed-runtime-b: both Installed UnrealEditor-Cmd runs exited 0 with **22 PASS**, 25.93 / 25.77 seconds. This revalidates the FString prerequisite and B's shared JIT bootstrap against A.
+- installed-dispatch-b: ordinary UnrealSharp.Automation.dll generated the export through a test-only ProjectReference command; real NativeAOT publish succeeded in 35.74 seconds and the unmanaged caller passed **31 checks**. Seven known reflection trimming warnings remain visible. No production sources were renamed or linked into a substitute Automation assembly.

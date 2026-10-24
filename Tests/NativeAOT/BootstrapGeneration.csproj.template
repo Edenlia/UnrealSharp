@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>NativeAOTTests.Automation</AssemblyName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="AutomationUtils.Automation">
+      <HintPath>ENGINE_ROOT/Engine/Binaries/DotNET/AutomationTool/AutomationUtils/net10.0/AutomationUtils.Automation.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <ProjectReference Include="PLUGIN_ROOT/Build/Scripts/UnrealSharp.Automation.csproj"
+                      AdditionalProperties="EngineDir=ENGINE_ROOT/Engine" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+using System;
+using AutomationTool;
+using UnrealSharp.Automation.Utilities;
+
+// Test-only access to the production export generator; ordinary commands use normal UAT dispatch.
+public class NativeAOTGenerateBootstrap : BuildCommand
+{
+    public override void ExecuteBuild()
+    {
+        Console.WriteLine("NATIVEAOT-GENERATOR " + typeof(NativeAOTUtilities).Assembly.Location);
+        NativeAOTUtilities.CreateInitializeClass(ParseRequiredStringParam("OutputDirectory"));
+    }
+}
