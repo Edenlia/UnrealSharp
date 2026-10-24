@@ -133,6 +133,17 @@ The generated UModule fixture checks assembly/module identity, exactly one start
 - lifecycle-publish-b passed in 86.92 seconds. Dynamic-load trimming warnings disappeared because the code is absent from the AOT assembly; the remaining **11 reflection warnings are unsuppressed**.
 - lifecycle-runtime-b passed **63 checks** in 2.02 seconds: the same 60 common checks plus three AOT unload rejection/continued-use checks. Loaded images contain no hostfxr/CoreCLR/hostpolicy, and the run has no native ensure/assertion.
 
+## Generated parameter lifetime
+
+Roslyn-generated callers now pair native parameter initialization with destruction in a finally block, covering successful calls, output conversion and input marshaling exceptions. The new native binding visits exactly NumParms, matching initialization; Blueprint-local fields beyond ParmsSize are excluded. This common prerequisite is deployed identically to A and B.
+
+- params-lifetime-editor-a / b and params-lifetime-game-a / b all passed through their unchanged Installed AutoBuild entries. Complete Editor runner time was 10.02 / 10.92 seconds; Game runner time was 55.51 / 56.81 seconds.
+- params-lifetime-generator-a / b and params-lifetime-editor-glue-a / b passed through ordinary managed UAT.
+- live-params-lifetime-a / b passed **63 matching checks** after Hot Reload. New cases exercise array input/ref array/out map/array return, previously returned copies after 32 subsequent calls, and a deliberate marshaling exception after allocating an 8 KiB FString followed by a successful call.
+- params-lifetime-archive-b completed in 76.12 seconds; params-lifetime-publish-b passed in 114.21 seconds. params-lifetime-runtime-b passed **66 checks** (63 common plus 3 AOT-only) in the new standalone app. Its image log contains no hostfxr/CoreCLR/hostpolicy and no native ensure/assertion. comparison.json records the common-case comparison.
+
+These are functional ownership/lifetime checks, not a quantified memory-leak benchmark.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
