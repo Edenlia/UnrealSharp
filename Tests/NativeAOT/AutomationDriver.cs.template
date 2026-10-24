@@ -10,6 +10,13 @@ public class NativeAOTValidateSLOT : BuildCommand
     public override void ExecuteBuild()
     {
         string action = ParseRequiredStringParam("NativeAOTAction");
+        if (action == "GenerateAOTBootstrap")
+        {
+            Type utility = typeof(CommandUtilities).Assembly.GetType("UnrealSharp.Automation.Utilities.NativeAOTUtilities", true)!;
+            utility.GetMethod("CreateInitializeClass")!.Invoke(null, [ParseRequiredStringParam("OutputDirectory")]);
+            Console.WriteLine("NATIVEAOT-BOOTSTRAP " + utility.Assembly.Location);
+            return;
+        }
         string[] allowed = ["GenerateProject", "GenerateSolution", "BuildSolution", "BuildUserGlue", "BuildUserSolution", "PackageProject"];
         if (!allowed.Contains(action)) throw new AutomationException("Unsupported validation action: " + action);
         Console.WriteLine("NATIVEAOT-AUTOMATION " + typeof(CommandUtilities).Assembly.Location);

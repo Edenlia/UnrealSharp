@@ -1,0 +1,59 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+
+unsafe class Program
+{
+    [StructLayout(LayoutKind.Sequential)]
+    struct Result
+    {
+        public byte Success;
+        public fixed byte Message[4096];
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static nint GetBoundFunction(char* outer, char* function, int size) =>
+        new string(outer) == "Probe" && new string(function) == "Unicode: 中文" && size == 17 ? 0x1234 : 0;
+
+    static void Check(bool value, string name)
+    {
+        if (!value) throw new Exception("FAIL " + name);
+        Console.WriteLine("PASS " + name);
+    }
+
+    static void Main(string[] args)
+    {
+        // NativeAOT libraries must remain loaded for the lifetime of this process.
+        nint library = NativeLibrary.Load(args[0]);
+        var initialize = (delegate* unmanaged<byte*, nint*, nint, nint*, Result*, void>)NativeLibrary.GetExport(library, "InitializeAotRuntime");
+        var verify = (delegate* unmanaged<byte*, int>)NativeLibrary.GetExport(library, "VerifyBootstrap");
+        Check(!NativeLibrary.TryGetExport(library, "MissingExport", out _), "native symbol lookup");
+        Check(sizeof(Result) == 4097, "initialization result ABI size");
+
+        nint* plugins = stackalloc nint[4];
+        nint* callbacks = stackalloc nint[11];
+        plugins[0] = plugins[3] = callbacks[0] = callbacks[10] = 0x5678;
+        for (int i = 1; i < 3; i++) plugins[i] = 0;
+        for (int i = 1; i < 10; i++) callbacks[i] = 0;
+        byte[] directory = Encoding.UTF8.GetBytes("/tmp/UnrealSharp 中文/é/\0");
+        Result result = default;
+        fixed (byte* path = directory)
+        {
+            initialize(path, plugins + 1, (nint)(delegate* unmanaged[Cdecl]<char*, char*, int, nint>)&GetBoundFunction, callbacks + 1, &result);
+            Check(result.Success == 1, "production NativeAOT initialization");
+            Check(plugins[1] != 0 && plugins[2] != 0, "plugin callbacks initialized");
+            for (int i = 1; i < 10; i++) Check(callbacks[i] != 0, "managed callback " + i);
+            Check(plugins[0] == 0x5678 && plugins[3] == 0x5678 && callbacks[0] == 0x5678 && callbacks[10] == 0x5678, "callback table boundaries");
+            Check(verify(path) == 0, "UTF-8 working directory and UTF-16 native bind callback");
+
+            initialize(path, plugins + 1, (nint)(delegate* unmanaged[Cdecl]<char*, char*, int, nint>)&GetBoundFunction, callbacks + 1, &result);
+            Check(result.Success == 0, "duplicate initialization reports failure");
+            int length = 0;
+            while (length < 4096 && result.Message[length] != 0) length++;
+            Check(length < 4096, "failure buffer terminated within ABI capacity");
+            string error = Encoding.UTF8.GetString(result.Message, length);
+            Check(error.Contains("NativeBinds.Initialize called twice"), "failure exception crosses native ABI");
+        }
+        Console.WriteLine("BOOTSTRAP PASS");
+    }
+}

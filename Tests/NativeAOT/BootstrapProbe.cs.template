@@ -1,0 +1,14 @@
+using System.Runtime.InteropServices;
+using UnrealSharp.Binds;
+
+// Test-only exports observe the actual runtime initialized by the production export.
+public static unsafe class BootstrapProbe
+{
+    [UnmanagedCallersOnly(EntryPoint = "VerifyBootstrap")]
+    public static int VerifyBootstrap(byte* expectedDirectory)
+    {
+        if (!Equals(AppDomain.CurrentDomain.GetData("APP_CONTEXT_BASE_DIRECTORY"),
+                Marshal.PtrToStringUTF8((nint)expectedDirectory))) return 1;
+        return NativeBinds.TryGetBoundFunction("Probe", "Unicode: 中文", 17) == (nint)0x1234 ? 0 : 2;
+    }
+}

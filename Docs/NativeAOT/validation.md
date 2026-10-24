@@ -62,3 +62,15 @@ The test driver now links the slot's unmodified production Automation sources in
 `StringMarshaller.FromNative` now returns empty when `ArrayNum <= 1` and otherwise copies exactly `ArrayNum - 1` UTF-16 code units, excluding the terminator. This respects FString's length even when its storage remains allocated. The fixture counts only PASS records, excluding diagnostic lines.
 
 Focused negative controls are the two `pinned-runtime` failures above. B's `string-build-b` managed production solution build exits 0 (22 existing analyzer/trimming warnings, no errors); `string-user-b` exits 0; `string-runtime-b` exits 0 with **22 PASS**. The previously failing nonempty-to-empty assignment now passes, as do Unicode, 8192-character output, null UObject, ref/out and mixed return checks. No native inputs changed, so the successful canonical Editor build still gates this runtime probe. This establishes a passing merged JIT path for the fixture; it does not yet establish NativeAOT support.
+
+The same length fix is now a second explicit baseline prerequisite alongside plugin selection. A's `string-build-a`, `string-user-a` and `string-runtime-a` all exit 0, with **22 PASS**. Baseline and merge therefore pass the same controlled JIT suite.
+
+## NativeAOT bootstrap/export ABI
+
+Move shared initialization into `RuntimeBootstrap.Initialize`, exposing the existing sequential result struct to the final AOT assembly. Preserve hostfxr's original class, method, unmanaged-call convention and parameters. The production root generator now emits a void `InitializeAotRuntime` export with UTF-8 path, callback pointers and result pointer; it delegates to the same bootstrap. AOT skips Editor MSBuild SDK discovery, while JIT retains it.
+
+`bootstrap-export-b`: the production generator runs through the identified UAT assembly, then .NET 10.0.401 publishes the actual runtime project references with `BuildingAOT=true`, Editor bindings and isolated artifact paths. NativeAOT compiler/runtime pack 10.0.12 produces a 1.9 MiB osx-arm64 dylib. Publish exits 0 in 45.63 s. A separate caller loads that library, resolves the export and calls it through an unmanaged function pointer: **18 PASS**, `BOOTSTRAP PASS`, exit 0. Checks include 4097-byte result layout, all 11 callbacks and surrounding sentinels, UTF-8 directory, UTF-16 bind callback, duplicate-init failure and bounded null-terminated error text. The library remains loaded until process exit.
+
+Seven trimming warnings remain: IL2075 (wrapper/function/struct method discovery), IL2026 (assembly type lookup), IL2072 (struct constructor), IL2070 and IL2067 (object constructors/uninitialized allocation). They are preserved, not suppressed. Export success does not prove those reflection paths, packaged startup, or the aggregate PackageProject pipeline. Those remain later test gates.
+
+JIT regression after the shared-bootstrap change: `bootstrap-jit-build-b`, `bootstrap-jit-user-b` and `bootstrap-jit-runtime-b` all exit 0, with **22 PASS** through the original hostfxr entry.

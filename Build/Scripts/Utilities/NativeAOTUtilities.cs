@@ -80,35 +80,19 @@ public static class NativeAOTUtilities
 
 	    string SourceCode = """
 	        using System.Runtime.InteropServices;
-	        using UnrealSharp.Binds;
-	        using UnrealSharp.Core;
 
 	        namespace UnrealSharp.Plugins;
 
-	        public static class Main
+	        public static class NativeAotEntryPoint
 	        {
 	            [UnmanagedCallersOnly(EntryPoint = "InitializeAotRuntime")]
-	            private static unsafe NativeBool InitializeAotRuntime(char* workingDirectoryPath, 
+	            private static unsafe void InitializeAotRuntime(byte* workingDirectoryUtf8,
 	                PluginsCallbacks* pluginCallbacks, 
-	                IntPtr bindsCallbacks, 
-	                IntPtr managedCallbacks)
+	                nint bindsCallbacks,
+	                nint managedCallbacks,
+	                FCSInitializationResult* result)
 	            {
-	                try
-	                {
-	                    AppDomain.CurrentDomain.SetData("APP_CONTEXT_BASE_DIRECTORY", new string(workingDirectoryPath));
-	                    
-	                    PluginsCallbacks.Initialize(pluginCallbacks);
-	                    ManagedCallbacks.Initialize(managedCallbacks);
-	                    NativeBinds.Initialize(bindsCallbacks);
-
-	                    Console.WriteLine("UnrealSharp initialized successfully.");
-	                    return NativeBool.True;
-	                }
-	                catch (Exception exception)
-	                {
-	                    Console.WriteLine(exception);
-	                    return NativeBool.False;
-	                }
+	                RuntimeBootstrap.Initialize(workingDirectoryUtf8, pluginCallbacks, bindsCallbacks, managedCallbacks, result);
 	            }
 	        }
 	        """;
