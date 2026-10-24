@@ -96,6 +96,7 @@ public partial class UParameterBufferManagedTests : UObject
                     $"out string/null Actor length={prefix.Length}");
             }
             FunctionConformance.Run(Check);
+            PropertyConformance.Run(Check);
             Report = string.Join("\n", checks) + $"\nTOTAL {checks.Count(check => check.StartsWith("PASS "))} PASS\n";
             return true;
         }

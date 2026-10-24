@@ -86,6 +86,12 @@ No production dispatch change was required. Static UFunction through UE reflecti
 
 The next fixture calls a generated static UFunction using its real native function pointer, reflected parameter offsets and the class default object through InvokeNativeStaticFunction. It does not directly invoke the C# static body. live-static-a and live-static-b both passed 28 checks after normal Editor Hot Reload; static-publish-b succeeded in 65.23 seconds, and static-runtime-b passed the identical 28 checks in the standalone AOT Game. No production dispatcher/generator change was needed.
 
+## Generated properties and custom structs
+
+Added eight cases for constructor/native-pointer ordering through property writes, bool/int/Unicode string/FName properties, clearing retained strings, UObject identity/null, native UStruct default construction, custom struct properties containing FString/FVector and generated struct input/ref/out/return marshaling. live-properties-a and live-properties-b both passed 36 checks after actual Hot Reload. properties-publish-b passed in 70.66 seconds; properties-runtime-b passed the identical 36 checks in the standalone NativeAOT Game (1.88 seconds).
+
+The new live.mjs driver was exercised in both successful rounds. It snapshots the exact changed fixture sources/hashes, waits for normal Editor readiness and reload success, checks the exact result count and closes its own Editor. No production property/struct changes were required.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
