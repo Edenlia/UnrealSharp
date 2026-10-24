@@ -106,7 +106,7 @@ if (mode === 'native') {
     gate = path.join(evidence, `${slot}-${target}-success.json`);
     json(path.join(dir, 'canonical.json'), { config, configSha256: hash(fs.readFileSync(configFile)), entrySha256: hash(fs.readFileSync(entry)) });
 } else if (mode === 'uat') {
-    if (!['GenerateProject', 'GenerateSolution', 'BuildUserGlue', 'BuildUserSolution', 'PackageProject'].includes(extra[0])) throw Error('Unsupported managed UAT command');
+    if (!['GenerateProject', 'GenerateSolution', 'BuildSolution', 'BuildUserGlue', 'BuildUserSolution', 'PackageProject'].includes(extra[0])) throw Error('Unsupported managed UAT command');
     const harness = path.join(evidence, 'automation', slot);
     fs.mkdirSync(harness, { recursive: true });
     const writeChanged = (file, text) => {

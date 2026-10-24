@@ -56,3 +56,9 @@ The test driver now links the slot's unmodified production Automation sources in
 `pinned-selection-b` confirms the fixed selector with explicit assembly identity. The `pinned-fixture`, `pinned-probe`, `pinned-solution`, `pinned-glue` and `pinned-user` rounds all exit 0 for both A and B, with project-local plugin identities and imports. A is the fixed `cb8577e3` baseline plus only the common `8e1b3a7f` source-selection prerequisite; B includes the upstream merge and that fix.
 
 `pinned-runtime-a` / `pinned-runtime-b` both exit 1 after the same 18 passing checks. Their diagnostics show `StoredActor == null` is true, but `LastMessage` remains `input: 中文` after assigning an empty string. `StringMarshaller.FromNative` checks only the pointer, ignoring `ArrayNum`; an empty FString may retain allocated storage containing old bytes. This is a baseline bug, not a difference introduced by the NativeAOT merge. The remaining string checks have not yet run.
+
+## FString length prerequisite
+
+`StringMarshaller.FromNative` now returns empty when `ArrayNum <= 1` and otherwise copies exactly `ArrayNum - 1` UTF-16 code units, excluding the terminator. This respects FString's length even when its storage remains allocated. The fixture counts only PASS records, excluding diagnostic lines.
+
+Focused negative controls are the two `pinned-runtime` failures above. B's `string-build-b` managed production solution build exits 0 (22 existing analyzer/trimming warnings, no errors); `string-user-b` exits 0; `string-runtime-b` exits 0 with **22 PASS**. The previously failing nonempty-to-empty assignment now passes, as do Unicode, 8192-character output, null UObject, ref/out and mixed return checks. No native inputs changed, so the successful canonical Editor build still gates this runtime probe. This establishes a passing merged JIT path for the fixture; it does not yet establish NativeAOT support.

@@ -92,7 +92,7 @@ public partial class UParameterBufferManagedTests : UObject
                 Check(message == prefix + "|out" && outputActor == null,
                     $"out string/null Actor length={prefix.Length}");
             }
-            Report = string.Join("\n", checks) + $"\nTOTAL {checks.Count} PASS\n";
+            Report = string.Join("\n", checks) + $"\nTOTAL {checks.Count(check => check.StartsWith("PASS "))} PASS\n";
             return true;
         }
         catch (Exception error)
