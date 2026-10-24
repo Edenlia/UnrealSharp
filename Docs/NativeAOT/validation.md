@@ -92,6 +92,12 @@ Added eight cases for constructor/native-pointer ordering through property write
 
 The new live.mjs driver was exercised in both successful rounds. It snapshots the exact changed fixture sources/hashes, waits for normal Editor readiness and reload success, checks the exact result count and closes its own Editor. No production property/struct changes were required.
 
+## Generated containers
+
+live-containers-a and live-containers-b both exposed the same pre-existing API contract: ContainerProperty.ExportSetter deliberately generates NotSupportedException. Whole-container assignment is unsupported on baseline and candidate. The corrected fixture explicitly verifies rejection without mutation, then uses the supported in-place APIs. This is not an AOT production fix.
+
+live-containers-a2 / live-containers-b2 passed 44 checks after Hot Reload: array insert/index/remove/enumeration/clear/repopulate, FName set uniqueness/removal, Unicode string map update/lookup/removal/enumeration, and custom-struct arrays owning FString values. containers-publish-b passed in 65.47 seconds; containers-runtime-b passed the identical 44 checks in the standalone AOT Game. Failed initial rounds remain in evidence. The driver now waits for its Editor to finish closing even when an assertion fails.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.

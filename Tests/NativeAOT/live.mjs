@@ -42,6 +42,7 @@ function request(id, action) {
     fs.writeFileSync(target + '.tmp', JSON.stringify({ id, action }));
     fs.renameSync(target + '.tmp', target);
 }
+let failure;
 try {
     await until(() => fs.existsSync(path.join(dir, 'python-ready.json')) && log().includes('C# Hot Reload is ready.'), 120, 'Editor startup');
     const start = log().length;
@@ -64,8 +65,11 @@ try {
     const result = JSON.parse(read(path.join(dir, 'after-reload.json')));
     if (!result.passed || result.checks !== expected) throw Error('Unexpected test result: ' + JSON.stringify(result));
     console.log('LIVE PASS ' + slot + ' ' + expected + ' checks');
+} catch (error) {
+    failure = error;
 } finally {
     if (!exited && fs.existsSync(path.join(dir, 'python-ready.json'))) request('close-live-probe', 'quit');
 }
 const result = await completion;
+if (failure) throw failure;
 if (result.code !== 0) throw Error('Editor did not exit successfully: ' + JSON.stringify(result));
