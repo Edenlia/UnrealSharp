@@ -38,7 +38,7 @@ The user explicitly authorized UnrealSuperAgent and the existing `SharpTestProje
 
 - Current main uses a newer UTF-8 initialization ABI with an explicit result/error buffer. Upstream's old boolean/UTF-16 entry signatures cannot overwrite it.
 - Upstream still initializes hostfxr before choosing AOT, assumes `.dll`, and reuses a handle that shutdown would unload. These conflict with standalone AOT and macOS/native-library lifetime requirements.
-- `UnrealSharp.AOT.props` is empty; `BuildingAOT` does not by itself define `NATIVE_AOT`. Publishing inputs and the final root need consistent target/configuration and dependency closure.
+- `UnrealSharp.AOT.props` is empty, but current main's `UnrealSharp.Build.props` already maps `BuildingAOT=true` to `NATIVE_AOT`. Preserve that newer file when resolving upstream's rename/delete conflict. Publishing inputs and the final root still need consistent target/configuration and dependency closure.
 - UHT static `Invoke_*` wrappers and the existing managed dispatcher use different first-argument conventions. Both UHT and Roslyn generation, callbacks, inheritance, static methods, out/ref and exceptions must be tested together.
 - Runtime type/member/constructor lookup uses reflection. Trimming/rooting and AOT constructor invocation require executable evidence, not only annotations or warning suppression.
 - AOT registration can execute before callback setup. Type registration, module startup, assembly identity, cleanup and JIT reload must retain their ordering/lifetime guarantees.
@@ -71,5 +71,7 @@ Deliver a working, opt-in NativeAOT path on the available macOS arm64 environmen
 ## Progress / resume point
 
 - Research and local inventory complete; upstream fetched.
-- Plan written. Next: preserve test slots, establish baseline and perform the upstream merge without committing until its focused checks pass.
-- No native build or runtime validation has run for this task yet.
+- Plan checkpoint `9781aedd`; upstream merge `4899400f` (committed externally during validation; contents verified against deployment).
+- Canonical Editor builds succeeded in A and B. Corrected project-plugin selection in `8e1b3a7f`, also applied as a common baseline prerequisite.
+- Added a uniquely named UAT test driver linking each slot's exact production sources: ordinary UAT can resolve the Engine's same-named Automation assembly instead of the project copy. The driver records assembly/plugin identity; it does not validate ordinary Editor-menu UAT dispatch in this dual-installation layout.
+- Regenerated and built both slots' glue/user assemblies with the identified driver. Both runtime probes pass 18 checks and fail the same empty FString read after a nonempty assignment. Fix that existing marshalling bug independently, then complete the JIT merge regression and begin the AOT export/bootstrap step.
