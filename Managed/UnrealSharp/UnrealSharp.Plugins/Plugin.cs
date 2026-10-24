@@ -11,7 +11,9 @@ public class Plugin
     public readonly AssemblyName AssemblyName;
     public WeakReference? Assembly { get; private set; }
 
+#if !NATIVE_AOT
     private AssemblyLoadContext? _loadContext;
+#endif
 
     private readonly List<IModuleInterface> _moduleInterfaces = new();
     private readonly List<Func<IModuleInterface>> _moduleInitFunctions = new();
@@ -94,6 +96,9 @@ public class Plugin
     [MethodImpl(MethodImplOptions.NoInlining)]
     public WeakReference Unload()
     {
+#if NATIVE_AOT
+        throw new NotSupportedException("NativeAOT assemblies cannot be unloaded or hot reloaded. Restart the process to load a new build.");
+#else
         ShutdownModule();
 
         AssemblyCache.RemoveAssembly(AssemblyName.Name!);
@@ -101,15 +106,12 @@ public class Plugin
         GCHandleUtilities.FreeAssembly((Assembly)Assembly!.Target!);
         Assembly = null;
 
-        #if NATIVE_AOT
-        return new WeakReference(null);
-        #else
         WeakReference loadContextWeak = new WeakReference(_loadContext);
         _loadContext!.Unload();
         _loadContext = null;
 
         return loadContextWeak;
-        #endif
+#endif
     }
 
     public void StartupModule()

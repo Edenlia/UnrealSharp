@@ -53,6 +53,9 @@ public static class PluginLoader
 
 	public static void UnloadPlugin(string assemblyPath)
 	{
+#if NATIVE_AOT
+		throw new NotSupportedException("NativeAOT assemblies cannot be unloaded or hot reloaded. Restart the process to load a new build.");
+#else
 		TaskTracker.WaitForAllActiveTasks();
 
 		string assemblyName = Path.GetFileNameWithoutExtension(assemblyPath);
@@ -104,6 +107,7 @@ public static class PluginLoader
 		{
 			LogUnrealSharpPlugins.LogError($"An error occurred while unloading the plugin: {exception}");
 		}
+#endif
 	}
 
 	public static Plugin? FindPlugin(Type type)

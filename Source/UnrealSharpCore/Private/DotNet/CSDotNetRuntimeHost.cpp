@@ -26,7 +26,7 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 
 #if PLATFORM_WINDOWS && !WITH_EDITOR
 	const FString NativeAotPath = FPaths::Combine(UserWorkingDirectory, FString::Printf(TEXT("%s.AOT.dll"), FApp::GetProjectName()));
-	if (FPaths::FileExists(NativeAotPath))
+	if (FPaths::FileExists(FPaths::Combine(UserWorkingDirectory, TEXT("UnrealSharp.NativeAOT"))))
 	{
 		// NativeAOT does not support unloading its runtime. Keep this library resident until process exit.
 		NativeAotLibrary = FPlatformProcess::GetDllHandle(*NativeAotPath);

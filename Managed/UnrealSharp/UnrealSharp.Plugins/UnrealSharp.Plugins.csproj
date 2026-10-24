@@ -25,5 +25,8 @@
         <PackageReference Include="Microsoft.Build.Locator" />
     </ItemGroup>
 
+    <ItemGroup Condition="'$(BuildingAOT)' == 'true'">
+        <Compile Remove="PluginLoadContext.cs" />
+    </ItemGroup>
     
 </Project>

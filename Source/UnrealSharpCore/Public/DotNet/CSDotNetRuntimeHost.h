@@ -48,6 +48,7 @@ public:
 
 	bool InitializeManagedRuntime();
 	void ShutdownManagedRuntime();
+	bool IsNativeAotRuntime() const { return NativeAotLibrary != nullptr; }
 
 private:
 	static FCSDotNetLayout ResolveDotNetLayout(const FString& PluginAssemblyPath);

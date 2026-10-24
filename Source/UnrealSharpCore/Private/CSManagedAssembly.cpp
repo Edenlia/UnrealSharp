@@ -44,7 +44,8 @@ bool UCSManagedAssembly::LoadAssembly()
 		return true;
 	}
 
-	if (!FPaths::FileExists(AssemblyFilePath))
+	const bool bNativeAot = FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAotRuntime();
+	if (!bNativeAot && !FPaths::FileExists(AssemblyFilePath))
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Assembly path does not exist: {0}", AssemblyFilePath);
 		return false;
