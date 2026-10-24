@@ -4,6 +4,8 @@ The runner uses the existing `SharpTestProject` (A) and `SharpTestProject1` (B) 
 
 Evidence is written to `UnrealEngine/Tests/NativeAOT/eden-main`; every round name must be unique. `original/A` and `original/B` preserve the pre-task source. A's plugin source comes from the fixed `baseline` Git worktree; B comes from this fork. Deployment does not copy or read Unreal assets and does not replace Binaries/Intermediate.
 
+Deployment removes obsolete files only when a previous deployment owned them. Pre-existing local compilation inputs are preserved and recorded with hashes in `retained`; inspect these when comparing slots. In particular, both slots retain their original GlueGenerator.Tests/OutParameters.cs required by the existing Game AutoBuild provenance manifest.
+
 Run from this repository with Node:
 
 ```sh

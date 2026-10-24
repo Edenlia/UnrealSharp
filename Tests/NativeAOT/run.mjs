@@ -70,13 +70,21 @@ if (mode === 'deploy') {
         .filter(file => /^(Build|Config|Managed|Source|Resources)\//.test(file) || (!file.includes('/') && /\.(props|targets|json|uplugin)$/.test(file)))
         .filter(file => fs.existsSync(path.join(source, file)));
     const selectedSet = new Set(selected);
+    const previousFile = path.join(evidence, slot + '-deployment.json');
+    const previous = fs.existsSync(previousFile) ? JSON.parse(fs.readFileSync(previousFile)).files : [];
+    const owned = new Set(previous.map(file => file.path));
     const removed = [];
+    const retained = [];
     for (const root of ['Build', 'Config', 'Managed', 'Source']) {
         for (const file of files(path.join(plugin, root)).map(file => path.join(root, file))) {
-            // Preserve generated local configuration; remove only obsolete compilation inputs.
+            // Only remove files deployed by this runner; keep pre-existing project fixtures.
             if (!selectedSet.has(file) && /\.(cs|cpp|h|csproj)$/.test(file)) {
-                fs.unlinkSync(path.join(plugin, file));
-                removed.push(file);
+                if (owned.has(file)) {
+                    fs.unlinkSync(path.join(plugin, file));
+                    removed.push(file);
+                } else {
+                    retained.push({ path: file, sha256: hash(fs.readFileSync(path.join(plugin, file))) });
+                }
             }
         }
     }
@@ -86,7 +94,7 @@ if (mode === 'deploy') {
     });
     const patch = git(source, 'diff', 'HEAD', '--binary');
     fs.writeFileSync(path.join(dir, 'candidate.patch'), patch);
-    const identity = { source, head: git(source, 'rev-parse', 'HEAD'), patchSha256: hash(patch), removed, files: manifest };
+    const identity = { source, head: git(source, 'rev-parse', 'HEAD'), patchSha256: hash(patch), removed, retained, files: manifest };
     json(path.join(dir, 'deployment.json'), identity);
     json(path.join(evidence, slot + '-deployment.json'), identity);
     console.log(JSON.stringify({ mode, slot, head: identity.head, files: manifest.length, removed: removed.length, dir }));
