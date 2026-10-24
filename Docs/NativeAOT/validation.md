@@ -144,6 +144,12 @@ Roslyn-generated callers now pair native parameter initialization with destructi
 
 These are functional ownership/lifetime checks, not a quantified memory-leak benchmark.
 
+## Unmanaged exception boundary
+
+The exception fixture retrieves the actual managed callback table from native UE, resolves generated Invoke wrappers through GetManagedMethod, and calls InvokeManagedMethod through its unmanaged pointer. A deliberately throwing UFunction must return failure with its Unicode exception text; a subsequent generated return-valued callback must succeed. Fixture-owned handles and native error FString are released in finally. UE's crash-on-Blueprint-exception policy remains unchanged.
+
+live-exception-a / b passed **65 identical checks** after normal Hot Reload. exception-publish-b passed in 66.08 seconds; exception-runtime-b passed **68 checks** in 2.14 seconds (65 common plus 3 AOT-only). No dispatcher change was required. The expected `Exception during InvokeManagedMethod: Expected callback failure: 中文 é` error is present in all three logs; no native ensure/assertion occurred and the AOT run loaded no JIT runtime images.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
