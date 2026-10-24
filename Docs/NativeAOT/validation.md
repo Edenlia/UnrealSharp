@@ -25,7 +25,7 @@ Merged upstream/nativeaot b19374cee4cf25a6a98fc3e0fda4ab063b80cfdd. Preserve cur
 
 The prototype's old loader/export ABI and incomplete static UHT invocation change were deferred. This merge alone is not complete AOT support. It was committed externally during testing; all 816 deployed files matched the reviewed candidate.
 
-Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with only the common FString prerequisite; B is the current fork. Deployment records HEAD, patch hash and every copied file hash.
+Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with common FString and interface-dispatch prerequisites; B is the current fork. The interface prerequisite was introduced only after the matching failures documented below. Deployment records HEAD, patch hash and every copied file hash.
 
 ## FString length — a9346f98
 
@@ -97,6 +97,18 @@ The new live.mjs driver was exercised in both successful rounds. It snapshots th
 live-containers-a and live-containers-b both exposed the same pre-existing API contract: ContainerProperty.ExportSetter deliberately generates NotSupportedException. Whole-container assignment is unsupported on baseline and candidate. The corrected fixture explicitly verifies rejection without mutation, then uses the supported in-place APIs. This is not an AOT production fix.
 
 live-containers-a2 / live-containers-b2 passed 44 checks after Hot Reload: array insert/index/remove/enumeration/clear/repopulate, FName set uniqueness/removal, Unicode string map update/lookup/removal/enumeration, and custom-struct arrays owning FString values. containers-publish-b passed in 65.47 seconds; containers-runtime-b passed the identical 44 checks in the standalone AOT Game. Failed initial rounds remain in evidence. The driver now waits for its Editor to finish closing even when an assertion fails.
+
+## Interface dispatch prerequisite
+
+live-interfaces-b and live-interfaces-a reproduced the same native assertion in UCSFunctionBase::InvokeManagedMethod. The generated wrapper used the interface declaration's UFunction for non-event calls. Interface declarations intentionally have no managed method handle; execution must resolve the implementation on the object's class. Both task-owned Editors hung after the fatal error and were stopped after SIGTERM did not end them. Their complete logs and failed results remain in evidence; no unrelated process was terminated.
+
+UnrealFunction.ExportWrapperMethod now resolves all interface methods on the instance, as it already did for events. Static interface metadata still supplies the parameter layout. The same two-condition fix is applied to baseline A as a common prerequisite, with no native source/build change.
+
+- interfaces-generator-a / interfaces-generator-b: normal production BuildSolution passed, 44.61 / 38.37 seconds.
+- live-interfaces-fixed-a / live-interfaces-fixed-b: 49 matching checks after normal Editor Hot Reload. New cases cover wrapper/UObject identity, callable methods with and without parameters, event implementation, and interface parameter/return invocation after managed GC.
+- interfaces-publish-b: production NativeAOT publish passed in 88.51 seconds. interfaces-runtime-b passed the identical 49 checks in the standalone Game.
+
+This fixes an existing JIT defect exposed by the AOT coverage expansion; it is not an Engine/Project plugin-selection workaround.
 
 ## Installed UE verification
 

@@ -98,6 +98,7 @@ public partial class UParameterBufferManagedTests : UObject
             FunctionConformance.Run(Check);
             PropertyConformance.Run(Check);
             ContainerConformance.Run(Check);
+            InterfaceConformance.Run(Check);
             Report = string.Join("\n", checks) + $"\nTOTAL {checks.Count(check => check.StartsWith("PASS "))} PASS\n";
             return true;
         }
