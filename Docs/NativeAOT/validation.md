@@ -1,5 +1,19 @@
 # NativeAOT change and verification journal
 
+## Final acceptance
+
+Mac arm64 Development on Installed UE 5.8.3 is verified. Native builds use only the existing AutoBuild entries. No push occurred. See [usage and limits](usage.md).
+
+| Runtime | Final evidence | Checks |
+| --- | --- | --- |
+| A JIT / B JIT, three Worlds | worlds-jit-a / worlds-jit-b2 | 198 each, identical |
+| B standalone JIT, three Worlds | standalone-jit-b | 198, identical to A/B; bundled hostfxr/CoreCLR loaded |
+| B standalone NativeAOT, three Worlds | final-aot-b | 207; all common results match; no JIT runtime images |
+| A/B Editor C# Hot Reload | live-exception-a / b | 65 each |
+| NativeAOT loader negative cases | loader-negative-b3 | Invalid library, missing export, initialization failure |
+
+The 198 common results are 65 managed checks plus one native-GC check in each of three Worlds. NativeAOT adds three unload/lifetime checks per World. Eleven unsuppressed reflection warnings remain with conservative whole-assembly roots. Other platforms/configurations, fine-grained trimming and performance benchmarks are unverified.
+
 ## Current verification authority
 
 The user clarified on 2026-10-24 that both SharpTestProject slots must use **Installed UE 5.8**, not the source Engine checkout. The existing Editor/Game AutoBuild entries point to /Users/Shared/Epic Games/UE_5.8 (5.8.3, CL 58210709); their commands/options remain unchanged. Installed UE has no UnrealSharp plugin. Project-local plugins are the test subjects.
@@ -25,13 +39,13 @@ Merged upstream/nativeaot b19374cee4cf25a6a98fc3e0fda4ab063b80cfdd. Preserve cur
 
 The prototype's old loader/export ABI and incomplete static UHT invocation change were deferred. This merge alone is not complete AOT support. It was committed externally during testing; all 816 deployed files matched the reviewed candidate.
 
-Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with common FString, interface-dispatch and delegate-parameter prerequisites; B is the current fork. Additional prerequisites were introduced only after the matching failures documented below. Deployment records HEAD, patch hash and every copied file hash.
+Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with common FString, interface-dispatch, delegate-parameter and parameter-lifetime prerequisites; B is the current fork. Additional prerequisites were introduced only after the matching failures documented below. Deployment records HEAD, patch hash and every copied file hash.
 
 ## FString length — a9346f98
 
 Both source-Engine controls failed after 18 checks: the cleared UObject was null, but an empty FString still returned old text. FromNative ignored ArrayNum while FString retained storage. It now returns empty for ArrayNum <= 1 and copies exactly ArrayNum - 1 UTF-16 units otherwise.
 
-Historical corrected A/B each passed 22 real UE checks, covering Unicode, 8192-character output, null objects, ref/out and mixed returns. Installed UE revalidation is pending below.
+Historical corrected A/B each passed 22 real UE checks, covering Unicode, 8192-character output, null objects, ref/out and mixed returns. Installed UE revalidation is recorded below.
 
 ## Bootstrap/export — d9132e0c
 
@@ -167,6 +181,12 @@ The shared native fixture supports TestIterations (1–10). Every round runs all
 - worlds-jit-a / worlds-jit-b2 exited 0 with **198 identical PASS lines**: 65 managed checks and one native-GC check per round, three rounds. No native ensure/assertion was present.
 - worlds-archive-b completed in 76.03 seconds; worlds-publish-b passed in 67.02 seconds. worlds-aot-b passed **207 checks** in one standalone process: the same 198 common results plus 9 AOT-only results, with all three Worlds collected. comparison.json verifies counts and ordered common results, no native errors and no JIT runtime images.
 
+## Standalone JIT regression and final AOT restoration
+
+After preserving the complete AOT payload and per-file SHA-256 manifest in jit-switch-b, standalone-jit-publish-b used ordinary PackageProject without NativeAOT and succeeded in 62.86 seconds. standalone-jit-b passed **198 checks across three Worlds** with exactly the A/B common PASS sequence. Its loaded images include the package-local libhostfxr, libhostpolicy and libcoreclr; the JIT payload contains no AOT dylib.
+
+The 225-file JIT payload remains preserved in jit-switch-b/jit-payload. Restored the 16-file AOT payload (including debug symbols) and verified every byte hash against the original manifest. final-aot-b passed **207 checks across three Worlds** in 2.15 seconds, with no JIT images or native ensure/assertion. final-aot-b/comparison.json compares all four final runtime reports. These wall times are observations, not a performance comparison. The ordinary final-editor-glue-b command restores B's Editor glue after Game publishing for subsequent Editor use.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
@@ -175,3 +195,31 @@ The shared native fixture supports TestIterations (1–10). Every round runs all
 - installed-runtime-a / installed-runtime-b: both Installed UnrealEditor-Cmd runs exited 0 with **22 PASS**, 25.93 / 25.77 seconds. This revalidates the FString prerequisite and B's shared JIT bootstrap against A.
 - installed-dispatch-b: ordinary UnrealSharp.Automation.dll generated the export through a test-only ProjectReference command; real NativeAOT publish succeeded in 35.74 seconds and the unmanaged caller passed **31 checks**. Seven known reflection trimming warnings remain visible. No production sources were renamed or linked into a substitute Automation assembly.
 - installed-game-b initially stopped in the existing AutoBuild wrapper before UBT: its manifest referenced the original GlueGenerator.Tests/OutParameters.cs, removed by our deployment. Restored that pre-task fixture byte-for-byte in both slots. Deployment now removes only previously deployed inputs, and records retained local inputs. installed-retained-b verified the restored file remains untouched. No AutoBuild script/configuration was changed. installed-game-b-restored then passed the canonical Installed Game build in 73.89 seconds.
+
+## Commit index
+
+Local first-parent implementation and verification commits through the final functional checkpoint; this documentation checkpoint follows them. No push was performed.
+
+| Commit | Completed change |
+| --- | --- |
+| `9781aedd` | Document incremental NativeAOT implementation and validation plan |
+| `4899400f` | Merge remote-tracking branch 'upstream/nativeaot' into eden-main |
+| `ca5e79d5` | Add reproducible NativeAOT A/B validation and source provenance |
+| `a9346f98` | Respect FString length when reading retained string storage |
+| `d9132e0c` | Share UTF-8 bootstrap ABI between JIT and NativeAOT exports |
+| `c0cde37e` | Verify existing dispatch and construction through NativeAOT callbacks |
+| `f5244716` | Validate NativeAOT against Installed UE 5.8 without plugin collision workarounds |
+| `3d3290b5` | Preserve pre-existing test fixtures during A/B deployment |
+| `c9d7d11d` | Preserve target assembly manifests and configuration in NativeAOT packages |
+| `be1b21a1` | Load packaged NativeAOT before hostfxr and verify standalone Game callbacks |
+| `afaa8859` | Verify generated inheritance and live Editor reload against NativeAOT Game |
+| `3e2d5a0d` | Verify generated static UFunctions through native reflection in JIT and AOT |
+| `dc66f3ab` | Verify generated properties and custom struct marshaling in NativeAOT |
+| `d09753f5` | Verify generated container behavior matches JIT in NativeAOT |
+| `536a6051` | Resolve interface function implementations on the target UObject |
+| `c2161a7e` | Marshal delegate parameters through initialized invocation storage |
+| `780e5b25` | Reject NativeAOT plugin unload before mutating module and handle state |
+| `e031e600` | Destroy generated function parameters on success and marshaling failure |
+| `a45341ff` | Verify generated exceptions are contained at the unmanaged callback boundary |
+| `6e6e843c` | Verify packaged NativeAOT loader rejects invalid libraries and initialization failures |
+| `5399e321` | Verify repeated World destruction and native UObject collection in JIT and AOT |
