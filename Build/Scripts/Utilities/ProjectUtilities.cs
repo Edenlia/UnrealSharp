@@ -118,7 +118,7 @@ public static class ProjectUtilities
     public static FileReference GetUnrealSharpUPlugin(this BuildCommand command)
     {
         FileReference Project = command.GetUProjectFile();
-        IEnumerable<FileReference> FoundPlugins = PluginsBase.EnumeratePlugins(Project);
+        IEnumerable<FileReference> FoundPlugins = GetEnabledPluginFiles(Project, ManagedBuildTarget.FromCommand(command));
         
         FileReference? UnrealSharpPlugin = null;
         foreach (FileReference Plugin in FoundPlugins)
