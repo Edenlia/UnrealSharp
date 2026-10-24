@@ -51,10 +51,11 @@ public record UnrealFunction : UnrealFunctionBase
             $"{Accessibility.AccessibilityToString()}{virtualModifier}partial {ReturnType.ManagedTypeWithNullability} {FieldName.SourceName}_Implementation({string.Join(", ", Properties.Select(p => p.GetParameterDeclaration()))});");
     }
 
-    public void ExportWrapperMethod(GeneratorStringBuilder builder, string modifiers)
+    public void ExportWrapperMethod(GeneratorStringBuilder builder, string modifiers, bool resolveOnInstance = false)
     {
         string instanceFunctionName;
-        if (IsEvent)
+        bool needsInstanceFunction = IsEvent || resolveOnInstance;
+        if (needsInstanceFunction)
         {
             instanceFunctionName = $"{FieldName.SourceName}_InstanceFunction";
 
@@ -73,7 +74,7 @@ public record UnrealFunction : UnrealFunctionBase
             $"{Accessibility.AccessibilityToString()}{modifiers}{ReturnType.ManagedTypeWithNullability} {FieldName.SourceName}({string.Join(", ", Properties.Select(p => p.GetParameterDeclaration()))})");
         builder.OpenBrace();
 
-        if (FunctionFlags.HasFlag(EFunctionFlags.Event))
+        if (needsInstanceFunction)
         {
             builder.AppendLine($"if ({instanceFunctionName} == IntPtr.Zero)");
             builder.OpenBrace();

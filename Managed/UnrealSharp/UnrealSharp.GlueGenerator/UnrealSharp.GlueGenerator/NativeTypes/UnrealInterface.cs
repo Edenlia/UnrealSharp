@@ -107,7 +107,8 @@ public record UnrealInterface : UnrealClassBase
         {
             UnrealFunction unrealFunction = (UnrealFunction)function;
             unrealFunction.ExportBackingVariables(builder);
-            unrealFunction.ExportWrapperMethod(builder, string.Empty);
+            // Interface declarations have no implementation thunk. Resolve the object's override.
+            unrealFunction.ExportWrapperMethod(builder, string.Empty, resolveOnInstance: true);
         }
 
         builder.CloseBrace();
