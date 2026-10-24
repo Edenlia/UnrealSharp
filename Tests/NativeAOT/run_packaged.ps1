@@ -17,7 +17,7 @@ if($active){throw 'A UE build, Editor or test Game is active; run verification s
 $exe=Join-Path $PackagedProject ('Binaries/Win64/'+$ProjectName+'.exe')
 $prefix=Join-Path $OutputDirectory $Label
 $arguments=@('/Game/NativeAotValidation/Validation','-nullrhi','-unattended','-nosound','-nosplash',
-    '-stdout','-FullStdOutLogOutput','-NativeAotProbe','-NativeAotMatrix',('-NativeAotExpected='+$ExpectedMode),('-abslog='+$prefix+'.log'))
+    '-stdout','-FullStdOutLogOutput','-NativeAotProbe','-NativeAotMatrix',('-NativeAotExpected='+$ExpectedMode),('-abslog="'+$prefix+'.log"'))
 if($ExceptionProbe){$arguments+='-NativeAotExceptionProbe'}
 if($Benchmark){$arguments+='-NativeAotBenchmark'}
 $watch=[Diagnostics.Stopwatch]::StartNew()
@@ -42,6 +42,16 @@ $passed=$gameExit -eq 0 -and $log.Contains('NATIVEAOT_GAME_SMOKE PASS') -and
     $log.Contains('NATIVEAOT_NATIVE_GC collected=1')
 if($ExceptionProbe){$passed=$passed -and $log.Contains('NATIVEAOT_EXPECTED_EXCEPTION') -and $log.Contains('NATIVEAOT_EXCEPTION returned_control=1')}
 $benchmarkMatch=[regex]::Match($log,'NATIVEAOT_BENCH mode=(\w+) iterations=(\d+) add_ms=([\d.]+) property_ms=([\d.]+) add_checksum=(\d+) property_checksum=(\d+)')
+if($Benchmark){
+    $passed=$passed -and $benchmarkMatch.Success -and $benchmarkMatch.Groups[1].Value -eq $ExpectedMode -and
+        $benchmarkMatch.Groups[2].Value -eq '50000' -and $benchmarkMatch.Groups[5].Value -eq '2100000' -and
+        $benchmarkMatch.Groups[6].Value -eq '6150000'
+}
+if($InspectModules){
+    $hasAot=@($modules | Where-Object {$_ -like '*.AOT.dll'}).Count -gt 0
+    $hasClr=@($modules | Where-Object {$_ -match 'hostfxr|coreclr'}).Count -gt 0
+    $passed=$passed -and $(if($ExpectedMode -eq 'NativeAOT'){$hasAot -and !$hasClr}else{$hasClr -and !$hasAot})
+}
 $result=[ordered]@{
     label=$Label; expected_mode=$ExpectedMode; exit_code=$gameExit; passed=$passed
     process_wall_ms=$watch.Elapsed.TotalMilliseconds; executable=$exe; modules=@($modules)

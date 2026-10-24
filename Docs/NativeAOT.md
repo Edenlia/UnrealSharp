@@ -30,6 +30,8 @@ The native entry point uses the same UTF-8 working-directory argument, callbacks
 
 The native library is resident for the process lifetime. NativeAOT does not support library unloading, dynamic managed assembly loading or managed Hot Reload. Those paths are explicitly unavailable in AOT; restart the process after publishing a new version. Editor C# Hot Reload continues to use collectible load contexts.
 
+Normal Game process exit was verified in both modes. The existing native Game shutdown path does not invoke managed `IModuleInterface.ShutdownModule`; that callback is exercised during JIT unload/Hot Reload. Code requiring cleanup before Game exit must use the appropriate engine lifecycle event. This branch retains that existing lifecycle behavior.
+
 This implementation uses whole-assembly roots for the UnrealSharp runtime and every glue/user assembly in the load-order manifests. Reflection metadata is required for constructors, invocation thunks, managed structs, interfaces and delegate wrappers. It does **not** claim arbitrary trimming compatibility or automatically make third-party reflection/dynamic-code libraries AOT-compatible. Dependencies must satisfy .NET NativeAOT's restrictions; review their publish diagnostics.
 
 ## Publish diagnostics
@@ -45,5 +47,7 @@ The aggregate sets `TrimmerSingleWarn=false`, preserving individual diagnostics.
 | Dynamic assembly-load APIs | The AOT build excludes `PluginLoadContext` and rejects unload/Hot Reload. Do not depend on runtime discovery of new managed DLLs. |
 
 NativeAOT support is established by a published Game run, not by a successful C# build. See `NativeAOT-Plan.md` for the current validation status and `Tests/NativeAOT` for the reproducible workload.
+
+The acceptance run used UE 5.8.3 Installed Engine, Windows x64 Development Game and .NET 10.0.11 NativeAOT. The complete runtime matrix and twelve alternating JIT/AOT samples passed. This run did not show faster managed/native calls or a smaller published payload with AOT; whole-assembly roots prioritize correctness. See `NativeAOT-Validation.md` for measurements and evidence locations.
 
 Primary references: [upstream prototype](https://github.com/UnrealSharp/UnrealSharp/tree/nativeaot), [.NET NativeAOT](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/), [native libraries and lifetime](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/libraries).

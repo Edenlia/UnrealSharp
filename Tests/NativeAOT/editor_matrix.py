@@ -5,7 +5,7 @@ assert cls is not None
 matrix = unreal.new_object(cls)
 mask = matrix.call_method('RunMatrix')
 assert mask == 1023, mask
-assert matrix.call_method('CheckPublishedContent') == 42
+# Published content is validated by the packaged Game harness, not the Editor output.
 assert matrix.call_method('StaticAdd', args=(19, 23)) == 42
 derived = unreal.new_object(unreal.load_class(None, '/Script/UnrealSharp.NativeAotDerived_C'))
 assert derived.call_method('Add', args=(13, 29)) == 42

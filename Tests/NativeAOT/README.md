@@ -17,3 +17,5 @@ The ten matrix groups cover primitive/enum values, strings/names/text, blittable
 `-NativeAotBenchmark` warms up and executes 50,000 scalar calls and 50,000 native-property roundtrips. The log includes timings and exact checksums. Run samples sequentially with identical flags and workload, alternate A/B order, and keep raw samples; one run or a build duration is not a performance result.
 
 Reflection roots and the AOT-only limitations are described in `Docs/NativeAOT.md`. Preserve actual loaded-library evidence, source/generated-file hashes, commands, exit codes and complete logs with the measurements.
+
+`run_packaged.ps1` drives these checks and writes machine-readable results. Use `-InspectModules` to require the expected AOT or hostfxr/coreclr modules; `-Benchmark` also requires the expected iteration count and checksums. `run_loader_failures.ps1` is only for a disposable NativeAOT package: it tests missing-library and missing-export diagnostics, restoring and SHA256-checking the original library in a finally block. Both runners require idle UE build/Editor/Game processes.
