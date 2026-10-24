@@ -71,6 +71,17 @@ The shared parameter fixture now runs in a Runtime module, exposed through the o
 
 This proves the real generated Game path for current scalar/string/struct/object/ref/out cases. Broader generated features, explicit unload rejection, negative loader cases and JIT hot reload remain separate gates.
 
+## Generated inherited functions and live Editor reload
+
+Added five real generated-function cases: bool/FName/ref/out/return, false bool, inherited virtual override, inherited no-argument return and repeat invocation after managed GC. The Python Editor controller calls the reflected runner and reads its report through a UFunction. These are UE calls, not only direct C# method tests.
+
+- live-functions-b2: normal Editor detected the changed fixture, unloaded/recompiled/reloaded PackagingManagedProbe in 2.85 seconds and passed 27 checks.
+- live-functions-a initially failed at startup after a Game build because Editor-only PackageTargetProbe.dll was absent. Ordinary live-editor-glue-a BuildUserGlue restored the Editor output; no production workaround or native rebuild was needed. live-functions-a2 then completed Hot Reload in 2.94 seconds and passed the same 27 checks. The task-owned crash reporter and accidental empty Editor instance were closed; no user process was terminated.
+- functions-publish-b: normal production Game NativeAOT publish passed in 64.00 seconds. functions-runtime-b executed the existing standalone app with that payload, passed the same 27 check names and exited normally in 1.96 seconds. Loaded-image evidence again contains the AOT dylib and no hostfxr/CoreCLR/hostpolicy.
+- Existing unrelated DefaultABDeepOptions::Position initialization warnings remain in full Editor startup logs; this step does not claim a warning-free project.
+
+No production dispatch change was required. Static UFunction through UE reflection, broader features and AOT unload rejection remain subsequent steps.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.

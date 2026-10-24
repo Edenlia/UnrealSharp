@@ -12,6 +12,9 @@ public partial class UParameterBufferManagedTests : UObject
     public partial string Report { get; set; }
 
     [UFunction(FunctionFlags.BlueprintCallable)]
+    public string ReadReport() => Report;
+
+    [UFunction(FunctionFlags.BlueprintCallable)]
     public bool RunTests(AActor First, AActor Second)
     {
         List<string> checks = new();
@@ -92,6 +95,7 @@ public partial class UParameterBufferManagedTests : UObject
                 Check(message == prefix + "|out" && outputActor == null,
                     $"out string/null Actor length={prefix.Length}");
             }
+            FunctionConformance.Run(Check);
             Report = string.Join("\n", checks) + $"\nTOTAL {checks.Count(check => check.StartsWith("PASS "))} PASS\n";
             return true;
         }

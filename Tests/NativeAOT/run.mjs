@@ -12,7 +12,7 @@ const engine = '/Users/Shared/Epic Games/UE_5.8';
 const evidence = path.join(workspace, 'UnrealEngine/Tests/NativeAOT/eden-main');
 const [mode, slot, round, ...extra] = process.argv.slice(2);
 if (!['A', 'B'].includes(slot) || !/^[a-z0-9-]+$/.test(round ?? '')) {
-    throw Error('Usage: node Tests/NativeAOT/run.mjs <preserve|deploy|native|probe|archive|game|uat> <A|B> <unique-round> [args]');
+    throw Error('Usage: node Tests/NativeAOT/run.mjs <preserve|deploy|native|probe|editor|archive|game|uat> <A|B> <unique-round> [args]');
 }
 const name = slot === 'A' ? 'SharpTestProject' : 'SharpTestProject1';
 const project = path.join(workspace, 'UEProjects', name);
@@ -142,6 +142,14 @@ if (mode === 'native') {
     requireBuild('Editor');
     command = path.join(engine, 'Engine/Binaries/Mac/UnrealEditor-Cmd');
     args = [path.join(project, name + '.uproject'), '-run=ParameterBufferExamples', '-nullrhi', '-unattended', '-nosound', '-nop4', '-nosplash', '-stdout', '-FullStdOutLogOutput', '-abslog=' + path.join(dir, 'editor.log'), '-TestReport=' + path.join(dir, 'checks.txt'), ...extra];
+} else if (mode === 'editor') {
+    requireBuild('Editor');
+    copy(path.join(repo, 'Tests/NativeAOT/EditorProbe.py'), path.join(dir, 'EditorProbe.py'));
+    command = path.join(engine, 'Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor');
+    // Unattended mode intentionally disables UnrealSharp's hot-reload subsystem.
+    args = [path.join(project, name + '.uproject'), '/Engine/Maps/Entry', '-nullrhi', '-nosound', '-nop4', '-nosplash',
+        '-stdout', '-FullStdOutLogOutput', '-EnablePlugins=PythonScriptPlugin', '-abslog=' + path.join(dir, 'editor.log'),
+        '-ExecutePythonScript=' + path.join(dir, 'EditorProbe.py')];
 } else if (mode === 'archive') {
     requireBuild('Editor');
     requireBuild('Game');
