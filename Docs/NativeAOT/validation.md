@@ -150,6 +150,14 @@ The exception fixture retrieves the actual managed callback table from native UE
 
 live-exception-a / b passed **65 identical checks** after normal Hot Reload. exception-publish-b passed in 66.08 seconds; exception-runtime-b passed **68 checks** in 2.14 seconds (65 common plus 3 AOT-only). No dispatcher change was required. The expected `Exception during InvokeManagedMethod: Expected callback failure: 中文 é` error is present in all three logs; no native ensure/assertion occurred and the AOT run loaded no JIT runtime images.
 
+## Negative native loader boundaries
+
+negative.mjs preserves the task-owned archived AOT dylib, tests an invalid library plus two tiny standalone .NET NativeAOT libraries, and restores the production bytes in finally. It never compiles Unreal C++ or changes the Engine, project build configuration or package native executable.
+
+loader-negative-b3 passed all three expected failures: failed dlopen, missing InitializeAotRuntime, and initialization returning a Unicode error. Each process terminated through UE's fatal-error path (SIGSEGV on this Mac), produced the expected diagnostic, produced no passing fixture report, and loaded no hostfxr/CoreCLR/hostpolicy. This is deliberate failure behavior, not a runtime crash during a positive case.
+
+Earlier loader-negative-b / b2 were inconclusive because the asynchronous log thread had not written the fatal diagnostic before termination. Their logs are retained; the test now uses the existing runtime options NoLogThread and forcelogflush to capture evidence. No production workaround was added. restored.json verifies identical production SHA-256 before/after. loader-negative-restored-b then passed all **68** positive checks again.
+
 ## Installed UE verification
 
 - installed-baseline-a / installed-candidate-b deployed sources without the plugin-selection workaround.
