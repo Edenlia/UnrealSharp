@@ -1,0 +1,123 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
+using UnrealSharp.Core;
+
+// Mechanism test: preserve these fixtures explicitly so trimming and dispatch are separate gates.
+// UE-generated UFunction metadata and marshalling are exercised by the project fixtures instead.
+public static unsafe class DispatchProbe
+{
+    class BaseObject : UnrealSharpObject
+    {
+        public nint ConstructorPointer;
+        public int Calls;
+        public BaseObject() { ConstructorPointer = NativeObject; }
+        protected virtual int Compute(int value) => value + 1;
+        private void Invoke_Inherited(nint arguments, nint result)
+        {
+            int* values = (int*)arguments;
+            values[1] += values[0];
+            values[2] = values[1] * 2;
+            *(int*)result = Compute(values[2]);
+        }
+        private void Invoke_NoArguments(nint arguments, nint result) { Calls++; }
+    }
+
+    sealed class DerivedObject : BaseObject
+    {
+        public DerivedObject() { }
+        protected override int Compute(int value) => value + 100;
+        static int StaticValue() => 73;
+        private void Invoke_Static(nint arguments, nint result) { *(int*)result = StaticValue(); }
+    }
+
+    sealed class Wrapper
+    {
+        public object Value;
+        Wrapper(object value) { Value = value; }
+        public static Wrapper Wrap(object value) => new(value);
+    }
+
+    struct NativeStruct
+    {
+        public int Value;
+        public NativeStruct() { Value = 47; }
+        public void ToNative(nint destination) { *(int*)destination = Value; }
+    }
+
+    static void Check(bool condition, string name)
+    {
+        if (!condition) throw new Exception("FAIL " + name);
+        Console.WriteLine("PASS " + name);
+    }
+
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(BaseObject))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(DerivedObject))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(Wrapper))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(NativeStruct))]
+    [UnmanagedCallersOnly(EntryPoint = "VerifyManagedDispatch")]
+    public static int VerifyManagedDispatch()
+    {
+        try
+        {
+            ManagedCallbacks callbacks = default;
+            ManagedCallbacks.Initialize((nint)(&callbacks));
+            var assembly = typeof(DerivedObject).Assembly;
+            GCHandle assemblyHandle = GCHandle.Alloc(assembly);
+            nint typeHandle;
+            fixed (char* name = typeof(DerivedObject).FullName!)
+                typeHandle = callbacks.GetManagedTypeHandle(GCHandle.ToIntPtr(assemblyHandle), name);
+            Check(typeHandle != 0, "AOT assembly/type lookup");
+
+            char* error = null;
+            nint instance = callbacks.CreateManagedObject(0x2468, typeHandle, &error);
+            Check(instance != 0 && error == null, "AOT uninitialized allocation and constructor invocation");
+            DerivedObject value = (DerivedObject)GCHandle.FromIntPtr(instance).Target!;
+            Check(value.NativeObject == 0x2468 && value.ConstructorPointer == 0x2468, "native pointer visible inside base constructor");
+
+            static nint Method(ManagedCallbacks table, nint type, string name)
+            {
+                fixed (char* method = name) return table.GetManagedMethod(type, method);
+            }
+            nint inherited = Method(callbacks, typeHandle, "Invoke_Inherited");
+            nint noArguments = Method(callbacks, typeHandle, "Invoke_NoArguments");
+            nint staticBody = Method(callbacks, typeHandle, "Invoke_Static");
+            Check(inherited != 0 && noArguments != 0 && staticBody != 0, "private inherited and declared method lookup");
+            int* arguments = stackalloc int[3] { 3, 4, -1 };
+            int result = -1;
+            Check(callbacks.InvokeManagedMethod(instance, inherited, (nint)arguments, (nint)(&result), 0) == 0,
+                "AOT MethodHandle invocation through unmanaged callback");
+            Check(arguments[0] == 3 && arguments[1] == 7 && arguments[2] == 14 && result == 114,
+                "instance, virtual override, input/ref/out/return ABI");
+            GC.Collect(); GC.WaitForPendingFinalizers();
+            Check(callbacks.InvokeManagedMethod(instance, noArguments, 0, 0, 0) == 0 && value.Calls == 1,
+                "no-argument callback and handles survive GC");
+            Check(callbacks.InvokeManagedMethod(instance, staticBody, 0, (nint)(&result), 0) == 0 && result == 73,
+                "instance wrapper dispatches static body");
+
+            GCHandle wrapperType = GCHandle.Alloc(typeof(Wrapper));
+            nint wrapped = callbacks.CreateNewManagedObjectWrapper(instance, GCHandle.ToIntPtr(wrapperType));
+            Check(wrapped != 0 && ReferenceEquals(((Wrapper)GCHandle.FromIntPtr(wrapped).Target!).Value, value),
+                "reflection Wrap factory");
+            GCHandle structType = GCHandle.Alloc(typeof(NativeStruct));
+            callbacks.InitializeStruct(GCHandle.ToIntPtr(structType), (nint)(&result));
+            Check(result == 47, "struct constructor and ToNative reflection");
+            int delegateCalls = 0;
+            GCHandle action = GCHandle.Alloc((Action)(() => delegateCalls++));
+            callbacks.InvokeDelegate(GCHandle.ToIntPtr(action));
+            Check(delegateCalls == 1, "delegate DynamicInvoke");
+
+            foreach (nint handle in new[] { inherited, noArguments, staticBody, wrapped, typeHandle })
+                GCHandleUtilities.Free(GCHandle.FromIntPtr(handle), assembly);
+            callbacks.Dispose(instance, GCHandle.ToIntPtr(assemblyHandle));
+            Check(value.NativeObject == 0, "dispose clears native pointer");
+            action.Free(); structType.Free(); wrapperType.Free(); assemblyHandle.Free();
+            Console.WriteLine("DISPATCH PASS");
+            return 0;
+        }
+        catch (Exception error)
+        {
+            Console.WriteLine(error);
+            return 1;
+        }
+    }
+}

@@ -12,8 +12,16 @@ unsafe class Program
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    static nint GetBoundFunction(char* outer, char* function, int size) =>
-        new string(outer) == "Probe" && new string(function) == "Unicode: 中文" && size == 17 ? 0x1234 : 0;
+    static nint GetBoundFunction(char* outer, char* function, int size)
+    {
+        if (new string(outer) == "Probe" && new string(function) == "Unicode: 中文" && size == 17) return 0x1234;
+        if (new string(outer) == "Bind_FMsg" && new string(function) == "Log")
+            return (nint)(delegate* unmanaged<char*, byte, char*, void>)&Log;
+        return 0;
+    }
+
+    [UnmanagedCallersOnly]
+    static void Log(char* category, byte verbosity, char* message) => Console.WriteLine("NATIVE LOG " + new string(message));
 
     static void Check(bool value, string name)
     {
@@ -45,6 +53,11 @@ unsafe class Program
             for (int i = 1; i < 10; i++) Check(callbacks[i] != 0, "managed callback " + i);
             Check(plugins[0] == 0x5678 && plugins[3] == 0x5678 && callbacks[0] == 0x5678 && callbacks[10] == 0x5678, "callback table boundaries");
             Check(verify(path) == 0, "UTF-8 working directory and UTF-16 native bind callback");
+            if (args.Length > 1 && args[1] == "dispatch")
+            {
+                var dispatch = (delegate* unmanaged<int>)NativeLibrary.GetExport(library, "VerifyManagedDispatch");
+                Check(dispatch() == 0, "production callbacks in NativeAOT");
+            }
 
             initialize(path, plugins + 1, (nint)(delegate* unmanaged[Cdecl]<char*, char*, int, nint>)&GetBoundFunction, callbacks + 1, &result);
             Check(result.Success == 0, "duplicate initialization reports failure");

@@ -74,3 +74,11 @@ Move shared initialization into `RuntimeBootstrap.Initialize`, exposing the exis
 Seven trimming warnings remain: IL2075 (wrapper/function/struct method discovery), IL2026 (assembly type lookup), IL2072 (struct constructor), IL2070 and IL2067 (object constructors/uninitialized allocation). They are preserved, not suppressed. Export success does not prove those reflection paths, packaged startup, or the aggregate PackageProject pipeline. Those remain later test gates.
 
 JIT regression after the shared-bootstrap change: `bootstrap-jit-build-b`, `bootstrap-jit-user-b` and `bootstrap-jit-runtime-b` all exit 0, with **22 PASS** through the original hostfxr entry.
+
+## Existing dispatch and construction under NativeAOT
+
+`dispatch-probe-b2` publishes the actual runtime with explicitly rooted, small mechanism fixtures. The exported test calls the production unmanaged callback table rather than invoking reflection helpers directly. Publish exits 0 (37.14 s); native caller exits 0 with **31 PASS**, `DISPATCH PASS` and `BOOTSTRAP PASS`.
+
+Verified: assembly/type lookup; uninitialized allocation and constructor invocation; NativeObject already set inside the base constructor; private inherited/declared method lookup; instance function pointers; virtual dispatch; input/ref/out/return buffers; no-argument calls after GC; instance wrappers around static bodies; reflection Wrap factory; struct constructor and ToNative; DynamicInvoke; disposal clearing NativeObject. The initial `dispatch-probe-b` attempt only failed to compile the test's captured address-taken local (CS1686); correcting the fixture to use a static helper resolved it. Production dispatch required **no change**.
+
+Decision: keep current method and constructor ABI. NativeAOT supports these paths when their metadata and code are retained. The open work is proving retention and generated wrappers in a complete Unreal runtime, not replacing the ABI based on the old upstream experiment. Test-only DynamicDependency annotations do not solve application trimming; warnings remain visible.
