@@ -23,7 +23,10 @@ public record DelegateProperty : TemplateProperty
     public override void ExportBackingVariables(GeneratorStringBuilder builder)
     {
         base.ExportBackingVariables(builder);
-        builder.AppendNewBackingField($"{ManagedType}? {BackingFieldName} = null;");
+        if (Outer is UnrealClass)
+        {
+            builder.AppendNewBackingField($"{ManagedType}? {BackingFieldName} = null;");
+        }
     }
 
     protected override void ExportGetter(GeneratorStringBuilder builder)
@@ -36,6 +39,12 @@ public record DelegateProperty : TemplateProperty
     public override void ExportFromNative(GeneratorStringBuilder builder, string buffer,
         string? assignmentOperator = null)
     {
+        if (Outer is not UnrealClass)
+        {
+            builder.AppendLine($"{assignmentOperator}{CallFromNative}({AppendOffsetMath(buffer)}, 0, {NativePropertyVariable});");
+            return;
+        }
+
         builder.AppendLine(
             $"{BackingFieldName} ??= {CallFromNative}({AppendOffsetMath(SourceGenUtilities.NativeObject)}, 0, {NativePropertyVariable});");
 
@@ -47,7 +56,7 @@ public record DelegateProperty : TemplateProperty
 
     public override void ExportToNative(GeneratorStringBuilder builder, string buffer, string value)
     {
-        builder.AppendLine($"{CallToNative}({AppendOffsetMath(SourceGenUtilities.NativeObject)}, 0, {value});");
+        builder.AppendLine($"{CallToNative}({AppendOffsetMath(buffer)}, 0, {value});");
     }
 
     protected override void ExportSetter(GeneratorStringBuilder builder)
