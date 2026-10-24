@@ -40,6 +40,7 @@ public static class PluginLoader
 		return null;
 	}
 
+#if !NATIVE_AOT
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private static WeakReference? RemovePlugin(string assemblyName)
 	{
@@ -50,9 +51,15 @@ public static class PluginLoader
 
 		return plugin.Unload();
 	}
+#endif
 
 	public static void UnloadPlugin(string assemblyPath)
 	{
+#if NATIVE_AOT
+		// The unmanaged callback must reject unloading before changing any registry,
+		// module or GC-handle state. NativeAOT assemblies share the default context.
+		LogUnrealSharpPlugins.LogWarning($"NativeAOT plugin cannot be unloaded: {assemblyPath}");
+#else
 		TaskTracker.WaitForAllActiveTasks();
 
 		string assemblyName = Path.GetFileNameWithoutExtension(assemblyPath);
@@ -104,6 +111,7 @@ public static class PluginLoader
 		{
 			LogUnrealSharpPlugins.LogError($"An error occurred while unloading the plugin: {exception}");
 		}
+#endif
 	}
 
 	public static Plugin? FindPlugin(Type type)

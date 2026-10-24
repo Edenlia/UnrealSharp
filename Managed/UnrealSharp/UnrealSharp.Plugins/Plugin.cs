@@ -11,7 +11,9 @@ public class Plugin
     public readonly AssemblyName AssemblyName;
     public WeakReference? Assembly { get; private set; }
     
+#if !NATIVE_AOT
     private AssemblyLoadContext? _loadContext;
+#endif
 
     private readonly List<IModuleInterface> _moduleInterfaces = new();
     private readonly List<Func<IModuleInterface>> _moduleInitFunctions = new();
@@ -88,6 +90,9 @@ public class Plugin
     [MethodImpl(MethodImplOptions.NoInlining)]
     public WeakReference Unload()
     {
+#if NATIVE_AOT
+        throw new PlatformNotSupportedException("NativeAOT plugins remain loaded for the process lifetime.");
+#else
         ShutdownModule();
         
         AssemblyCache.RemoveAssembly(AssemblyName.Name!);
@@ -99,6 +104,7 @@ public class Plugin
         _loadContext = null;
         
         return loadContextWeak;
+#endif
     }
 
     public void StartupModule()

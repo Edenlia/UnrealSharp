@@ -25,7 +25,7 @@ Merged upstream/nativeaot b19374cee4cf25a6a98fc3e0fda4ab063b80cfdd. Preserve cur
 
 The prototype's old loader/export ABI and incomplete static UHT invocation change were deferred. This merge alone is not complete AOT support. It was committed externally during testing; all 816 deployed files matched the reviewed candidate.
 
-Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with common FString and interface-dispatch prerequisites; B is the current fork. The interface prerequisite was introduced only after the matching failures documented below. Deployment records HEAD, patch hash and every copied file hash.
+Original source snapshots/hash manifests are in original/A and original/B (857 / 852 files). Unreal binary assets were not inspected or edited. A is cb8577e3 with common FString, interface-dispatch and delegate-parameter prerequisites; B is the current fork. Additional prerequisites were introduced only after the matching failures documented below. Deployment records HEAD, patch hash and every copied file hash.
 
 ## FString length — a9346f98
 
@@ -121,6 +121,17 @@ Delegate fields retain their property cache; delegate parameters now decode each
 - delegates-publish-b: production AOT publish succeeded in 89.88 seconds; delegates-runtime-b passed the same 56 checks in the standalone Game. All three positive logs were explicitly checked for native ensure/assertion/critical-error markers and contained none. The live driver now rejects those markers even if a managed report passes.
 
 The failed task-owned Editors were stopped after they remained blocked on the ensure despite SIGTERM; raw failure logs remain preserved. No unrelated processes were terminated.
+
+## Module startup and NativeAOT unload boundary
+
+NativeAOT cannot unload its shared library or embedded assemblies. Previously Plugin.Unload could shut down modules and free every handle in the shared default context before dereferencing its null load context. The unmanaged unload callback now warns and returns before mutation; direct Plugin.Unload throws PlatformNotSupportedException before shutdown. PluginLoadContext and the dynamic unload implementation are excluded from AOT compilation. JIT loading/unloading code is unchanged.
+
+The generated UModule fixture checks assembly/module identity, exactly one startup after native bindings are ready, no repeated startup on Load, and survival through managed GC. AOT additionally attempts both unload paths and then constructs/calls a generated UObject after GC to verify handles remain intact.
+
+- lifecycle-runtime-build-b and lifecycle-editor-glue-b succeeded through normal managed UAT. The first fixture had an incorrect UModule using directive (live-lifecycle-b / b2); the failed build/startup evidence is retained. Corrected the fixture before retrying.
+- live-lifecycle-b3 / live-lifecycle-a passed **60 identical JIT checks** after Hot Reload. B's console explicitly records startup 1, shutdown 1 during reload, then the new module's startup 1.
+- lifecycle-publish-b passed in 86.92 seconds. Dynamic-load trimming warnings disappeared because the code is absent from the AOT assembly; the remaining **11 reflection warnings are unsuppressed**.
+- lifecycle-runtime-b passed **63 checks** in 2.02 seconds: the same 60 common checks plus three AOT unload rejection/continued-use checks. Loaded images contain no hostfxr/CoreCLR/hostpolicy, and the run has no native ensure/assertion.
 
 ## Installed UE verification
 
