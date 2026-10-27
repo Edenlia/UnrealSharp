@@ -1,0 +1,1 @@
+Review-only tooling; do not discover these fixture Automation projects as plugin build inputs.
