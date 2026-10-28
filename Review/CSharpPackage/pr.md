@@ -1,31 +1,46 @@
-# Publish managed assemblies during Unreal staging, including UE 5.6
+# Publish managed code during staging and align Editor packaging
 
-UnrealSharp packaging currently requires a separate managed publish after Unreal packaging. This change publishes assemblies and the self-contained runtime while UAT constructs the staging manifest, allowing platform packaging and signing to include them through the normal pipeline. A publish failure stops staging before archiving.
+UnrealSharp currently requires a separate managed publish after packaging the Unreal project, as described in the [packaging documentation](https://www.unrealsharp.com/getting-started-and-fundamentals/packaging). This change publishes the assemblies and self-contained runtime while UAT builds the staging manifest, so platform packaging and signing can include them in the same pipeline.
 
-The plugin reuses PackageProject, takes the target/configuration/architecture from the native receipt, publishes into an isolated Intermediate directory, and registers the full output as NonUFS. No project Target, descriptor, packaging configuration, or Automation bridge changes are required. The selected publishing plugin must match the native receipt.
+The plugin reuses PackageProject, derives the target, configuration and architecture from the native receipt, publishes into an isolated Intermediate directory, and registers the output as NonUFS. Publishing must use the plugin recorded in that receipt; a publish failure stops the pipeline before archiving. Projects do not need changes to their Target files, descriptor or packaging configuration, or an additional Automation bridge.
 
-## Engine entry points
+## Editor and command-line entry points
 
-- UE 5.7/5.8: CustomStagingHandler participates in standard BuildCookRun with `-ScriptsForProject=<project.uproject>`.
-- UE 5.6: BuildCookRunUnrealSharp derives from BuildCookRun and attaches the same staging implementation through ModifyDeploymentContextCallback. Ordinary UE 5.6 Editor packaging does not automatically opt in. Foreign sample creation is rejected; this command is excluded when CustomStagingHandler exists.
-- Source-engine project-plugin discovery may require `-ScriptDir=<plugin>/Build/Scripts`; that environment is outside the executed matrix.
+| Engine capability | Editor | Command line |
+| --- | --- | --- |
+| CustomStagingHandler available, tested on UE 5.7/5.8 | Use Unreal's normal Platforms > Package Project. The redundant UnrealSharp Package Project button is removed. | Standard BuildCookRun with the project's script context |
+| No CustomStagingHandler, tested on UE 5.6 | UnrealSharp > Package Project now runs the complete host-platform packaging pipeline and accepts an empty output directory. | BuildCookRunUnrealSharp |
 
-PreBuild/PostBuild cannot reliably cover managed-only changes when native actions are skipped. Command dispatch resolves only the requested managed command type so that UHT does not eagerly load the legacy command's UAT-only dependency. Plugin discovery precedence is unchanged; handling duplicate engine/project installations is outside this contribution.
+The legacy command derives from BuildCookRun and attaches the shared staging implementation through ModifyDeploymentContextCallback. UE 5.6's native Platforms action remains unchanged; use the UnrealSharp action or the dedicated command there. Both entry points are selected by API availability, rather than a hard-coded engine minor version.
+
+The legacy Editor action saves dirty packages and reads the selected host-platform target, configuration, architecture and common packaging options. It uses the existing asynchronous UAT helper. Turnkey's full command builder is private, so this action does not reproduce every Turnkey option.
+
+PreBuild/PostBuild do not reliably cover managed-only changes when native actions are skipped. Command dispatch also resolves only the requested command type, preventing UHT from loading the legacy command's UAT-only dependencies through eager type enumeration.
 
 ## Validation
 
-Fresh original-base versus final-candidate checks passed on Installed UE 5.6.1, 5.7.4 and 5.8.3, Win64 x64 Development Game. Both slots on each engine used project-level UnrealSharp without a duplicate engine installation. Canonical Editor/Game builds, Cook/Stage/Archive, and packaged managed-runtime probes passed. Baseline standard staging omitted managed files and required manual publishing; the candidate staged them automatically.
+Validated project-level plugins on Installed UE 5.6.1, 5.7.4 and 5.8.3, Win64 x64 Development Game.
 
-- Candidate publish/stage/archive hashes matched for all 220/220/225 managed and runtime files.
-- Managed-only edits, expected compiler failure without archive replacement, skipped staging and recovery passed on all three engines; native and Editor managed output hashes remained unchanged.
-- Eighteen receipt/command boundaries passed per engine, including publishing/native-plugin identity mismatch rejection.
-- 94,905 existing generated UHT text artifacts matched across A/B and remained unchanged. Exporter/native inputs were unchanged; canonical builds reused native outputs. Managed publishing and runtime verification were executed afresh.
-- Runtime assembly API/IL records matched. Transient RID/non-RID platform/debug-artifact differences and pre-existing fixture differences are retained and explained in the local report. All 665 final candidate published files matched the pre-amend output byte for byte.
+- Actual Editor menu A/B checks on all three engines. On 5.6, the old action rejected an empty archive; the new action packaged successfully. Canceling directory selection did not start UAT. On 5.7/5.8, the plugin action disappeared and native Editor packaging succeeded.
+- All three candidate packages ran a managed probe from the new archive, loading the packaged runtime and expected managed content. Publish, Stage and Archive hashes matched for 220/220/225 files.
+- Canonical native Editor/Game builds passed before opening Editor. UI packaging used Build=Never to keep native compilation separate from Editor DLL occupancy.
+- Earlier original-base A/B checks cover managed-only changes, compiler failure without archive replacement, skipped staging/recovery, and 54 receipt/command boundaries. These checks remain applicable to the unchanged staging/publishing implementation.
+- Earlier generated-output comparison matched 94,905 UHT text artifacts. The new Editor commit does not change exporters. Current published production assemblies and runtime dependencies match the preceding candidate byte for byte; only the test probe and its content changed.
 
-Each engine had one warmup and three independent samples per side, comparing Stage plus manual publish with automatic Stage. Median UAT wall times were 9.904/10.086 s on 5.6, 9.847/10.140 s on 5.7, and 42.160/42.523 s on 5.8. Native build, cook and runtime verification are excluded. These small fixture measurements are not a general performance guarantee.
+Also verified UE 5.8.3 source build with an engine-level plugin, Win64 x64 Development Client and dedicated Server, using actual clicks on Unreal's Platforms > Package Project menu. The targets were named `CSharpPackageClient` and `CSharpPackageDedicated`, both different from the project name; the server target does not use a `Server` suffix.
 
-## Limits
+- Standard BuildCookRun selected the correct target type and automatically published managed code during staging, with no separate managed packaging action or project Automation bridge.
+- Both archived executables exited successfully after running a C# startup probe. The probes confirmed `WITH_CLIENT`/`WITH_SERVER`, `WITH_DEVELOPMENT`, expected content, and assemblies/runtime loaded from their respective archives. Each target's 220 managed files matched across Publish, Stage and Archive.
+- Canonical Editor/Client/Server/UnrealPak builds passed before opening Editor; UI packaging used Build=Never. These are packaging and managed initialization checks, not multiplayer interoperability or rendering tests.
 
-The path is restricted to Win64 and Mac JIT; Mac packaging/signing was not executed on this Windows host. Editor button clicks, full Client/Server/Shipping packaging and source-engine combinations were not executed. Mixed targets/configurations, universal architectures and DLC are rejected; mobile and NativeAOT support are not added.
+Previously measured warm Stage-plus-manual-publish versus automatic Stage medians were 9.904/10.086 s, 9.847/10.140 s and 42.160/42.523 s, respectively, with one warmup and three samples per side. These exclude native build, cook and runtime verification. The latest complete Editor runs are functional checks, not a new performance benchmark.
 
-Addresses [#786](https://github.com/UnrealSharp/UnrealSharp/issues/786) and the [documented packaging workflow](https://www.unrealsharp.com/getting-started-and-fundamentals/packaging). Related [#785](https://github.com/UnrealSharp/UnrealSharp/pull/785) remains separate; this change does not depend on its archive target-name detection.
+## Scope and limitations
+
+The staging path supports Win64 and Mac JIT; Mac packaging/signing was not executed on the Windows test host. Mobile, NativeAOT and universal architectures are not added. Mixed targets/configurations and DLC are rejected. Shipping, Client/Server combinations beyond the UE 5.8.3 source-engine case above, and engines older than 5.6 remain untested.
+
+The legacy Editor action targets the host platform and does not forward custom DDC graph or ZenStore options. IfProjectHasCode conservatively requests a native build instead of replicating Turnkey's promoted-receipt optimization. Source-engine project-plugin discovery may require an explicit ScriptDir.
+
+Plugin discovery precedence is unchanged; duplicate engine/project installations remain a separate concern.
+
+Addresses [#786](https://github.com/UnrealSharp/UnrealSharp/issues/786). If this staging workflow is accepted as the replacement for post-packaging publishing, [#785](https://github.com/UnrealSharp/UnrealSharp/pull/785) can be superseded: the Client/Server and custom target-name cases are verified here, and staging lets UAT place managed files before platform packaging/signing instead of locating and modifying an already packaged executable or Mac bundle. Mac execution/signing still needs platform validation. This is a workflow replacement, not a port of #785's additional options for the standalone legacy PackageProject command.

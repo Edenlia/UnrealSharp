@@ -1,0 +1,7 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "",
+  "Description": "UnrealSharp staging verification for custom Client and Server targets",
+  "Modules": [{ "Name": "UnrealSharpTestProject", "Type": "Runtime", "LoadingPhase": "Default" }],
+  "Plugins": [{ "Name": "UnrealSharp", "Enabled": true }]
+}

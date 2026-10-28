@@ -1,128 +1,118 @@
-> 2026-10-27 test 分支交接：本文保留原验证阶段记录。原始证据未随分支发布；跨电脑审查及复测见 [README](README.md) 和 [复现步骤](REPRODUCE.md)。功能 HEAD 仍是 fddb33ae，test 分支额外携带工具与文档。
+> 2026-10-28 test 分支交接：功能实现为 b59ff754；本文中的“仅本地、未推送”描述原验证阶段。此次按用户要求同步审查资料，不携带原始日志和证据。入口见 [README](README.md)，Client/Server 见 [专用说明](ClientServer/README.md)。
 
-# C# 自动打包：移除 resolver 提交后的验证
+# C# 自动打包及 Editor 入口验证
 
-## 结论与交付
+## 结论
 
-可以移除第二个提交。用户移除 UE 5.6 Engine 安装中的 UnrealSharp 后，原始插件 resolver 在实际 UAT 中正确选择项目插件；移除修复后的候选在 UE 5.6/5.7/5.8 均完成 Win64 x64 Development Game 打包和包内 C# 运行。此次 amendment 的必需验证已完成；不把下述未测平台或 UI 入口算作通过。
+本地第三个提交 b59ff754 已完成。三版本均实际通过电脑操作打开 Editor 菜单，并与父提交对照；三个候选均从 Editor 点击发起打包，自动带入 C#，归档游戏启动并执行 C# 探针成功。
 
-- 分支：`featre/csharp-package`，仓库 `C:/Users/edenlia/Workspace/CodeProjects/UnrealSharp`。
-- 原始基线保持 `cb8577e3a47b5bdc5454239a17f61a6282a50ae2`；最终 HEAD `fddb33aefd598fa0d1eb5e324dc5ae36fb788a47`。
-- 本地保留 `backup/csharp-package-before-drop-resolver-20261025` 指向 `777b14237afbcfea740458d1643f433ef7769751`。
-- 仅本地修改；没有推送、创建/修改 GitHub PR、合并 main/cp-main 或引入另一份 PR 的代码。
-
-| 原提交 | 当前状态 | 责任与证据 |
+| 引擎 | 父提交 A 的 UnrealSharp 菜单 | 最终候选 B 的实际入口与结果 |
 | --- | --- | --- |
-| 1723b7ba619b8e4ee778dde672cf9983e63cd6a9 | 原样保留 | 5.7/5.8 CustomStagingHandler；原先该提交的真实 A/B 与当前标准入口回归 |
-| 89707cded9b453751d11525170354b0c03133025 | 已删除 | 插件优先级修复完全移出此次贡献；ProjectUtilities.cs 与原始基线一致 |
-| 777b14237afbcfea740458d1643f433ef7769751 | 重放为 fddb33aefd598fa0d1eb5e324dc5ae36fb788a47 | 5.6 独立命令、共享 staging、UHT 按名解析；补丁等价，三版新候选验证 |
+| UE 5.6.1 | 有 Package Project；选择空目录提示缺少已有 exe，不启动 UAT | UnrealSharp > Package Project → BuildCookRunUnrealSharp；空目录完整打包、包内运行成功 |
+| UE 5.7.4 | 有 Package 分组和旧按钮 | 移除分组/按钮；Platforms > Package Project → 普通 BuildCookRun 自动带入 C#，包内运行成功 |
+| UE 5.8.3 | 有 Package 分组和旧按钮 | 移除分组/按钮；Platforms > Package Project → 普通 BuildCookRun 自动带入 C#，包内运行成功 |
 
-`range-diff` 只显示中间提交删除，其余两项补丁等价。最终贡献为 6 个插件 C#/csproj 文件，157 行新增、22 行删除；改写前后仅 ProjectUtilities.GetUnrealSharpUPlugin 不同。没有测试、文档、计划或项目文件进入源码提交。
+5.6 的原生 Platforms 按钮没有被替换，仍不会自动选用专用命令。无 handler 时保留的 UnrealSharp 入口限定主机平台；5.7/5.8 使用原生平台菜单。
 
-## 保留的行为和边界
+## 版本、提交与证据边界
 
-| 版本 | 实际验证入口 | 使用限制 |
+- 仓库：<WORKSPACE>/CodeProjects/UnrealSharp，分支 featre/csharp-package。
+- 原始 PR base：cb8577e3a47b5bdc5454239a17f61a6282a50ae2。
+- 最终 HEAD：b59ff754ada2ad10c02b65f590c5f18585f8271c。
+- upstream/main 本轮只读 fetch 为 115e6753b2f8c830f084a3e453b7ef3b1230eb33，新增内容与本任务无重叠，没有合入。
+- 三个有序 commit：1723b7ba619b8e4ee778dde672cf9983e63cd6a9；fddb33aefd598fa0d1eb5e324dc5ae36fb788a47；b59ff754ada2ad10c02b65f590c5f18585f8271c。
+- 新 commit 只修改三个 Editor 文件，98 行新增、19 行删除。完整 base..HEAD 为 9 个生产插件文件，255 行新增、41 行删除。没有测试、计划、报告或项目配置进入提交。
+- 没有推送、发布/更新 PR、修改 test/csharp-package-test 或合并 main/cp-main。
+
+本轮增量 A=fddb33ae、B=b59ff754，六槽均为完整 fork 快照，不能把本轮 A 称为原始 cb8577e3。原始 base 到 fddb 的 Editor 源码没有变化，因此本轮真实菜单 A/B 同时说明原始入口到最终入口的差异。原始 base 到最终组合的 UAT/publisher、边界、生成输出及三轮性能结果，复用 [2026-10-25 完整 A/B](editor-menu-20261028/validation-before.md) 的等价部分；第三提交只改变 Editor 入口，没有改变 Build/Managed/exporter 实现。该范围经过 Git diff 及最新发布文件核对。没有把历史测试描述为今天重新运行。
+
+## 每项提交的责任和验证
+
+1. **1723b7ba：Publish managed code during Unreal staging**
+   从 native receipt 取得目标、配置、架构和插件身份，调用现有 PackageProject 发布到隔离 Intermediate 目录，以 NonUFS 登记完整输出。CustomStagingHandler 在平台封装/签名前执行。原始基线 staging 缺少托管文件、手工发布后成功；候选自动 staging 和包内运行成功。最新 5.7/5.8 原生 UI 路径再次覆盖。
+2. **fddb33ae：Add managed staging to the UE 5.6 packaging command**
+   没有 handler 时编译 BuildCookRunUnrealSharp，通过 ModifyDeploymentContextCallback 复用 staging。拒绝 foreign/foreigncode；按名称查找命令，避免 UHT 枚举 UAT 专用类型。旧版命令、边界、失败保护和仅 managed 修改回归通过；最新 5.6 UI 也完整执行。之前独立 resolver 修复已移出，本提交不改变插件发现优先级。
+3. **b59ff754：Align Editor packaging actions with staging support**
+   Build.cs 使用与 Automation csproj 一致的 CustomStagingHandler.cs 存在性判断。无 API 时保留菜单、注册和绑定，按钮由后置发布改为全链打包；保存脏包，读取平台 target/configuration/architecture 及常用 Packaging Settings。有 API 时不注册、不绑定、不显示该按钮。三版本新 Editor 编译与真实菜单 A/B、三个候选完整打包和运行均通过。
+
+## 环境、构建和加载身份
+
+| 版本 | Engine 身份 | A / B 项目 |
 | --- | --- | --- |
-| 5.6 | `RunUAT -ScriptsForProject=<project.uproject> BuildCookRunUnrealSharp <打包参数>` | 默认 Editor 按钮和普通 BuildCookRun 不自动改用该命令 |
-| 5.7/5.8 | `RunUAT -ScriptsForProject=<project.uproject> BuildCookRun <打包参数>` | 插件自动发现 staging handler |
+| 5.6.1 | Installed，CL 44394996 | SharpTestProject56_1 / SharpTestProject56_2 |
+| 5.7.4 | Installed，CL 51494982 | SharpTestProject57_1 / SharpTestProject57_2 |
+| 5.8.3 | Installed，CL 58210709 | SharpTestProject / SharpTestProject1 |
 
-发布、NonUFS 登记发生在平台封装和签名前。目标/配置/架构来自 native receipt，输出隔离于 Intermediate/UnrealSharp/Publish。保留发布插件与 receipt 不一致时明确失败的检查。
+Windows 同一主机、Win64 x64 Development Game；Engine 根分别为 C:/Program Files/Epic Games/UE_5.6、UE_5.7、UE_5.8。UAT 使用各自 Engine 自带的 .NET；managed 项目为 .NET 10。六槽都是 Project-level UnrealSharp，没有 Engine 同名副本。
 
-重复安装的优先级问题不由此分支修复。本轮三个 Installed Engine/Plugins 均没有 UnrealSharp.uplugin，六槽使用项目级插件。若再次存在多份同名插件，旧 resolver 仍可能选错；另一 PR 的修复未合入本分支，也没有把该场景标为已解决。
+六槽先检查占用，严格执行本项目原有 AutoBuild.bat、AutoBuildGame.bat，成功后官方 BuildUserSolution，再打开 Editor。没有改 native options 或引擎，没有 Live Coding、强制重建或清理缓存。B 的 Editor 本轮编译 41 actions，UBT 分别 18.83 / 19.56 / 23.00 秒；Game 复用 up-to-date native 输出。测试打包配置统一为 Build=Never、Development、Entry、Pak/IoStore，以避免 Editor 持有 DLL 时再次 native 编译；不等于测试了所有 -build/clean 分支。
 
-PreBuild 早于 UHT，PostBuild 依赖 native action 是否执行，不能覆盖 managed-only 或 skip-build staging，因此仍采用 staging。无项目 Automation 桥接或 Target/uproject 配置更改。源码引擎项目发现可能仍需 ScriptDir，本轮不扩大源码引擎矩阵。
+A58 的既有 DuplicateTransientProbe.cpp、GasFreeParameterProbe.cpp、MaintainerParameterProbe.cpp 在 up-to-date 扫描中出现首个头文件不匹配文字；UBT 明确 Result: Succeeded、exit 0，未重编译或修复这些无关夹具。保留日志，不声称这些旧夹具经过全量重编译。
 
-## 来源与环境
+每槽 829 个插件源文件在部署和最终核对均匹配快照；每个 Editor 的 15 个 UnrealSharp 模块均来自对应项目 Plugins/UnrealSharp。Automation build record 指向同一项目的 Build/Scripts。八项登记输入（AutoBuild、配置、uproject、probe 等）执行前后哈希未变。新 commit 的三个源码文件在提交前与已测试 candidate 逐字节相同，提交后工作树干净。
 
-源仓库 origin=Edenlia/UnrealSharp，upstream=UnrealSharp/UnrealSharp；本次只读 ls-remote 显示 upstream/main 仍为原始基线，没有移动 base。
+## 本轮实际执行的功能检查
 
-| 版本 | 实际安装 | A 原始基线 / B 最终候选 |
-| --- | --- | --- |
-| 5.6 | 5.6.1 / CL 44394996 / UAT .NET 8.0.300 | SharpTestProject56_1 / SharpTestProject56_2 |
-| 5.7 | 5.7.4 / CL 51494982 / UAT .NET 8.0.412 | SharpTestProject57_1 / SharpTestProject57_2 |
-| 5.8 | 5.8.3 / CL 58210709 / UAT .NET 10 | SharpTestProject / SharpTestProject1 |
+- A56：旧按钮选新空目录，出现缺少项目 exe 的预期错误，未启动 UAT。此为有效负例，不能用于性能比较。
+- B56：取消目录选择，不启动 UAT；再次选新空目录，命令为 BuildCookRunUnrealSharp，包含 cook/stage/package/archive 和正确项目、target、Win64/Development、Pak/IoStore 等参数。UAT exit 0。
+- A57/A58：实际检查旧 Package 菜单存在。本轮不重复它们的完整 native package；先前相同实现的 UI 打包记录见 [前轮 UI 总结](../editor-package-matrix-20261028/verification.md)。
+- B57/B58：实际检查插件 Package 分组消失，其他菜单保留；点击 Platforms > Package Project > Package Project，选择 Windows、Use Project Setting (Development)，输出到新空 Archive。日志确认 Turnkey + 普通 BuildCookRun，自动执行 managed publish，UAT exit 0。
+- 三个 B 均在关闭本任务 Editor 后运行新归档内 exe，参数为 nullrhi/unattended/nosound/ExecCmds=Quit，exit 0。这是包内 C# 初始化/加载/内容探针验证，不是交互式 gameplay 或渲染测试。
 
-三个 A 均为原始 `cb8577e3a47b5bdc5454239a17f61a6282a50ae2`，三个 B 均为 `fddb33aefd598fa0d1eb5e324dc5ae36fb788a47`。A 各 826 个、B 各 829 个源文件与 fork Git archive 一致；无多余旧源码。保留原有构建输出与缓存，仅替换差异源码。六个项目的 AutoBuild、Game AutoBuild、project_env.config.txt 和 uproject 与本次开始时一致。
+| 候选 | 探针内容 | 目标/配置 | 加载路径 | Publish/Stage/Archive 文件数 |
+| --- | --- | --- | --- | ---: |
+| B56 | version=2856，package-content-ui-56-20261028 | Game/Development | 新 Archive 内程序集、runtime、exe | 220 |
+| B57 | version=2857，package-content-ui-57-20261028 | Game/Development | 新 Archive 内程序集、runtime、exe | 220 |
+| B58 | version=28-ui-20261028，package-content-ui-20261028 | Game/Development | 新 Archive 内程序集、hostfxr、exe | 225 |
 
-Windows 11、AMD Ryzen 9 9900X、约 64 GiB RAM；managed SDK 10.0.400。使用同机串行执行，每次开始前检查引擎和输出占用。没有修改 Engine、清理缓存、强制重建或绕过 AutoBuild。
+三处相对路径、文件数量、大小、SHA256 全部一致，未通过后置手工发布补齐新包。
 
-额外的改写前后对照在 56_2 内执行：源为 `777b14237afbcfea740458d1643f433ef7769751`，环境同样已移除 Engine 插件，完成 Cook/Stage/Archive/运行和三轮 warm 采样。它与原始基线 A/B 分开记录。初始日志前缀 `56_2-final-*` 实际属于改写前；`pre-amend-source.json` 明确标注，最终候选一律用 `amended` 前缀。
+## 累积回归、产物与复用依据
 
-## 新执行结果
+前两提交的完整原始基线比较已覆盖每引擎 18 项、共 54 项 receipt/命令边界：包括缺失/冲突目标、平台/架构、项目与插件身份、DLC 和旧版 foreign 拒绝。三版 managed-only 修改、预期 C# 编译失败不覆盖旧归档、skipstage 保留旧版本及恢复均通过；native/Editor managed 输出不受这些 staging 操作影响。新 commit 不改这部分实现，复用其证据。
 
-| 检查 | 5.6 | 5.7 | 5.8 |
-| --- | --- | --- | --- |
-| A/B canonical Editor + Game | 4 次通过 | 4 次通过 | 4 次通过 |
-| A 实际 resolver / Automation 加载路径 | 项目插件 | 项目插件 | 项目插件 |
-| A 标准 staging / 手工发布 / 包内运行 | Stage 无 managed，手工发布后运行 | 同左 | 同左 |
-| B Cook/Stage/Archive/包内运行 | 独立入口通过 | 标准入口通过 | 标准入口通过 |
-| B receipt/命令边界 | 18/18 | 18/18 | 18/18 |
-| 仅 C# 与内容更新 | v1→v2 | v1→v2 | v4→v5 |
-| C# 错误阻止发布、保留旧归档 | 通过 | 通过 | 通过 |
-| skipstage + skippak 保留旧包 | 运行 v2 | 运行 v2 | 运行 v5 |
-| 源码恢复后正常 staging | 运行 v1 | 运行 v1 | 运行 v4 |
-| native / Editor 输出不受 staging 改写 | 四组哈希一致 | 四组哈希一致 | 四组哈希一致 |
+历史真实 UHT 输出比较共 94,905 个文本文件一致（5.6：28,430；5.7：29,254；5.8：37,197 插件 + 24 项目）。本轮不是一次新的全量生成比对；Editor 菜单改动未进入 exporter/managed 生成路径，保留既有生成器执行、清单、API/IL 证据及其范围限制。
 
-包内 probe 核对 Game/Development、正确版本及内容、Archive/Windows 下的用户程序集路径；5.6/5.7 另由 JSON 核对 runtime 与实际进程路径，5.8 的运行日志记录包内 hostfxr/程序集路径。每轮性能样本也运行归档游戏验证有效工作，但游戏启动耗时不计入 staging 指标。
+最新 B 发布产物相对前轮最终 B：
+- 5.6 的 217/220、5.7 的 217/220、5.8 的 222/225 文件逐字节相同。
+- 每版仅 package-stage.txt、PackageStageProbe.dll、PackageStageProbe.pdb 改变，均对应本次更新的探针版本/内容输入；没有增删发布文件。
+- 所有 656 个其余文件，包括生产托管程序集、自包含 runtime 和原生依赖，均与此前最终候选一致。这支持未变发布路径和 runtime 回归证据的复用。
 
-18 项边界包含空 context、Editor、插件未参与、多目标/配置、Client/Server receipt 激活、Universal Mac、Android/iOS、错误项目、DLC、缺失命令及新增插件身份不匹配拒绝。这些是 synthetic receipt/命令检查，不是这些平台或 target 的完整打包。foreign/foreigncode 的既有拒绝证据仍适用，因为重放补丁及其先于 resolver 的控制流未变。
+历史 RID/非 RID DLL/PDB 过渡差异、5.8 A 预存 AssetIds 常量差异及完整 API/IL 分析留在 [前轮报告](editor-menu-20261028/validation-before.md) 和对应原始记录中。未把这些已有项目或调试信息差异伪称为二进制全部相同。本次 656 文件比较直接使用最终归档哈希。
 
-三个 Failure 日志是预期注入语法错误，均非零退出且旧归档哈希保持不变。当前夹具均已恢复。本轮没有非预期的生产构建或打包失败；准备脚本和诊断工具的修正保留在工作日志中。
+## 性能范围与结果
 
-## 真实产物与既有证据适用性
+本次只改变 Editor 发起命令和菜单可见性，不增加游戏运行时逻辑。沿用前两提交在同机各一次预热、每侧三次独立进程的相关 warm staging 测量。A=原始基线 Stage + 手工 PackageProject；B=自动 Stage。单位秒，排除 native build、Cook、包内运行；没有 cold-cache 条件。
 
-| 版本 | 插件 UHT 文本数 | 项目 UHT 文本数 | A/B 结果 | B managed/runtime 文件数 |
-| --- | ---: | ---: | --- | ---: |
-| 5.6 | 28,430 | 0 | 完全一致 | 220 |
-| 5.7 | 29,254 | 0 | 完全一致 | 220 |
-| 5.8 | 37,197 | 24 | 完全一致 | 225 |
+| 版本 | A 三次 | B 三次 | A / B 中位数 | B-A |
+| --- | --- | --- | --- | --- |
+| 5.6 | 10.097692 / 9.904136 / 9.584307 | 10.085889 / 10.040240 / 10.324300 | 9.904136 / 10.085889 | +0.182 s，+1.84% |
+| 5.7 | 9.847054 / 9.683689 / 10.046692 | 10.231676 / 10.140036 / 10.043577 | 9.847054 / 10.140036 | +0.293 s，+2.98% |
+| 5.8 | 42.159666 / 41.527461 / 43.512242 | 42.625145 / 42.523196 / 41.413025 | 42.159666 / 42.523196 | +0.364 s，+0.86% |
 
-共 94,905 个真实 UHT 文本文件逐项匹配，各槽改写前后的清单也相同。native AutoBuild 本轮判断 up-to-date，自动重编译受影响的 UBT C# 插件；未强制重新导出 UHT。沿用之前真实 UHT 执行证据的依据是 native/generator 源码、输入与引擎不变，加上当前完整生成文件哈希相同。新候选的官方 managed build、发布、staging 与包内运行均实际重新执行；不把缓存文本核对称为本轮重新生成。
+这组历史数据描述原 staging 改动的成本，没有将其冒充第三提交新的三轮端到端测量。最新 UI 各一次完整成功运行：5.6 UAT 约 32 秒（Cook 16.49，Stage 13.85）；5.7 BCR 33.85 秒（Cook 20.89，Stage 11.28）；5.8 BCR 42.54 秒（Cook 25.09，Stage 15.87）。新 UI 值包含 Cook、缓存状态和封装差异，与上表分母不同，只用于复现观测。n=1 不支持速度结论；不宣称稳定提速，也未测菜单展开延迟。
 
-候选每个发布文件在 Publish/Stage/Archive 的路径、大小、SHA256 一致。性能采样后再次核对复制链，三版均一致。最终 B56/B57/B58 共 665 个文件全部与改写前的对应候选逐字节相同（220/220/225），详见 final-equivalence.json。初次产物审计期间，B58 曾出现 UnrealSharp.Log.dll/PDB 的 RID/非 RID 差异，之后 warm 重发布重新选择 RID 产物。A58 的 UnrealSharp.dll/PDB 同样在 warm 发布时从非 RID 产物切换；这是未修改源码时也可发生的既有依赖构建缓存选择，未将这些过渡快照混为最终输出。
+## 可复现步骤
 
-5.8 过渡态 Log 的 API/IL 记录、9 个完整方法体及字段初始数据相同；CodeView 路径和 PDB 明确对应 obj/Release/net10.0/win-x64 与无 RID 目录；编译选项的平台字段分别是 X64 与 AnyCPU，不能将其称为仅文件路径变化。当前 x64 托管宿主均可运行这两种 IL 程序集。PDB 的 4 个文档仅路径不同，源内容 hash、序列点、作用域、局部变量相同，解码后的 import 语义相同。保留原始 DLL/PDB、MVID、完整 metadata 和差异记录，不宣称二进制字节一致。
+1. 选对应版本的专用项目；核对 Engine、项目插件快照以及 AutoBuild.bat、AutoBuildGame.bat、project_env.config.txt。关闭/等待占用相同输出的本任务进程，顺序执行 canonical Editor、Game 构建并检查退出码；再执行项目 managed build。不得用本文简写替换项目规定的 native 命令。
+2. 本测试配置 Build=Never、Development、Entry、Pak/IoStore；打开该项目 Editor。5.6 点击 UnrealSharp > Package Project；5.7/5.8 点击 Platforms > Package Project，在 Windows/Development 下执行 Package Project。
+3. 选一个新的空归档目录，等 UAT 成功。日志应在 Stage 中出现 Publishing managed code，不需要再执行 PackageProject。
+4. 运行归档 exe。当前夹具通过 PACKAGE_STAGE_PROBE_RESULT 环境变量写出 C# 结果，核对 Game/Development、内容标记、程序集/hostfxr 来自归档目录。
+5. 若用 CI：5.6 用 BuildCookRunUnrealSharp；5.7/5.8 用 BuildCookRun。保留 -ScriptsForProject 和实际平台的原有打包参数。源码引擎 discovery 可能另需 ScriptDir，未在本矩阵执行。
 
-5.6 原始 A 相对旧手工对照仅 UnrealSharp.pdb 不同，DLL 字节相同。两个 PDB 精确匹配当前 RID/非 RID 构建目录的文件哈希；522 个文档仅 RID 路径变化，序列点等一致，82 个 import blob 的编码差异解码后语义一致。编译选项中的 X64/AnyCPU 差异也完整保存。这属于既有 publish 构建产物来源变化，不归因于 staging 或 resolver 的运行时行为修改。
+本轮可复现工具在 SharpTestProject/Tools/UiPackageMatrix.ps1、FinalizeUiPackageEvidence.ps1。Prepare 会部署插件和测试配置，不应在未知项目上直接运行。Tools 没有进入生产 commit。
 
-最终 A/B 重新检查公共 UnrealSharp DLL 的 API/IL，其记录均一致。探针仅有 file-local registrar 名差异。5.6/5.7 RuntimeGlue 源码一致，程序集差异是各自项目名；5.8 A 还预先存在 AssetIds.Map._Game_Maps_SharpTestMap 常量，B 没有，因此其 RuntimeGlue API/IL 不完全相同。完整源码、程序集 diff 已保留。两者本次均运行 /Engine/Maps/Entry 和相同探针，不使用该常量；两槽 RuntimeGlue DLL 从首轮到最终没有变化，B 也与改写前字节一致。没有将既有项目内容差异归因于本次 amendment，性能也不宣称完全相同项目的通用基准。
+## 记录、限制与最终状态
 
-## 性能
+精简汇总和必要复现记录保存在 [editor-menu-20261028](editor-menu-20261028/)：final-verification.json、published-output-diff.json，以及各槽 source-manifest、inputs、loaded-modules、Automation build record、构建/Editor/runtime 记录和最终复制清单。旧完整三轮数据在 [amend-drop-resolver-20261025](amend-drop-resolver-20261025/)；不要求审阅者阅读大日志才能理解上述结论。
 
-每版 A/B 各一次预热，再按 A-B、B-A、A-B 取三轮独立 UAT 进程。A 指标为 Stage+手工 PackageProject 总 wall time，B 为自动 Stage wall time，单位秒。排除 native build、cook、包内运行；没有清缓存或制造 cold 条件。下表不是冷启动、完整项目构建或游戏帧率基准。
+限制：
+- 真正执行的矩阵为 Windows x64 Development Game。Mac 签名、移动端、NativeAOT、Universal Mac、DLC、完整 Client/Server/Shipping、源码引擎没有因此获得验证。
+- UE 5.5 及更早仅按 API 能力选择旧入口，未实际编译；不能保证所有更早 Editor API 均兼容。
+- 5.6 插件入口复制常用包装参数，不是 Turnkey 全部选项的等价实现：不转发自定义 DDC graph/ZenStore；IfProjectHasCode 保守执行 native build，未复刻 promoted receipt 优化。
+- 取消目录已经实测；脏包保存取消、Shipping/Client/Server、HTTP chunks、非默认 architecture 等命令分支未在本轮 UI 执行。
+- 重复 Engine/Project 插件优先级仍属于另一 PR。当前环境无重复副本，不能声称修复了重复安装。
 
-| 版本 | 流程 | 三次原始值（秒） | 中位数 | 范围 |
-| --- | --- | --- | ---: | --- |
-| UE 5.6 | A 原始基线：Stage + Manual | 10.097691 / 9.904136 / 9.584307 | 9.904136 | 9.584307–10.097691 |
-| UE 5.6 | B 最终候选：自动 Stage | 10.085888 / 10.040240 / 10.324300 | 10.085888 | 10.040240–10.324300 |
-| UE 5.7 | A 原始基线：Stage + Manual | 9.847054 / 9.683689 / 10.046692 | 9.847054 | 9.683689–10.046692 |
-| UE 5.7 | B 最终候选：自动 Stage | 10.231676 / 10.140036 / 10.043577 | 10.140036 | 10.043577–10.231676 |
-| UE 5.8 | A 原始基线：Stage + Manual | 42.159666 / 41.527461 / 43.512242 | 42.159666 | 41.527461–43.512242 |
-| UE 5.8 | B 最终候选：自动 Stage | 42.625145 / 42.523196 / 41.413024 | 42.523196 | 41.413024–42.625145 |
+任务 Editor/Cook/游戏进程均已退出；六槽最终 A=fddb33ae，B=b59ff754。B 保留新 probe 和新归档，历史插件备份移到报告目录，避免重复发现；没有自动恢复无关项目状态。生产工作树干净，只有上述三个有序本地提交，远端未更新。
 
-中位差（B-A）：5.6：+0.182 秒（+1.84%）；5.7：+0.293 秒（+2.98%）；5.8：+0.364 秒（+0.86%）。小夹具、三轮样本仅描述本机观测，不推断通用提速。5.8 staging 包含引擎 Zen/IoStore 准备和封装工作，阶段日志完整保留，不把所有 wall time 归因于 resolver。
-
-同一 56_2 改写前后：pre-amend 三次为 10.405338 / 10.032118 / 10.832144 秒，中位 10.405338；amended 中位 10.085888。采样分为先后两组，存在缓存/时间漂移；没有证据表明删除 resolver 提交导致可见性能退化，也不据此宣称优化。
-
-## 证据索引与复现
-
-本轮证据统一在 [amend-drop-resolver-20261025](amend-drop-resolver-20261025/)：
-
-- `identity.json`、`environment.json`、`deployment.json`、`final-source-verification.json`：base/head、引擎、快照及最终源码身份。
-- `range-diff.diff`、`amend.diff`、`final.diff`：两提交历史与完整变化。
-- `*-amended-*`，其 command/result/log 保存原样命令、工作目录、时间、退出码和日志；`*-Identity-identity.json` 记录实际 Automation DLL 和插件描述符。
-- `*-regressions.json`、`*-regression-*`：增量、失败、skipstage、恢复、四组输出哈希。
-- `artifact-audit.json`、`*-generated-*.json/.diff`、`*-final-managed.json`、`final-copy-chain.json`：完整生成与复制链；`*-final-api-il/` 和 `58-pre-amend-api-il/`：程序集记录和完整文本差异。
-- `symbols/`、`symbol-summary.json`、`58-log-pe-metadata/`：原始 PDB、所有已变 metadata 记录及解码依据。
-- `*-performance.json`、`performance-summary.json`：预热与全部原始样本；`publisher-call-counts.json` 核对 47 个 staging/skipstage 调用次数。
-- `harness/`、`fixtures/`：本轮工具与夹具快照；AutoBuild 和配置原文也保存在 environment.json。
-
-复现时先读对应项目的 AutoBuild/AutoBuildGame 与配置，检查进程占用并顺序成功执行，再用保存的 CookStage/Stage/Manual command.json。UAT 参数沿用既有测试命令：Win64 Development、skipbuild、nocompileeditor、stage、pak、archive；完整路径与参数不能靠本文缩写重建 native 编译命令。
-
-## 限制与最终状态
-
-没有实际点击 Editor 打包按钮；5.7/5.8 UI 调用链与本轮 UAT 相同项目脚本上下文，UE 5.6 默认按钮仍不自动接入。没有测试 Mac 签名、移动端、NativeAOT、Universal Mac、DLC、完整 Client/Server/Shipping 或源码引擎组合。
-
-最终六槽保持 A=原始基线、B=最终候选，probe 5.6/5.7 为 v1，5.8 为 v4；未自动恢复其他插件内容。仅在指定测试项目和外部报告目录保存夹具与证据。源码仓库保持两提交历史，工作树干净；所有改变本地且未推送。
-
-[当前计划](plan.md) · [时间顺序工作日志](work-log.md) · [本地英文 PR 草稿](pr.md)
+[当前计划](plan.md) · [时间顺序工作日志](work-log.md) · [英文 PR 草稿](pr.md)

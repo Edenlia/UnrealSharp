@@ -1,3 +1,5 @@
+> 历史 staging A/B 说明（fddb33ae）。当前生产实现为 b59ff754；最新入口及 Client/Server 工具见 [README](README.md)。
+
 # 在另一台电脑审查与复测
 
 ## 只审代码

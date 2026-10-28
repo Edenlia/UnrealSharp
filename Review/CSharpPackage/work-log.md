@@ -1,4 +1,4 @@
-> 2026-10-27 test 分支交接：本文保留原验证阶段记录。原始证据未随分支发布；跨电脑审查及复测见 [README](README.md) 和 [复现步骤](REPRODUCE.md)。功能 HEAD 仍是 fddb33ae，test 分支额外携带工具与文档。
+> 2026-10-28 test 分支交接：功能实现为 b59ff754；本文中的“仅本地、未推送”描述原验证阶段。此次按用户要求同步审查资料，不携带原始日志和证据。入口见 [README](README.md)，Client/Server 见 [专用说明](ClientServer/README.md)。
 
 # C# 自动打包工作日志
 
@@ -170,8 +170,40 @@ UE 5.7：原样 AutoBuild Editor 在 UHT exporter 阶段报 System.ArgumentOutOf
 - 最终公共框架 DLL API/IL 均一致；5.8 RuntimeGlue 除项目程序集属性外，A 还已有一个 SharpTestMap AssetIds 常量，B 无。完整 AssetIds.cs diff 已保存；本轮两者运行 Engine Entry/probe，不使用此常量，其 DLL 从首轮至最终未变。报告不再笼统声称三个版本 RuntimeGlue 仅有项目名差异。
 - 最终 range-diff 确认仅删除中间提交，工作树干净；任务构建/Cook/游戏进程均已退出。全部修改仍为本地，远端未更新。
 
-## 2026-10-27 test 分支交接
+### 2026-10-28：增加 Editor 打包入口提交
 
-用户授权从当前功能分支创建 test/csharp-package-test，携带 tools、验证、计划、日志和 PR 草稿并 push，随后明确不要原始证据，只要总结与步骤。已按新范围整理 Review/CSharpPackage；临时证据副本的删除被自动策略拦截，随后安全移回本地报告目录，未纳入提交。原证据未改动。
+- 用户要求新增一个 commit，旧版 UnrealSharp Package Project 调用 BuildCookRunUnrealSharp，新版取消重复入口，三版实际 UI A/B 测试。
+- 仓库当前为 featre/csharp-package，初始工作树干净，父提交 fddb33ae。只读 fetch 确认 upstream/main 115e6753 仅新增删除 managed class 的保护，与打包无重叠；保留原 PR 基线。#785 仍未合并，本次不引入其无关实现。
+- 查阅 UE 5.6 TurnkeySupport/UATHelper/Launcher 公共接口，标准打包参数生成位于私有 CookOrPackage，Turnkey CreateBuild 也是 internal 类型。没有用反射或私有入口替换。旧版按钮使用现有异步 UAT helper，构造正常 BCR 参数并交给已有子命令。
+- 初版修改仅三个 Editor 源文件。菜单编译能力判断与 Automation csproj 的 CustomStagingHandler 文件判断一致。测试尚未运行，不能据此认定兼容通过。
 
-新增 README 与 REPRODUCE，标明历史脚本路径迁移、六槽项目准备、canonical AutoBuild、三版 UAT 入口、probe、回归与采样步骤，以及未测范围。工具保留原执行源码；Review/.ubtignore 防止验证 Automation 项目被正常构建自动发现。28 个 Python 文件 AST 检查和 10 个 PowerShell 文件语法检查通过；没有原始证据类文件，常见 credential 模式扫描无匹配。本次只整理交接材料，不重复运行已完成的引擎矩阵，也未修改插件实现。后续 Git 提交和 origin test 分支标识以实际仓库历史为准。
+- 六槽已从 fddb33ae 完整 Git archive 部署；B 仅覆盖三个经审查的 Editor 修改。每槽 829 个文件逐项哈希核对，旧 Review 文件按已知 tracked 清单移除，保留生成输出；Saved 内历史插件备份移到报告目录，避免 UAT 递归发现。
+- 六槽沿用各自 AutoBuild/AutoBuildGame 原始脚本；测试 Packaging 设置为 Build=Never、Development、Entry、IoStore，native 在打开 Editor 前独立构建。没有改 AutoBuild 或引擎。B 使用同版 A 的 probe/内容。
+- UE 5.6 B Editor 首次通过，UBT 18.83 秒/41 actions；Game up-to-date，managed 正常。未清缓存或强制重建。
+- UI A56：实际点击 UnrealSharp > Package Project，选择新建空 Archive 后出现缺少 SharpTestProject56_1.exe 的预期提示，未启动 UAT；父提交仍为后置发布入口。已核对加载项目 Plugins/UnrealSharp 下的 native 模块。
+- UI B56：取消目录选择后无 UAT 调用；再次选择空目录后真实运行 BuildCookRunUnrealSharp，Build=Never 下不触发 native build，Cook/Stage/Package/Archive 成功，UAT 退出 0（约 32 秒）。关闭 Editor 后归档游戏退出 0，probe=2856、Game/Development、预期内容，程序集和 runtime 均从新 Archive 加载。
+- UI A57：实际打开 UnrealSharp 菜单，仍显示 Package 分组和 Package Project。模块来自 A57 项目插件；原生打包在先前同源码 UI 验证中已经通过，本轮入口差异检查完成。
+- UI B57：UnrealSharp Package 分组与按钮消失。实际点击 Platforms > Package Project > Package Project，普通 BuildCookRun 完成自动 staging（33.85 秒），UAT 退出 0；归档游戏退出 0，probe=2857、Game/Development、预期内容，加载归档内 managed/runtime。
+- UI A58：实际打开 UnrealSharp 菜单，Package 分组与按钮存在，加载项目插件路径正确。六槽 canonical 构建全部退出 0；A58 原有三个 Probe.cpp 首个头文件提示仍出现在 up-to-date 扫描日志，未改动这些无关夹具。
+
+### 2026-10-28：三版本 UI 验证及第三提交完成
+
+- UI B58：UnrealSharp 菜单的 Package 分组/按钮消失；实际点击 Platforms > Package Project，Windows/Development，新空归档目录。普通 BuildCookRun 42.54 秒，Cook 25.09 秒、Stage 15.87 秒，UAT 退出 0。关闭 Editor 后运行新归档，退出 0，probe=28-ui-20261028、Game/Development、预期内容；程序集和 hostfxr 来自新归档。
+- 最终六槽均核对 829 个插件源文件与快照一致，每槽 15 个实际加载模块均来自本项目插件。登记的 AutoBuild、配置、uproject、probe 输入哈希在测试执行前后未变。
+- 三个 B 的 Publish/Stage/Archive 分别 220/220/225 个文件逐项一致。与前轮最终 B 相比，每版仅 probe DLL/PDB 和 package-stage.txt 改变；其余共 656 文件（生产程序集、runtime 等）逐字节相同。
+- 收尾校验脚本首轮误将 5.6/5.7 的 JSON probe 当作 5.8 的文本格式，报 Wrong probe；检查原始结果后兼容两种既有格式，六槽重新核对通过。此为验证脚本解析问题，不是游戏或生产代码失败。
+- 完整审阅 base..candidate 的九文件生产 diff。第三步 staged 三文件均与实际测试 candidate 字节一致，diff --check 通过。本地新增 b59ff754ada2ad10c02b65f590c5f18585f8271c：Align Editor packaging actions with staging support；父提交 fddb33ae，前两提交未重写。
+- 新旧能力判断保持与 Automation csproj 一致。低于 5.6 未执行构建；旧版按钮限定主机平台和常用 Packaging Settings，自定义 DDC/ZenStore、promoted receipt 跳过优化并非完整 Turnkey 等价实现。报告已明确限制，不将未执行分支标为通过。
+- 原始 base 到 fddb 的 Editor 源码无变化；fddb 到新 HEAD 的 Build/Managed/exporter 无变化。因此本轮父提交/候选菜单对照覆盖原入口变化；原始 base 的 staging/边界/生成文件和三轮性能复用既有等价部分。最新 UI 全流程各一次计时单列，不作为新的三轮性能结论。
+- plan.md 改写为当前三提交完成状态；validation.md 重写本轮与历史证据边界；pr.md 更新完整功能与版本入口，复核公开 #786 和包装文档。旧 validation/pr 保存在 editor-menu-20261028。
+- 源码工作树干净；全部本任务 Editor/Cook/游戏进程退出。六槽保留 A=fddb33ae、B=b59ff754，新夹具/归档保留。报告和测试工具未进入生产 commit，没有 push、发布/更新 PR、修改 test branch 或合并 main/cp-main。
+
+### 2026-10-28：UE 5.8 source-engine Client/Server 追加验证
+
+- 用户要求只验证当前方案，不修改产品代码。读取 #785（ee7d6050）确认其 Client/Server、custom target name 与 Mac 后置发布职责；实际部署仍为当前 b59ff754，采用 unrealsharp-verification 单实现流程。
+- 用户批准新建专用项目和 canonical AutoBuild；原长路径触发 Chaos ISPC header generation 路径限制。经只读 CRT 路径验证及用户批准，整体迁至 UnrealEngine2/USharpTests/CsPkg，20,678 个文件与缓存保留，AutoBuild 字节不变，仅项目路径配置更新；之后原生构建通过。
+- 初始 DisableEnginePluginsByDefault=true 夹具暴露 UnrealSharpEditor 既有 LevelEditor GetModuleChecked 加载顺序假设；相同调用存在原基线，未执行基线 A/B。恢复标准默认插件语义，重新完成 canonical Editor/Client/Server/UnrealPak 与 managed 构建。产品代码未修补。
+- 实际点击官方 Editor 的 Client 包装首次因 bSkipEditorContent=True 和默认 Landmass 内容引用失败，未进入 staging。通过 Packaging Settings 取消排除 Editor 内容后重试成功；没有清缓存或改变 native 构建参数。
+- Client 官方 UAT 正确传递 CSharpPackageClient / Client / Development，BuildCookRun 233.05 秒，exit 0。Server 官方 UI 选择 CSharpPackageDedicated，生成 -server -noclient，BuildCookRun 136.09 秒，exit 0。两次都是标准 BuildCookRun，无手动后置 PackageProject。
+- 两个归档的 C# StartupModule 探针均成功，分别为 Client/Development、Server/Development，预期内容、程序集与 self-contained runtime 来自各自归档，进程 exit 0；各 220 个 managed 文件的 Publish/Stage/Archive 哈希一致。启动为 nullrhi smoke check，没有测试渲染或联机互通。
+- 829 个部署源文件最终匹配 b59ff754。测试脚本、项目与归档保留在 CsPkg，独立报告位于 csharp-package-client-server-20261028。plan/pr 已更新，有条件建议当前流程被接受后 supersede #785，同时注明 Mac 未执行及旧 PackageProject CLI 未新增 #785 参数。本轮没有 commit、push、修改 test branch 或发布 PR。
