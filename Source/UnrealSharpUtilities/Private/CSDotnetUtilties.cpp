@@ -66,8 +66,16 @@ FString UnrealSharp::DotNetUtilities::GetDotNetDirectory()
 #endif
 
 	FString DotNetPathFromEnv;
-	for (const FString& Path : Paths)
+	for (FString& Path : Paths)
 	{
+#if defined(_WIN32)
+		FPaths::MakePlatformFilename(Path);
+		if (!Path.EndsWith(TEXT("\\")))
+		{
+			Path += TEXT("\\");
+		}
+#endif
+
 		if (!Path.Contains(PathMarker))
 		{
 			continue;
