@@ -7,8 +7,11 @@
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
 #include "IUATHelperModule.h"
+#include "HAL/FileManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Guid.h"
 #include "Misc/MonitoredProcess.h"
+#include "Misc/ScopeExit.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "UnrealSharpBuildUtilities"
@@ -17,6 +20,44 @@ bool UnrealSharp::Build::InvokeUnrealSharpAutomation(const FString& BuildAction,
 {
 	FString Arguments;
 	BuildArguments(BuildAction, ActionArgs, Arguments);
+
+	TMap<FString, FString> PreviousEnvironment;
+	ON_SCOPE_EXIT
+	{
+		for (const auto& [Name, Value] : PreviousEnvironment)
+		{
+			FPlatformMisc::SetEnvironmentVar(*Name, *Value);
+		}
+	};
+
+	if (!FPlatformMisc::GetEnvironmentVariable(TEXT("uebp_EngineSavedFolder")).IsEmpty())
+	{
+		// UAT may launch this Editor/commandlet. Reuse its compiled scripts rather
+		// than rebuilding assemblies that the parent process is still using.
+		Arguments += TEXT(" -NoCompileUAT -NoCompile");
+
+		const FString LogDirectory = FPaths::ConvertRelativePathToFull(FPaths::Combine(
+			FPaths::ProjectLogDir(), TEXT("UnrealSharpUAT"), FGuid::NewGuid().ToString(EGuidFormats::Digits)));
+		IFileManager::Get().MakeDirectory(*LogDirectory, true);
+
+		// Match ProcessUtils.RunUAT's child-instance contract, including separate
+		// log files and restoring the host environment after this synchronous call.
+		TMap<FString, FString> ChildEnvironment = {
+			{TEXT("uebp_UATChildInstance"), TEXT("1")},
+			{TEXT("uebp_UATMutexNoWait"), TEXT("1")},
+			{TEXT("uebp_LogFolder"), LogDirectory},
+			{TEXT("uebp_FinalLogFolder"), LogDirectory}
+		};
+		if (FPlatformMisc::GetEnvironmentVariable(TEXT("IsBuildMachine")) != TEXT("1"))
+		{
+			ChildEnvironment.Add(TEXT("uebp_LOCAL_ROOT"), FString());
+		}
+		for (const auto& [Name, Value] : ChildEnvironment)
+		{
+			PreviousEnvironment.Add(Name, FPlatformMisc::GetEnvironmentVariable(*Name));
+			FPlatformMisc::SetEnvironmentVar(*Name, *Value);
+		}
+	}
 
 	int32 ReturnCode = 0;
 	FString Output;
