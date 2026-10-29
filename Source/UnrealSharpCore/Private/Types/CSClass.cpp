@@ -1,13 +1,45 @@
 ﻿#include "Types/CSClass.h"
 
 #include "CSManagedAssembly.h"
+#include "Compilers/CSManagedClassCompiler.h"
 #include "UnrealSharpCore.h"
+#include "UnrealSharpUtils.h"
 #include "Utilities/CSClassUtilities.h"
 
 #if WITH_EDITOR
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #endif
+
+UObject* UCSClass::CreateDefaultObject()
+{
+#if WITH_EDITOR
+	if (!FCSUnrealSharpUtils::IsStandalonePIE())
+	{
+		return Super::CreateDefaultObject();
+	}
+#endif
+
+	if (!HasManagedTypeDefinition())
+	{
+		return Super::CreateDefaultObject();
+	}
+
+	if (!GetDefaultObject(false))
+	{
+		// A replacement CDO must also finish native initialization before C# runs.
+		SetDeferredCreation(true);
+	}
+	UObject* DefaultObject = Super::CreateDefaultObject();
+
+	// Super creates and initializes the parent CDO first. Finalize here so a C#
+	// constructor requesting another class's defaults also observes managed defaults.
+	if (IsCreationDeferred())
+	{
+		UCSManagedClassCompiler::FinalizeManagedCDO(this);
+	}
+	return DefaultObject;
+}
 
 void UCSClass::ManagedObjectConstructor(const FObjectInitializer& ObjectInitializer)
 {

@@ -26,6 +26,11 @@ UCSManagedClassCompiler::UCSManagedClassCompiler()
 
 void UCSManagedClassCompiler::Compile(UField* TypeToRecompile, const TSharedPtr<FCSManagedTypeDefinition>& ManagedTypeDefinition) const
 {
+	static int32 CompilationDepth = 0;
+	// Managed type definitions keep their fields alive during compilation.
+	static TArray<UCSClass*> PendingClassDefaults;
+	TGuardValue<int32> CompilationScope(CompilationDepth, CompilationDepth + 1);
+
 	UCSClass* Field = static_cast<UCSClass*>(TypeToRecompile);
 	TSharedPtr<FCSClassReflectionData> ClassReflectionData = ManagedTypeDefinition->GetReflectionData<FCSClassReflectionData>();
 	
@@ -41,17 +46,42 @@ void UCSManagedClassCompiler::Compile(UField* TypeToRecompile, const TSharedPtr<
 #if WITH_EDITOR
 	CreateOrUpdateOwningBlueprint(ClassReflectionData, Field, NewSuperClass);
 
-	if (FCSUnrealSharpUtils::IsStandalonePIE())
+	if (!FCSUnrealSharpUtils::IsStandalonePIE())
 	{
-		// BP-compiler is not running in standalone PIE, so we need to recompile the class ourselves.
-		CompileClass(ClassReflectionData, Field, NewSuperClass);
+		DeactivateSubsystem(Field);
+		UCSManager::Get().OnNewClassEvent().Broadcast(Field);
+		return;
 	}
-	
-	DeactivateSubsystem(Field);
-	UCSManager::Get().OnNewClassEvent().Broadcast(Field);
-#else
-	CompileClass(ClassReflectionData, Field, NewSuperClass);
 #endif
+
+	// The BP compiler is not running in standalone PIE or a packaged game.
+	CompileClass(ClassReflectionData, Field, NewSuperClass);
+	PendingClassDefaults.Emplace(Field);
+
+	if (CompilationDepth != 1)
+	{
+		return;
+	}
+
+	// Property and parent lookups can recursively compile other classes. Their
+	// constructors must not resolve a child while its parent is still being linked.
+	for (int32 Index = 0; Index < PendingClassDefaults.Num(); ++Index)
+	{
+		// A constructor can append more classes, invalidating references into the array.
+		UCSClass* Class = PendingClassDefaults[Index];
+		Class->GetDefaultObject();
+
+		Class->SetUpRuntimeReplicationData();
+		Class->UpdateCustomPropertyListForPostConstruction();
+		RegisterFieldToLoader(Class, ENotifyRegistrationType::NRT_Class);
+		ActivateSubsystem(Class);
+
+#if WITH_EDITOR
+		DeactivateSubsystem(Class);
+		UCSManager::Get().OnNewClassEvent().Broadcast(Class);
+#endif
+	}
+	PendingClassDefaults.Reset();
 }
 
 #if WITH_EDITOR
@@ -115,15 +145,6 @@ void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> Cl
 	Field->Bind();
 	Field->StaticLink(true);
 	Field->AssembleReferenceTokenStream();
-	
-	CreateDeferredManagedCDO(Field);
-	FinalizeManagedCDO(Field);
-
-	Field->SetUpRuntimeReplicationData();
-	Field->UpdateCustomPropertyListForPostConstruction();
-
-	RegisterFieldToLoader(Field, ENotifyRegistrationType::NRT_Class);
-	ActivateSubsystem(Field);
 }
 
 void UCSManagedClassCompiler::PopulateComponentOverrides(TArray<FBPComponentClassOverride>* Overrides, const TSharedPtr<FCSClassReflectionData>& ClassReflectionData)
