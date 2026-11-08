@@ -6,12 +6,15 @@ using System.Xml;
 using AutomationTool;
 using UnrealSharp.Automation.BuildCommands;
 using UnrealSharp.Automation.Utilities.Platform;
+using UnrealSharp.Automation.Utilities.Platform.IOS;
 using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.Utilities;
 
 public static class NativeAOTUtilities
 {
+	public const string IosFrameworkName = IOSUtilities.FrameworkName;
+
 	public static void RunAOT(BuildCommand command, PackageProject.PackagingOptions options, string publishDirectory, string outputDirectory)
 	{
 		PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);

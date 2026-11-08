@@ -4,6 +4,7 @@ using System.IO;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
+using UnrealSharp.Automation.Utilities.Platform.IOS;
 using UnrealSharp.Automation.Utilities.Platform.Mac;
 using UnrealSharp.Automation.Utilities.Platform.Win64;
 
@@ -21,7 +22,11 @@ internal abstract class PlatformUtilities
         {
             return new MacUtilities();
         }
-        throw new NotSupportedException($"UnrealSharp packaging does not support platform '{platform}'. Supported platforms: Win64, Mac.");
+        if (platform == UnrealTargetPlatform.IOS)
+        {
+            return new IOSUtilities();
+        }
+        throw new NotSupportedException($"UnrealSharp packaging does not support platform '{platform}'. Supported platforms: Win64, Mac, IOS.");
     }
 
     public abstract string DotNetPlatformIdentifier { get; }
