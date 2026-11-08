@@ -60,6 +60,8 @@ public class Plugin
         
         RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
         
+        ModuleInitializerJobManager.ExecuteAllJobsForModule(assembly);
+
         StartupModule();
         return true;
     }
@@ -82,6 +84,7 @@ public class Plugin
         ShutdownModule();
         
         AssemblyCache.RemoveAssembly(AssemblyName.Name!);
+        ModuleInitializerJobManager.RemoveAllJobsForModule((Assembly)Assembly!.Target!);
         GCHandleUtilities.FreeAssembly((Assembly)Assembly!.Target!);
         Assembly = null;
         
