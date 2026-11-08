@@ -5,10 +5,11 @@
 #include "CSDotnetUtilties.h"
 #include "CSManagedPluginCallbacks.h"
 #include "CSPathsUtilities.h"
+#include "CSPlatformUtilities.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
-#include "Misc/App.h"
 #include "Logging/StructuredLog.h"
+#include "HAL/FileManager.h"
 
 using namespace UnrealSharp;
 
@@ -24,18 +25,22 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 	const FString UserWorkingDirectory = FPaths::ConvertRelativePathToFull(Paths::GetUserAssemblyDirectory());
 	FInitializeUnrealSharp InitializeUnrealSharp = nullptr;
 #if !WITH_EDITOR
-	const FString AotLibraryPath = UserWorkingDirectory /
-		(FString(FApp::GetProjectName()) + TEXT(".AOT.") + FPlatformProcess::GetModuleExtension());
+	const FString AotLibraryPath = PlatformUtilities::GetNativeAotLibraryPath(UserWorkingDirectory);
 	if (FPaths::FileExists(UserWorkingDirectory / TEXT("UnrealSharp.NativeAOT")))
 	{
-		NativeAotLibrary = FPlatformProcess::GetDllHandle(*AotLibraryPath);
+		NativeAotLibrary = PlatformUtilities::LoadNativeAotLibrary(AotLibraryPath);
 		if (!NativeAotLibrary)
 		{
+			const TOptional<FString> LoadError = PlatformUtilities::GetNativeAotLoadError();
+			if (LoadError.IsSet())
+			{
+				UE_LOGFMT(LogUnrealSharp, Error, "NativeAOT dlopen error: {0}", LoadError.GetValue());
+			}
 			UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to load NativeAOT library: {0}", AotLibraryPath);
 		}
 
 		InitializeUnrealSharp = reinterpret_cast<FInitializeUnrealSharp>(
-			FPlatformProcess::GetDllExport(NativeAotLibrary, TEXT("InitializeAotRuntime")));
+			PlatformUtilities::GetNativeAotEntryPoint(NativeAotLibrary));
 		if (!InitializeUnrealSharp)
 		{
 			UE_LOGFMT(LogUnrealSharp, Fatal, "NativeAOT library is missing InitializeAotRuntime: {0}", AotLibraryPath);
@@ -46,14 +51,23 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 
 	if (!InitializeUnrealSharp)
 	{
-		InitializeUnrealSharp = ResolveJitEntryPoint();
-		if (!InitializeUnrealSharp)
+		if constexpr (!PlatformUtilities::SupportsJit)
 		{
+			UE_LOGFMT(LogUnrealSharp, Fatal, "iOS requires a NativeAOT package in {0}", UserWorkingDirectory);
 			return false;
+		}
+		else
+		{
+			InitializeUnrealSharp = ResolveJitEntryPoint();
+			if (!InitializeUnrealSharp)
+			{
+				return false;
+			}
 		}
 	}
 
-	const FTCHARToUTF8 WorkingDirectoryUtf8(*UserWorkingDirectory);
+	// Managed file APIs require the physical bundle path, not iOS's virtual path.
+	const FTCHARToUTF8 WorkingDirectoryUtf8(*IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*UserWorkingDirectory));
 
 	FCSInitializationResult InitializationResult;
 
