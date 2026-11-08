@@ -6,6 +6,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <LangVersion>latest</LangVersion>
+    <IsAotCompatible Condition="'$(BuildingAOT)' == 'true'">true</IsAotCompatible>
   </PropertyGroup>
   
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.AOT.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.AOT.props')" />
@@ -32,6 +33,7 @@
     <Reference Include="UnrealSharp.Plugins">
       <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Plugins.dll</HintPath>
     </Reference>
+
     
   </ItemGroup>
 
@@ -45,4 +47,12 @@
   <ItemGroup>
     <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\UnrealSharp.SourceGenerators.dll" Private="false" CopyToPublishDirectory="Never" />
   </ItemGroup>
+  <Target Name="ResolveUnrealSharpPackageReferences" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(UnrealSharpPackageDirectory)' != ''">
+    <ItemGroup>
+      <Reference Update="@(Reference)" Condition="Exists('$(UnrealSharpPackageDirectory)/%(Reference.Identity).dll')">
+        <HintPath>$(UnrealSharpPackageDirectory)/%(Reference.Identity).dll</HintPath>
+      </Reference>
+    </ItemGroup>
+  </Target>
 </Project>

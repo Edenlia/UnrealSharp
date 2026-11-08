@@ -70,7 +70,7 @@ internal static class UnrealSharpStaging
 
         LoggerUtilities.LogUnrealSharpInfo($"Publishing managed code for staged target '{Receipt.TargetName}'.");
         Command.StartPackaging(new PackageProject.PackagingOptions(PublishRoot, Receipt.TargetType,
-            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, NativeAot: false));
+            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, NativeAot: Command.IsNativeAotEnabled()));
 
         // Keep these files loose for hostfxr and the managed assembly loader.
         // UAT applies the platform's normal remapping, packaging and signing afterwards.
