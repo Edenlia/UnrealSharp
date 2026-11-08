@@ -34,7 +34,7 @@ Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/U
 | Windows | Supported |
 | macOS | Supported |
 | Linux | Planned |
-| iOS | Planned |
+| iOS | Supported |
 | Android | Planned |
 
 ## Prerequisites
