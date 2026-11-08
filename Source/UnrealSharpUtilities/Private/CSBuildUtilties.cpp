@@ -6,8 +6,10 @@
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
+#include "HAL/PlatformMisc.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Guid.h"
 #include "Misc/MonitoredProcess.h"
 #include "Styling/SlateStyleRegistry.h"
 
@@ -86,6 +88,14 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	
 	OutArgs.Reset();
 	OutArgs += BuildAction;
+	const FString ParentLogFolder = FPlatformMisc::GetEnvironmentVariable(TEXT("uebp_LogFolder"));
+	if (IsRunningCommandlet() && !ParentLogFolder.IsEmpty())
+	{
+		// Reuse the parent UAT's compiled tools and isolate this child's log cleanup.
+		const FString ChildLogFolder = FPaths::Combine(ParentLogFolder, TEXT("UnrealSharp"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+		OutArgs += TEXT(" -nocompileuat -nocompile uebp_UATMutexNoWait=1 uebp_UATChildInstance=1");
+		OutArgs += FString::Printf(TEXT(" uebp_LogFolder=\"%s\" uebp_FinalLogFolder=\"%s\""), *ChildLogFolder, *ChildLogFolder);
+	}
 	if (FPaths::IsUnderDirectory(PluginFolder, ProjectFolder))
 	{
 		// Use the same discovery and build-record root as -ScriptsForProject.
