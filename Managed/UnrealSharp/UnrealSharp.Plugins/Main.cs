@@ -7,17 +7,25 @@ using UnrealSharp.Core;
 namespace UnrealSharp.Plugins;
 
 [StructLayout(LayoutKind.Sequential)]
-internal unsafe struct FCSInitializationResult
+public unsafe struct FCSInitializationResult
 {
     public const int MessageCapacity = 4096;
     public NativeBool Success;
     public fixed byte Message[MessageCapacity];
 }
 
-internal static class Main
+public static class Main
 {
     [UnmanagedCallersOnly]
     private static unsafe void InitializeUnrealSharp(
+        byte* workingDirectoryUtf8,
+        PluginsCallbacks* pluginCallbacks,
+        nint bindsCallbacks,
+        nint managedCallbacks,
+        FCSInitializationResult* result)
+        => InitializeRuntime(workingDirectoryUtf8, pluginCallbacks, bindsCallbacks, managedCallbacks, result);
+
+    public static unsafe void InitializeRuntime(
         byte* workingDirectoryUtf8,
         PluginsCallbacks* pluginCallbacks,
         nint bindsCallbacks,
@@ -29,7 +37,7 @@ internal static class Main
             AppDomain.CurrentDomain.SetData("APP_CONTEXT_BASE_DIRECTORY",
                 Marshal.PtrToStringUTF8((nint)workingDirectoryUtf8)!);
 
-#if WITH_EDITOR
+#if WITH_EDITOR && !NATIVE_AOT
             TryRegisterMSBuild();
 #endif
 
@@ -53,7 +61,7 @@ internal static class Main
         Marshal.WriteByte(buffer, length, 0);
     }
 
-#if WITH_EDITOR
+#if WITH_EDITOR && !NATIVE_AOT
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void TryRegisterMSBuild()
     {
