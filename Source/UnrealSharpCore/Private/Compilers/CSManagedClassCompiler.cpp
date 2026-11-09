@@ -284,12 +284,12 @@ UObject* UCSManagedClassCompiler::CreateDeferredManagedCDO(UCSClass* ManagedClas
 
 void UCSManagedClassCompiler::FinalizeManagedCDO(UCSClass* ManagedClass)
 {
-	UCSManagedAssembly* ManagedAssembly = ManagedClass->GetOwningAssembly();
 	UObject* DefaultObject = ManagedClass->GetDefaultObject(false);
 	check(IsValid(DefaultObject));
 	
 	ManagedClass->SetDeferredCreation(false);
-	ManagedAssembly->CreateManagedObjectFromNative(DefaultObject, ManagedClass->GetTypeGCHandle());
+	// Another managed constructor may already have requested this CDO's wrapper.
+	UCSManager::Get().FindManagedObject(DefaultObject);
 	SetupDefaultTickSettings(DefaultObject, ManagedClass);
 }
 

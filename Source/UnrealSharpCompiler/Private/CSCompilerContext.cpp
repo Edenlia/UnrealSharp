@@ -57,20 +57,13 @@ void FCSCompilerContext::FinishCompilingClass(UClass* InClass)
 
 	ManagedClass->StaticLink(true);
 	
-	UObject* DefaultObject = UCSManagedClassCompiler::CreateDeferredManagedCDO(ManagedClass);
-	
-	if (FCSUnrealSharpUtils::IsEngineStartingUp())
-	{
-		// Directly copy defaults to the CDO
-		CopyTermDefaultsToDefaultObject(DefaultObject);
-	}
+	UCSManagedClassCompiler::CreateDeferredManagedCDO(ManagedClass);
 	
 	ManagedClass->SetUpRuntimeReplicationData();
 	ManagedClass->UpdateCustomPropertyListForPostConstruction();
 	
 	ManagedClass->InitializeFieldNotifies();
 	
-	TryInitializeAsDeveloperSettings(ManagedClass);
 	TryFakeNativeClass(ManagedClass);
 	
 	ApplyMetaData();
@@ -78,11 +71,17 @@ void FCSCompilerContext::FinishCompilingClass(UClass* InClass)
 
 void FCSCompilerContext::OnPostCDOCompiled(const UObject::FPostCDOCompiledContext& Context)
 {
+	if (!Context.bIsSkeletonOnly && NewClass == GetMainClass())
+	{
+		UCSManagedClassCompiler::FinalizeManagedCDO(GetMainClass());
+	}
+
 	FKismetCompilerContext::OnPostCDOCompiled(Context);
 
 	UCSClass* MainClass = GetMainClass();
 	if (MainClass == NewClass)
 	{
+		TryInitializeAsDeveloperSettings(MainClass);
 		UCSManagedClassCompiler::ActivateSubsystem(NewClass);
 		UCSManagedClassCompiler::RefreshClassActions(NewClass);
 	}
@@ -148,8 +147,8 @@ void FCSCompilerContext::AddInterfacesFromBlueprint(UClass* Class)
 
 void FCSCompilerContext::CopyTermDefaultsToDefaultObject(UObject* DefaultObject)
 {
-	UCSClass* ManagedClass = static_cast<UCSClass*>(DefaultObject->GetClass());
-	UCSManagedClassCompiler::FinalizeManagedCDO(ManagedClass);
+	// Managed defaults run after every CDO in the batch has completed native
+	// initialization, so constructors can safely request another class's defaults.
 }
 
 void FCSCompilerContext::ValidateSimpleConstructionScript() const

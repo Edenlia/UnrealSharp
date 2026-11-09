@@ -1,4 +1,4 @@
-﻿#include "UnrealSharpCompiler.h"
+#include "UnrealSharpCompiler.h"
 
 #include "BlueprintCompilationManager.h"
 #include "CSBlueprintCompiler.h"
@@ -64,36 +64,39 @@ void FUnrealSharpCompilerModule::RecompileAndReinstanceBlueprints()
 
 	double StartTime = FPlatformTime::Seconds();
 	
-	auto CompileBlueprints = [this](TArray<UCSBlueprint*>& Blueprints)
+	auto CompileBlueprints = [this](TArray<UCSBlueprint*>& PendingBlueprints)
 	{
-		if (Blueprints.IsEmpty())
+		if (PendingBlueprints.IsEmpty())
 		{
 			return;
 		}
-		
-		for (int32 i = 0; i < Blueprints.Num(); ++i)
+
+		TArray<UCSBlueprint*> Blueprints;
+		for (UCSBlueprint* Blueprint : PendingBlueprints)
 		{
-			UCSBlueprint* Blueprint = Blueprints[i];
+			Blueprints.AddUnique(Blueprint);
+		}
+		PendingBlueprints.Reset();
 
-			constexpr EBlueprintCompileOptions Flags = EBlueprintCompileOptions::SkipGarbageCollection 
-			| EBlueprintCompileOptions::SkipSave 
-			| EBlueprintCompileOptions::SkipDefaultObjectValidation
-			| EBlueprintCompileOptions::SkipFiBSearchMetaUpdate
-			| EBlueprintCompileOptions::SkipNewVariableDefaultsDetection;
-			
-			FKismetEditorUtilities::CompileBlueprint(Blueprint, Flags);
+		// Link the whole batch before running constructors that can query other
+		// managed classes. The manager also finishes every native CDO first.
+		for (UCSBlueprint* Blueprint : Blueprints)
+		{
+			FBlueprintCompilationManager::QueueForCompilation(Blueprint);
+		}
+		FBlueprintCompilationManager::FlushCompilationQueueAndReinstance();
 
-			if (!FCSUnrealSharpUtils::IsEngineStartingUp())
+		if (!FCSUnrealSharpUtils::IsEngineStartingUp())
+		{
+			for (UCSBlueprint* Blueprint : Blueprints)
 			{
 				RefreshDependentLoaders(Blueprint);
 				RefreshInstanceTickSettings(Blueprint);
 			}
 		}
-		
-		Blueprints.Reset();
 	};
 
-	// Components needs be compiled first, as they are instantiated by the owning actor, and needs their size to be known.
+	// Preserve component defaults before owning actors create SCS templates.
 	CompileBlueprints(ManagedComponentsToCompile);
 	CompileBlueprints(ManagedClassesToCompile);
 
