@@ -16,7 +16,7 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("UETargetType=<TargetType>", "REQUIRED. The Unreal Engine target type (Editor, Game, Client, Server).")]
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
-[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to Arm64 for IOS, otherwise X64.")]
+[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to Arm64 for IOS/Android, otherwise X64.")]
 [Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
@@ -137,7 +137,7 @@ public class PackageProject : BuildCommand
         {
             if (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture))
             {
-                throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 target on Windows, or a Mac/IOS arm64 target on macOS. Use JIT for Editor and managed Hot Reload.");
+                throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 target on Windows, a Mac/IOS arm64 target on macOS, or an Android arm64 target. Use JIT for Editor and managed Hot Reload.");
             }
         }
 
