@@ -6,11 +6,18 @@
 #include "Misc/App.h"
 #include "Misc/Paths.h"
 
+FString UnrealSharp::PlatformUtilities::GetManagedWorkingDirectory(const FString& UserWorkingDirectory)
+{
+	return UserWorkingDirectory;
+}
+
+#if !PLATFORM_ANDROID
 FString UnrealSharp::PlatformUtilities::GetNativeAotLibraryPath(const FString& UserWorkingDirectory)
 {
 	return UserWorkingDirectory /
 		(FString(FApp::GetProjectName()) + TEXT(".AOT.") + FPlatformProcess::GetModuleExtension());
 }
+#endif
 
 void* UnrealSharp::PlatformUtilities::LoadNativeAotLibrary(const FString& LibraryPath)
 {

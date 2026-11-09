@@ -5,8 +5,9 @@
 
 namespace UnrealSharp::PlatformUtilities
 {
-	inline constexpr bool SupportsJit = !PLATFORM_IOS;
+	inline constexpr bool SupportsJit = !PLATFORM_IOS && !PLATFORM_ANDROID;
 
+	UNREALSHARPUTILITIES_API FString GetManagedWorkingDirectory(const FString& UserWorkingDirectory);
 	UNREALSHARPUTILITIES_API FString GetNativeAotLibraryPath(const FString& UserWorkingDirectory);
 	UNREALSHARPUTILITIES_API void* LoadNativeAotLibrary(const FString& LibraryPath);
 	UNREALSHARPUTILITIES_API void* GetNativeAotEntryPoint(void* Library);

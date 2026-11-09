@@ -9,7 +9,6 @@
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
 #include "Logging/StructuredLog.h"
-#include "HAL/FileManager.h"
 
 using namespace UnrealSharp;
 
@@ -53,7 +52,7 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 	{
 		if constexpr (!PlatformUtilities::SupportsJit)
 		{
-			UE_LOGFMT(LogUnrealSharp, Fatal, "iOS requires a NativeAOT package in {0}", UserWorkingDirectory);
+			UE_LOGFMT(LogUnrealSharp, Fatal, "This platform requires a NativeAOT package in {0}", UserWorkingDirectory);
 			return false;
 		}
 		else
@@ -66,8 +65,7 @@ bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
 		}
 	}
 
-	// Managed file APIs require the physical bundle path, not iOS's virtual path.
-	const FTCHARToUTF8 WorkingDirectoryUtf8(*IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*UserWorkingDirectory));
+	const FTCHARToUTF8 WorkingDirectoryUtf8(*PlatformUtilities::GetManagedWorkingDirectory(UserWorkingDirectory));
 
 	FCSInitializationResult InitializationResult;
 

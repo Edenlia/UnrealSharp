@@ -3,8 +3,15 @@
 #if PLATFORM_IOS
 
 #include "HAL/PlatformProcess.h"
+#include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include <dlfcn.h>
+
+FString UnrealSharp::PlatformUtilities::GetManagedWorkingDirectory(const FString& UserWorkingDirectory)
+{
+	// Managed file APIs need the physical bundle path rather than the iOS virtual path.
+	return IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*UserWorkingDirectory);
+}
 
 FString UnrealSharp::PlatformUtilities::GetNativeAotLibraryPath(const FString& UserWorkingDirectory)
 {

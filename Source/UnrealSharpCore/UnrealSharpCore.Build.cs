@@ -65,6 +65,12 @@ public class UnrealSharpCore : ModuleRules
         PublicDefinitions.Add("ForceAsEngineGlue=1");
         PublicSystemIncludePaths.Add(Path.Combine(PluginDirectory, "Managed", "DotNetRuntime", "inc"));
 
+		if (Target.Platform == UnrealTargetPlatform.Android)
+		{
+			AdditionalPropertiesForReceipt.Add("AndroidPlugin",
+				Path.Combine(ModuleDirectory, "Private", "Platform", "Android", "UnrealSharpCore_UPL.xml"));
+		}
+
 		if (Target.bBuildEditor)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[]
