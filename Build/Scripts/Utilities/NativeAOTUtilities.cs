@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Xml;
 using AutomationTool;
-using UnrealBuildTool;
 using UnrealSharp.Automation.BuildCommands;
+using UnrealSharp.Automation.Utilities.Platform;
 using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.Utilities;
@@ -14,9 +14,10 @@ public static class NativeAOTUtilities
 {
 	public static void RunAOT(BuildCommand command, PackageProject.PackagingOptions options, string publishDirectory, string outputDirectory)
 	{
-		CreateAOTProject(command, publishDirectory);
+		PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
+		CreateAOTProject(command, Platform, publishDirectory);
 		PublishAOT(options, publishDirectory, outputDirectory);
-		string Extension = options.TargetPlatform == UnrealTargetPlatform.Mac ? ".dylib" : ".dll";
+		string Extension = Platform.NativeLibraryExtension;
 		string NativeLibrary = command.GetProjectName() + ".AOT" + Extension;
 		if (!File.Exists(Path.Combine(outputDirectory, NativeLibrary)))
 		{
@@ -27,11 +28,12 @@ public static class NativeAOTUtilities
 		{
 			File.Copy(Manifest, Path.Combine(outputDirectory, Path.GetFileName(Manifest)), true);
 		}
+		NativeLibrary = Platform.FinalizeNativeAOT(outputDirectory, NativeLibrary);
 		File.WriteAllText(Path.Combine(outputDirectory, "UnrealSharp.NativeAOT"), NativeLibrary);
 		LoggerUtilities.LogUnrealSharpInfo("NativeAOT packaging complete. Native library published to: " + outputDirectory);
 	}
 
-	private static void CreateAOTProject(BuildCommand buildCommand, string directory)
+	private static void CreateAOTProject(BuildCommand buildCommand, PlatformUtilities platform, string directory)
 	{
 		string ProjectName = buildCommand.GetProjectName() + ".AOT";
 
@@ -55,6 +57,7 @@ public static class NativeAOTUtilities
 		SetProperty("ImplicitUsings", "enable");
 		SetProperty("AllowUnsafeBlocks", "true");
 		SetProperty("PublishAot", "true");
+		platform.ConfigureNativeAOTProject(SetProperty);
 		SetProperty("NativeLib", "Shared");
 		SetProperty("TrimmerSingleWarn", "false");
 		SetProperty("EnableDefaultCompileItems", "false");
@@ -130,7 +133,9 @@ public static class NativeAOTUtilities
 			$"-p:PublishDir=\"{outputDirectory}\"",
 		};
 
-		BuildSolution.RunBuild(publishDirectory, options.BuildConfiguration, true, ExtraArguments);
+		IReadOnlyDictionary<string, string>? EnvironmentOverrides =
+			PlatformUtilities.For(options.TargetPlatform).ConfigureNativeAOTPublish(ExtraArguments);
+		BuildSolution.RunBuild(publishDirectory, options.BuildConfiguration, true, ExtraArguments, EnvironmentOverrides);
 	}
 
 	private static void CreateInitializeClass(string outputDirectory)

@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using AutomationTool;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Automation.Utilities.Platform;
 using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.BuildCommands;
@@ -93,10 +94,13 @@ public class PackageProject : BuildCommand
         string? PlatformString = ParseOptionalStringParam("TargetPlatform");
         UnrealTargetPlatform TargetPlatform = string.IsNullOrEmpty(PlatformString) ? UnrealTargetPlatform.Win64 : UnrealTargetPlatform.Parse(PlatformString);
 
+        PlatformUtilities Platform = PlatformUtilities.For(TargetPlatform);
         string? ArchString = ParseOptionalStringParam("TargetArchitecture");
-        UnrealArch TargetArchitecture = string.IsNullOrEmpty(ArchString) ? UnrealArch.X64 : UnrealArch.Parse(ArchString);
+        UnrealArch TargetArchitecture = string.IsNullOrEmpty(ArchString)
+            ? Platform.DefaultArchitecture
+            : UnrealArch.Parse(ArchString);
 
-        bool NativeAot = ParseParam("NativeAOT") || this.IsNativeAotEnabled();
+        bool NativeAot = ParseParam("NativeAOT") || this.IsNativeAotEnabled() || Platform.RequiresNativeAOT;
 
         string[] UserParams = ParseParamValues("UserParams");
 
@@ -128,17 +132,16 @@ public class PackageProject : BuildCommand
             throw new DirectoryNotFoundException($"Archive directory does not exist: {options.ArchiveDirectory}");
         }
 
+        PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
         if (options.NativeAot)
         {
-            bool WindowsTarget = OperatingSystem.IsWindows() && options.TargetPlatform == UnrealTargetPlatform.Win64 &&
-                options.TargetArchitecture == UnrealArch.X64;
-            bool MacTarget = OperatingSystem.IsMacOS() && options.TargetPlatform == UnrealTargetPlatform.Mac &&
-                options.TargetArchitecture == UnrealArch.Arm64;
-            if (options.TargetType == TargetType.Editor || !(WindowsTarget || MacTarget))
+            if (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture))
             {
                 throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 or Mac arm64 target on the matching host OS. Use JIT for Editor and managed Hot Reload.");
             }
         }
+
+        Platform.ValidatePackagingMode(options.NativeAot);
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
         if (!File.Exists(HostFxrPath))

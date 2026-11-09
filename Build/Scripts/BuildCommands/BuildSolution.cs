@@ -31,12 +31,14 @@ public class BuildSolution : BuildCommand
         RunBuild(Folders, TargetConfiguration, Publish, ExtraArguments);
     }
 
-    public static void RunBuild(string folder, UnrealTargetConfiguration buildConfig, bool publish, IList<string>? extraArguments = null)
+    public static void RunBuild(string folder, UnrealTargetConfiguration buildConfig, bool publish, IList<string>? extraArguments = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
-        RunBuild([folder], buildConfig, publish, extraArguments);
+        RunBuild([folder], buildConfig, publish, extraArguments, environment);
     }
 
-    public static void RunBuild(IEnumerable<string> folders, UnrealTargetConfiguration buildConfig, bool publish, IList<string>? extraArguments = null)
+    public static void RunBuild(IEnumerable<string> folders, UnrealTargetConfiguration buildConfig, bool publish, IList<string>? extraArguments = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(folders);
 
@@ -54,7 +56,7 @@ public class BuildSolution : BuildCommand
 
         foreach (string SolutionFolder in FolderList)
         {
-            RunSingleBuild(SolutionFolder, Action, ConfigurationName, extraArguments);
+            RunSingleBuild(SolutionFolder, Action, ConfigurationName, extraArguments, environment);
         }
     }
 
@@ -74,11 +76,19 @@ public class BuildSolution : BuildCommand
         }
     }
 
-    private static void RunSingleBuild(string solutionFolder, string action, string configurationName, IList<string>? extraArguments)
+    private static void RunSingleBuild(string solutionFolder, string action, string configurationName, IList<string>? extraArguments,
+        IReadOnlyDictionary<string, string>? environment)
     {
         LoggerUtilities.LogUnrealSharpInfo($"Running dotnet {action} on {solutionFolder} (configuration: {configurationName}).");
 
         using DotnetProcess BuildSolutionProcess = new DotnetProcess();
+        if (environment != null)
+        {
+            foreach ((string Name, string Value) in environment)
+            {
+                BuildSolutionProcess.StartInfo.Environment[Name] = Value;
+            }
+        }
         BuildSolutionProcess.StartInfo.ArgumentList.Add(action);
         BuildSolutionProcess.StartInfo.ArgumentList.Add(solutionFolder);
         BuildSolutionProcess.StartInfo.ArgumentList.Add("--configuration");

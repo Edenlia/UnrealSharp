@@ -5,6 +5,7 @@ using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
 using UnrealSharp.Automation.BuildCommands;
+using UnrealSharp.Automation.Utilities.Platform;
 
 namespace UnrealSharp.Automation.Utilities;
 
@@ -34,13 +35,10 @@ internal static class UnrealSharpStaging
         {
             throw new AutomationException("UnrealSharp requires a single game, client or server target per staging directory. Stage different targets and configurations separately.");
         }
-        if (Receipt.Platform != UnrealTargetPlatform.Win64 && Receipt.Platform != UnrealTargetPlatform.Mac)
-        {
-            throw new AutomationException($"UnrealSharp managed staging does not support platform '{Receipt.Platform}'.");
-        }
+        PlatformUtilities Platform = PlatformUtilities.For(Receipt.Platform);
         if (Receipt.Architectures.Architectures.Count != 1)
         {
-            throw new AutomationException("UnrealSharp managed staging requires a single architecture. Universal Mac packages are not supported.");
+            throw new AutomationException("UnrealSharp managed staging requires a single architecture. Stage architectures separately.");
         }
         if (Receipt.ProjectFile != null && Receipt.ProjectFile != SC.RawProjectPath)
         {
@@ -64,20 +62,17 @@ internal static class UnrealSharpStaging
             throw new AutomationException($"The UnrealSharp plugin selected for publishing does not match the native target receipt: {PluginFile}");
         }
 
-        string PublishRoot = Path.Combine(Command.GetUnrealSharpIntermediateDirectory(), "Publish",
-            Receipt.TargetName, Receipt.Platform.ToString(), Receipt.Configuration.ToString(), Receipt.Architectures.SingleArchitecture.ToString());
+        string PublishRoot = Platform.GetPublishRoot(Command, Receipt);
         Directory.CreateDirectory(PublishRoot);
 
         LoggerUtilities.LogUnrealSharpInfo($"Publishing managed code for staged target '{Receipt.TargetName}'.");
         Command.StartPackaging(new PackageProject.PackagingOptions(PublishRoot, Receipt.TargetType,
-            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, NativeAot: Command.IsNativeAotEnabled()));
+            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, NativeAot: Platform.RequiresNativeAOT || Command.IsNativeAotEnabled()));
 
-        // Keep these files loose for hostfxr and the managed assembly loader.
-        // UAT applies the platform's normal remapping, packaging and signing afterwards.
         DirectoryReference PublishDirectory = new(PathUtilities.BuildOutputPath(PublishRoot));
         StagedDirectoryReference StageDirectory = StagedDirectoryReference.Combine(SC.RelativeProjectRootForStage,
             "Binaries", "Managed", PublishDirectory.GetDirectoryName());
-        SC.StageFiles(StagedFileType.NonUFS, PublishDirectory, "*", StageFilesSearch.AllDirectories, StageDirectory);
+        Platform.StageManagedFiles(SC, PublishDirectory, StageDirectory);
     }
 
     internal static bool UsesUnrealSharp(TargetReceipt receipt)
