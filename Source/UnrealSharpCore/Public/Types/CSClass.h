@@ -11,6 +11,7 @@ class UCSClass : public UBlueprintGeneratedClass, public ICSManagedTypeInterface
 	GENERATED_BODY()
 public:
 	UNREALSHARPCORE_API static void ManagedObjectConstructor(const FObjectInitializer& ObjectInitializer);
+	virtual UObject* CreateDefaultObject() override;
 	
 #if WITH_EDITOR
 	// UObject interface
