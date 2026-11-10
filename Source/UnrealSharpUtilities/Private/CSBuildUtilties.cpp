@@ -6,9 +6,12 @@
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
+#include "CoreGlobals.h"
+#include "HAL/PlatformMisc.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/MonitoredProcess.h"
+#include "Misc/Guid.h"
 #include "Styling/SlateStyleRegistry.h"
 
 #define LOCTEXT_NAMESPACE "UnrealSharpBuildUtilities"
@@ -86,6 +89,15 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	
 	OutArgs.Reset();
 	OutArgs += BuildAction;
+	const FString ParentLogFolder = FPlatformMisc::GetEnvironmentVariable(TEXT("uebp_LogFolder"));
+	if (IsRunningCommandlet() && !ParentLogFolder.IsEmpty())
+	{
+		// The parent UAT owns its tools and logs while waiting for this commandlet.
+		// Pass the child context as arguments so the host environment is unchanged.
+		const FString ChildLogFolder = FPaths::Combine(ParentLogFolder, TEXT("UnrealSharp"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+		OutArgs += TEXT(" -nocompileuat -nocompile uebp_UATMutexNoWait=1 uebp_UATChildInstance=1");
+		OutArgs += FString::Printf(TEXT(" uebp_LogFolder=\"%s\" uebp_FinalLogFolder=\"%s\""), *ChildLogFolder, *ChildLogFolder);
+	}
 	if (FPaths::IsUnderDirectory(PluginFolder, ProjectFolder))
 	{
 		// Use the same discovery and build-record root as -ScriptsForProject.
