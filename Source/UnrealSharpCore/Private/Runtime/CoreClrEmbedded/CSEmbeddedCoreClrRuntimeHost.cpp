@@ -43,6 +43,12 @@ namespace
 		size_t ImageSize = 0;
 	};
 
+	struct FProbedAssembly
+	{
+		void* Data = nullptr;
+		int64 Size = 0;
+	};
+
 	/**
 	 * State the runtime calls back into through host_runtime_contract. The runtime may use it on any thread until
 	 * the process exits and CoreCLR cannot be shut down, so it is allocated once and never freed.
@@ -57,6 +63,12 @@ namespace
 
 		FCriticalSection LibraryLock;
 		TMap<FString, void*> LoadedLibraries;
+
+		/** Probe mode: assembly file names (Foo.dll) mapped to their Unreal file system paths. */
+		TMap<FString, FString> ProbeFiles;
+		/** Probe mode: assemblies already handed to the runtime. The memory is never freed. */
+		TMap<FString, FProbedAssembly> ProbedAssemblies;
+		FCriticalSection ProbeLock;
 	};
 
 	FEmbeddedRuntimeState* GState = nullptr;
@@ -207,6 +219,61 @@ namespace
 		return Required;
 	}
 
+	bool HOST_CONTRACT_CALLTYPE ProbeAssembly(const char* Path, void** DataStart, int64_t* Size)
+	{
+		if (!Path || !DataStart || !Size)
+		{
+			return false;
+		}
+
+		// The runtime asks for "<Simple>.dll" when binding by name, and "<directory>/<file>" for composite images.
+		FString FileName = FPaths::GetCleanFilename(UTF8_TO_TCHAR(Path));
+		if (!FileName.EndsWith(TEXT(".dll"), ESearchCase::IgnoreCase) && !GState->ProbeFiles.Contains(FileName))
+		{
+			FileName += TEXT(".dll");
+		}
+
+		// Called from any thread that binds an assembly.
+		FScopeLock Lock(&GState->ProbeLock);
+		if (const FProbedAssembly* Probed = GState->ProbedAssemblies.Find(FileName))
+		{
+			*DataStart = Probed->Data;
+			*Size = Probed->Size;
+			return true;
+		}
+
+		const FString* FilePath = GState->ProbeFiles.Find(FileName);
+		if (!FilePath)
+		{
+			return false;
+		}
+
+		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(**FilePath));
+		const int64 FileSize = Reader ? Reader->TotalSize() : -1;
+		if (FileSize <= 0)
+		{
+			UE_LOGFMT(LogUnrealSharp, Error, "Failed to read assembly {0}", *FilePath);
+			return false;
+		}
+
+		// The runtime keeps using the image for the rest of the process, and may write to it.
+		FProbedAssembly Probed;
+		Probed.Data = FMemory::Malloc(FileSize);
+		Probed.Size = FileSize;
+		Reader->Serialize(Probed.Data, FileSize);
+		if (!Reader->Close())
+		{
+			UE_LOGFMT(LogUnrealSharp, Error, "Failed to read assembly {0}", *FilePath);
+			FMemory::Free(Probed.Data);
+			return false;
+		}
+
+		GState->ProbedAssemblies.Add(FileName, Probed);
+		*DataStart = Probed.Data;
+		*Size = Probed.Size;
+		return true;
+	}
+
 	void CORECLR_CALLING_CONVENTION WriteRuntimeError(const char* Message)
 	{
 		const FString Text = UTF8_TO_TCHAR(Message);
@@ -256,6 +323,28 @@ namespace
 			Result += PhysicalDirectory / Assembly;
 		}
 		return Result;
+	}
+
+	void IndexProbeAssemblies(const FString& VirtualDirectory)
+	{
+		TArray<FString> Assemblies;
+		IFileManager::Get().FindFiles(Assemblies, *(VirtualDirectory / TEXT("*.dll")), true, false);
+		for (const FString& Assembly : Assemblies)
+		{
+			GState->ProbeFiles.Add(Assembly, VirtualDirectory / Assembly);
+		}
+	}
+
+	/** A writable absolute directory for AppContext.BaseDirectory when assemblies have no directory of their own. */
+	FString GetProbeBaseDirectory()
+	{
+		FString Directory = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FPaths::ProjectSavedDir());
+		IFileManager::Get().MakeDirectory(*Directory, true);
+		if (!Directory.EndsWith(TEXT("/")))
+		{
+			Directory.AppendChar(TEXT('/'));
+		}
+		return Directory;
 	}
 }
 
@@ -320,18 +409,30 @@ FInitializeUnrealSharp FCSEmbeddedCoreClrRuntimeHost::StartRuntime()
 
 	host_runtime_contract& Contract = GState->Contract;
 	Contract.size = sizeof(host_runtime_contract);
-	Contract.get_runtime_property = &GetRuntimeProperty;
-	Contract.bundle_probe = &ProbeBundle;
 	Contract.pinvoke_override = &OverridePInvoke;
-	Contract.get_native_code_data = &GetNativeCodeData;
 
 	// Properties the host computes; runtimeconfig.json properties from the manifest may not replace them.
 	TMap<FString, FString> Properties;
-	Properties.Add(TEXT(HOST_PROPERTY_TRUSTED_PLATFORM_ASSEMBLIES), BuildTrustedPlatformAssemblies(ManagedDirectory, PhysicalDirectory));
-	Properties.Add(TEXT(HOST_PROPERTY_APP_PATHS), PhysicalDirectory);
-	Properties.Add(TEXT("APP_CONTEXT_BASE_DIRECTORY"), PhysicalDirectory);
-	Properties.Add(TEXT(HOST_PROPERTY_NATIVE_DLL_SEARCH_DIRECTORIES), PhysicalDirectory + PathListSeparator);
-	Properties.Add(TEXT(HOST_PROPERTY_SYSTEM_CORELIB_DIRECTORY), PhysicalDirectory);
+	if (Manifest.AssemblySource == ECSAssemblySource::Probe)
+	{
+		// Every assembly, System.Private.CoreLib included, comes from the probe; the runtime asks it before
+		// consulting the (empty) trusted platform assembly list. Nothing needs a physical managed directory.
+		IndexProbeAssemblies(ManagedDirectory);
+		Contract.external_assembly_probe = &ProbeAssembly;
+		Properties.Add(TEXT("APP_CONTEXT_BASE_DIRECTORY"), GetProbeBaseDirectory());
+		UE_LOGFMT(LogUnrealSharp, Log, "Probing {0} assemblies in {1}", GState->ProbeFiles.Num(), ManagedDirectory);
+	}
+	else
+	{
+		Contract.get_runtime_property = &GetRuntimeProperty;
+		Contract.bundle_probe = &ProbeBundle;
+		Contract.get_native_code_data = &GetNativeCodeData;
+		Properties.Add(TEXT(HOST_PROPERTY_TRUSTED_PLATFORM_ASSEMBLIES), BuildTrustedPlatformAssemblies(ManagedDirectory, PhysicalDirectory));
+		Properties.Add(TEXT(HOST_PROPERTY_APP_PATHS), PhysicalDirectory);
+		Properties.Add(TEXT("APP_CONTEXT_BASE_DIRECTORY"), PhysicalDirectory);
+		Properties.Add(TEXT(HOST_PROPERTY_NATIVE_DLL_SEARCH_DIRECTORIES), PhysicalDirectory + PathListSeparator);
+		Properties.Add(TEXT(HOST_PROPERTY_SYSTEM_CORELIB_DIRECTORY), PhysicalDirectory);
+	}
 	Properties.Add(TEXT(HOST_PROPERTY_RUNTIME_CONTRACT), FString::Printf(TEXT("0x%llx"), static_cast<uint64>(reinterpret_cast<UPTRINT>(&Contract))));
 	Properties.Add(TEXT("UnrealSharp.UseAssemblyDependencyResolver"), TEXT("false"));
 	for (const TPair<FString, FString>& Property : Manifest.Properties)

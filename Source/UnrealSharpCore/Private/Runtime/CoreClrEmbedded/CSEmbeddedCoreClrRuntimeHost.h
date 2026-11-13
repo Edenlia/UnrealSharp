@@ -14,7 +14,9 @@
  *
  * The packaged runtime manifest supplies what hostfxr would otherwise compute: the libcoreclr library, runtime
  * properties baked from runtimeconfig.json, the libraries p/invokes bind to, and the ReadyToRun composite images.
- * Every managed assembly in the managed directory goes on the trusted platform assembly list.
+ * Depending on the manifest's AssemblySource, every managed assembly in the managed directory goes on the trusted
+ * platform assembly list (Files), or is read through the Unreal file system and handed to the runtime from memory by
+ * external_assembly_probe (Probe), which works when the managed directory is inside a pak or the APK.
  */
 class FCSEmbeddedCoreClrRuntimeHost final : public FCSRuntimeHost
 {
