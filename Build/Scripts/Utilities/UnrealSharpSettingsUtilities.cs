@@ -42,6 +42,18 @@ public static class UnrealSharpSettingsUtilities
         
         return _config[elementName];
     }
+
+    public static bool TryGetElement(this BuildCommand buildCommand, string elementName, out JsonElement element)
+    {
+        InitializeConfigFile(buildCommand);
+
+        if (_config == null)
+        {
+            throw new Exception("Run InitializeConfigFile first.");
+        }
+
+        return _config.TryGetValue(elementName, out element);
+    }
     
     static string GetConfigFile(string rootDirectory)
     {

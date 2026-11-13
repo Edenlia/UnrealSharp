@@ -17,7 +17,8 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
 [Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to Arm64 for IOS/Android, otherwise X64.")]
-[Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
+[Help("Runtime=<Runtime>", "Optional. Managed runtime to publish for: CoreClrHostFxr, CoreClrEmbedded or NativeAot. Defaults to the UnrealSharp \"Runtime\" setting, then the platform default.")]
+[Help("NativeAOT", "Optional flag. Same as -Runtime=NativeAot.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
@@ -32,8 +33,11 @@ public class PackageProject : BuildCommand
         UnrealTargetConfiguration BuildConfiguration,
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
-        bool NativeAot,
-        string[]? UserParams = null);
+        RuntimeFlavor Runtime,
+        string[]? UserParams = null)
+    {
+        public bool NativeAot => Runtime == RuntimeFlavor.NativeAot;
+    }
 
     public override void ExecuteBuild()
     {
@@ -100,11 +104,12 @@ public class PackageProject : BuildCommand
             ? Platform.DefaultArchitecture
             : UnrealArch.Parse(ArchString);
 
-        bool NativeAot = ParseParam("NativeAOT") || this.IsNativeAotEnabled() || Platform.RequiresNativeAOT;
+        RuntimeFlavor Runtime = RuntimeFlavorUtilities.Resolve(this, TargetPlatform, Platform,
+            ParseOptionalStringParam("Runtime"), ParseParam("NativeAOT"));
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, Runtime, UserParams);
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -115,7 +120,7 @@ public class PackageProject : BuildCommand
         LoggerUtilities.LogUnrealSharpInfo($"Target Architecture: {options.TargetArchitecture}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Build Configuration: {options.BuildConfiguration}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Target Type: {options.TargetType}");
-        LoggerUtilities.LogUnrealSharpInfo($"Native AOT: {options.NativeAot}");
+        LoggerUtilities.LogUnrealSharpInfo($"Runtime: {options.Runtime}");
 
         if (options.UserParams is { Length: > 0 })
         {
@@ -133,6 +138,10 @@ public class PackageProject : BuildCommand
         }
 
         PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
+        if (options.Runtime == RuntimeFlavor.CoreClrEmbedded)
+        {
+            throw new NotSupportedException("Packaging for the CoreClrEmbedded runtime is not supported yet.");
+        }
         if (options.NativeAot)
         {
             if (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture))

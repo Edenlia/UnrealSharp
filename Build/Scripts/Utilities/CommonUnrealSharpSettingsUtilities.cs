@@ -5,8 +5,6 @@ namespace UnrealSharp.Automation.Utilities;
 
 public static class CommonUnrealSharpSettingsUtilities
 {
-    public static bool IsNativeAotEnabled(this BuildCommand buildCommand) => buildCommand.GetElement("NativeAOT").GetBoolean();
-
     public static string GetScriptDirectoryName(this BuildCommand buildCommand)
     {
         JsonElement ScriptDirectoryName = buildCommand.GetElement("ScriptDirectoryName");

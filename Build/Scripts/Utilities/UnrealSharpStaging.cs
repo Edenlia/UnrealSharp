@@ -66,8 +66,10 @@ internal static class UnrealSharpStaging
         Directory.CreateDirectory(PublishRoot);
 
         LoggerUtilities.LogUnrealSharpInfo($"Publishing managed code for staged target '{Receipt.TargetName}'.");
+        RuntimeFlavor Runtime = RuntimeFlavorUtilities.Resolve(Command, Receipt.Platform, Platform,
+            commandLineRuntime: null, commandLineNativeAot: false);
         Command.StartPackaging(new PackageProject.PackagingOptions(PublishRoot, Receipt.TargetType,
-            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, NativeAot: Platform.RequiresNativeAOT || Command.IsNativeAotEnabled()));
+            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, Runtime));
 
         DirectoryReference PublishDirectory = new(PathUtilities.BuildOutputPath(PublishRoot));
         StagedDirectoryReference StageDirectory = StagedDirectoryReference.Combine(SC.RelativeProjectRootForStage,
