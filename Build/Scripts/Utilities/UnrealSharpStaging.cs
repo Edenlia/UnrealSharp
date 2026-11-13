@@ -77,7 +77,31 @@ internal static class UnrealSharpStaging
         DirectoryReference PublishDirectory = new(PathUtilities.BuildOutputPath(PublishRoot));
         StagedDirectoryReference StageDirectory = StagedDirectoryReference.Combine(SC.RelativeProjectRootForStage,
             "Binaries", "Managed", PublishDirectory.GetDirectoryName());
-        SC.StageFiles(StagedFileType.NonUFS, PublishDirectory, "*", StageFilesSearch.AllDirectories, StageDirectory);
+
+        // Stage symbols and .NET debugger components as debug files, so -nodebuginfo excludes them like native symbols.
+        ILookup<bool, FileReference> PublishedFiles = DirectoryReference
+            .EnumerateFiles(PublishDirectory, "*", SearchOption.AllDirectories)
+            .ToLookup(IsDebugFile);
+        SC.StageFiles(StagedFileType.NonUFS, PublishDirectory, PublishedFiles[false], StageDirectory);
+        SC.StageFiles(StagedFileType.DebugNonUFS, PublishDirectory, PublishedFiles[true], StageDirectory);
+    }
+
+    private static readonly string[] DotNetDebugComponentPrefixes = ["mscordaccore", "mscordbi", "createdump"];
+
+    private static bool IsDebugFile(FileReference file)
+    {
+        if (file.HasExtension(".pdb"))
+        {
+            return true;
+        }
+
+        string FileName = file.GetFileName();
+        if (FileName.StartsWith("lib", StringComparison.Ordinal))
+        {
+            FileName = FileName.Substring(3);
+        }
+
+        return DotNetDebugComponentPrefixes.Any(prefix => FileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool UsesUnrealSharp(TargetReceipt receipt)
