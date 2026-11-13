@@ -3,6 +3,15 @@
 #include "CoreMinimal.h"
 #include "Runtime/CSRuntimeTypes.h"
 
+/** How a CoreClrEmbedded package hands its managed assemblies to the runtime. */
+enum class ECSAssemblySource : uint8
+{
+	/** Assembly files on disk, listed as trusted platform assemblies. */
+	Files,
+	/** Assemblies read through the Unreal file system and returned from external_assembly_probe. */
+	Probe,
+};
+
 /**
  * Describes which runtime a packaged build was published for. Packaging writes UnrealSharp.Runtime.json next to
  * the managed assemblies; the runtime host factory reads it to decide which FCSRuntimeHost to create.
@@ -11,6 +20,7 @@
  *   "Version": 1,
  *   "Kind": "CoreClrHostFxr" | "CoreClrEmbedded" | "NativeAot",
  *   "Library": "<optional native library the host loads>",
+ *   "AssemblySource": "Files" | "Probe",
  *   "Properties": { "<runtime property>": "<value>" },
  *   "NativeLibraries": { "<p/invoke library name>": "<library reference>" },
  *   "ReadyToRunImages": { "<composite image name>": "<library reference>" }
@@ -27,6 +37,8 @@ struct FCSRuntimeManifest
 
 	ECSRuntimeKind Kind = ECSRuntimeKind::CoreClrHostFxr;
 	FString Library;
+	/** Where CoreClrEmbedded reads managed assemblies from. Files when the manifest does not say. */
+	ECSAssemblySource AssemblySource = ECSAssemblySource::Files;
 	TMap<FString, FString> Properties;
 	/** Native libraries that p/invokes by these names must bind to (for runtimes without a probing host). */
 	TMap<FString, FString> NativeLibraries;

@@ -6,6 +6,15 @@ using System.Text.Json;
 
 namespace UnrealSharp.Automation.Utilities;
 
+/// <summary>How a CoreClrEmbedded package hands its managed assemblies to the runtime (ECSAssemblySource).</summary>
+public enum RuntimeAssemblySource
+{
+    /// <summary>Assembly files on disk, passed as trusted platform assemblies.</summary>
+    Files,
+    /// <summary>Assemblies read through the Unreal file system and returned from external_assembly_probe.</summary>
+    Probe,
+}
+
 /// <summary>
 /// Writes UnrealSharp.Runtime.json, which tells the native plugin which runtime host to start for a packaged
 /// build. Its format is read by FCSRuntimeManifest in UnrealSharpCore.
@@ -25,10 +34,12 @@ public static class RuntimeManifestWriter
     /// <param name="properties">Runtime properties the host passes to the runtime at startup.</param>
     /// <param name="nativeLibraries">Library references that p/invokes by these library names bind to.</param>
     /// <param name="readyToRunImages">Platform-native ReadyToRun composite images keyed by composite name.</param>
+    /// <param name="assemblySource">Where the host reads managed assemblies from; Files is the default and is not written.</param>
     public static void Write(string directory, RuntimeFlavor runtime, string? library = null,
         IReadOnlyDictionary<string, string>? properties = null,
         IReadOnlyDictionary<string, string>? nativeLibraries = null,
-        IReadOnlyDictionary<string, string>? readyToRunImages = null)
+        IReadOnlyDictionary<string, string>? readyToRunImages = null,
+        RuntimeAssemblySource assemblySource = RuntimeAssemblySource.Files)
     {
         // The marker predates the manifest; a stale one must not override the manifest's runtime.
         string LegacyMarker = Path.Combine(directory, LegacyNativeAotMarkerName);
@@ -45,6 +56,10 @@ public static class RuntimeManifestWriter
         if (!string.IsNullOrEmpty(library))
         {
             Manifest["Library"] = library.Replace('\\', '/');
+        }
+        if (assemblySource != RuntimeAssemblySource.Files)
+        {
+            Manifest["AssemblySource"] = assemblySource.ToString();
         }
         AddTable(Manifest, "Properties", properties);
         AddTable(Manifest, "NativeLibraries", nativeLibraries);

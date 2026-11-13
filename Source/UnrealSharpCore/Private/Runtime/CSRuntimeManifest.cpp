@@ -97,6 +97,20 @@ TOptional<FCSRuntimeManifest> FCSRuntimeManifest::Load(const FString& ManagedDir
 
 	Root->TryGetStringField(TEXT("Library"), Manifest.Library);
 
+	FString AssemblySourceText;
+	if (Root->TryGetStringField(TEXT("AssemblySource"), AssemblySourceText))
+	{
+		if (AssemblySourceText.Equals(TEXT("Probe"), ESearchCase::IgnoreCase))
+		{
+			Manifest.AssemblySource = ECSAssemblySource::Probe;
+		}
+		else if (!AssemblySourceText.Equals(TEXT("Files"), ESearchCase::IgnoreCase))
+		{
+			UE_LOGFMT(LogUnrealSharp, Fatal, "Unknown assembly source '{0}' in {1}", AssemblySourceText, ManifestPath);
+			return {};
+		}
+	}
+
 	if (!ReadStringMap(*Root, TEXT("Properties"), ManifestPath, Manifest.Properties)
 		|| !ReadStringMap(*Root, TEXT("NativeLibraries"), ManifestPath, Manifest.NativeLibraries)
 		|| !ReadStringMap(*Root, TEXT("ReadyToRunImages"), ManifestPath, Manifest.ReadyToRunImages))

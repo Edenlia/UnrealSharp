@@ -19,7 +19,8 @@ namespace UnrealSharp.Automation.Utilities;
 public sealed record CoreClrEmbeddedLayout(
     string CoreClrLibrary,
     IReadOnlyDictionary<string, string> NativeLibraries,
-    IReadOnlyDictionary<string, string> ReadyToRunImages);
+    IReadOnlyDictionary<string, string> ReadyToRunImages,
+    RuntimeAssemblySource AssemblySource = RuntimeAssemblySource.Files);
 
 /// <summary>
 /// Publishes managed code for the CoreClrEmbedded runtime: CoreCLR started through coreclr_initialize, with the
@@ -89,7 +90,7 @@ public static class CoreClrEmbeddedUtilities
         }
 
         RuntimeManifestWriter.Write(outputDirectory, RuntimeFlavor.CoreClrEmbedded, Layout.CoreClrLibrary, Properties,
-            Layout.NativeLibraries, Layout.ReadyToRunImages);
+            Layout.NativeLibraries, Layout.ReadyToRunImages, Layout.AssemblySource);
         LoggerUtilities.LogUnrealSharpInfo("CoreClrEmbedded packaging complete. Runtime published to: " + outputDirectory);
     }
 
