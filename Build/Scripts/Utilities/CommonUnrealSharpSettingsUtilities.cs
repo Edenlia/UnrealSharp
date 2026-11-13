@@ -10,4 +10,10 @@ public static class CommonUnrealSharpSettingsUtilities
         JsonElement ScriptDirectoryName = buildCommand.GetElement("ScriptDirectoryName");
         return ScriptDirectoryName.GetString()!;
     }
+
+    public static bool GetTrimFramework(this BuildCommand buildCommand)
+    {
+        JsonElement TrimFramework = buildCommand.GetElement("TrimFramework");
+        return TrimFramework.GetBoolean();
+    }
 }

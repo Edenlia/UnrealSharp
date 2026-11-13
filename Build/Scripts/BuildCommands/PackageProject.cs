@@ -18,6 +18,7 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to X64.")]
 [Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
+[Help("TrimFramework", "Optional flag. Trims the bundled .NET framework. Also enabled by \"TrimFramework\" in UnrealSharp.Settings.json.")]
 public class PackageProject : BuildCommand
 {
     private const string ManagedFolderName = "Managed";
@@ -32,7 +33,8 @@ public class PackageProject : BuildCommand
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
         bool NativeAot,
-        string[]? UserParams = null);
+        string[]? UserParams = null,
+        bool TrimFramework = false);
 
     public override void ExecuteBuild()
     {
@@ -56,7 +58,13 @@ public class PackageProject : BuildCommand
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
-        
+
+        if (options.TrimFramework || this.GetTrimFramework())
+        {
+            string TrimFolder = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), "FrameworkTrim");
+            FrameworkTrimmingUtilities.TrimFramework(PublishFolder, TrimFolder, RuntimeIdentifier, options.BuildConfiguration);
+        }
+
         EmitInstalledFlagFile(PublishFolder);
 
         LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
@@ -78,7 +86,9 @@ public class PackageProject : BuildCommand
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        bool TrimFramework = ParseParam("TrimFramework");
+
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams, TrimFramework);
     }
 
     private static void LogOptions(PackagingOptions options)
