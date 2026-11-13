@@ -3,6 +3,7 @@
 #include "CSManagedPluginCallbacks.h"
 #include "UnrealSharpCore.h"
 #include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #include "CSManager.h"
 #include "Logging/StructuredLog.h"
 #include "ReflectionData/CSEnumReflectionData.h"
@@ -23,11 +24,18 @@ void UCSManagedAssembly::Initialize(const FStringView InAssemblyPath, bool bInIs
 
 	AssemblyFilePath = FPaths::ConvertRelativePathToFull(InAssemblyPath.GetData());
 
+#if PLATFORM_IOS
+	// R2R assemblies retain their CLR filename case. Convert only the virtual
+	// directory, then append the original name before querying the physical file.
+	AssemblyFilePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*FPaths::GetPath(AssemblyFilePath)) /
+		FPaths::GetCleanFilename(AssemblyFilePath);
+#endif
+
 #if defined(_WIN32)
 	AssemblyFilePath.ReplaceInline(TEXT("/"), TEXT("\\"));
 #endif
 
-	bIsCollectible = bInIsCollectible;
+	bIsCollectible = bInIsCollectible && !FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT();
 
 	FOnManagedTypeStructureChanged::FDelegate Delegate = FOnManagedTypeStructureChanged::FDelegate::CreateUObject(
 		this, &UCSManagedAssembly::OnTypeReflectionDataChanged);
@@ -44,13 +52,27 @@ bool UCSManagedAssembly::LoadAssembly()
 		return true;
 	}
 
-	if (!FPaths::FileExists(AssemblyFilePath))
+	// AOT manifests name assemblies embedded in the native library, without separate DLLs.
+	if (!FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT()
+		&& !FPaths::FileExists(AssemblyFilePath))
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Assembly path does not exist: {0}", AssemblyFilePath);
 		return false;
 	}
 
 	bIsLoading = true;
+
+#if WITH_EDITOR
+	// Types registered by the previous load. Any of them that this load does not register again was removed.
+	// Definitions created from native fields are resolved on demand rather than registered by the assembly.
+	for (const TPair<FCSFieldName, TSharedPtr<FCSManagedTypeDefinition>>& Pair : ManagedTypeRegistry)
+	{
+		if (Pair.Value.IsValid() && Pair.Value->GetReflectionData().IsValid())
+		{
+			TypesPendingRemoval.Add(Pair.Key);
+		}
+	}
+#endif
 
 	FGCHandle NewAssemblyGCHandle = GetManagedPluginCallbacks().LoadPlugin(*AssemblyFilePath, bIsCollectible);
 
@@ -60,6 +82,21 @@ bool UCSManagedAssembly::LoadAssembly()
 	}
 
 	AssemblyHandle = MakeShared<FGCHandle>(NewAssemblyGCHandle);
+
+#if WITH_EDITOR
+	for (const FCSFieldName& FieldName : TypesPendingRemoval)
+	{
+		// Keep the Unreal type alive and unchanged: Blueprints and instances may still use it, and it must stay
+		// resolvable by name so they can be reparented, e.g. after the C# class was renamed.
+		TSharedPtr<FCSManagedTypeDefinition> RemovedType;
+		ManagedTypeRegistry.RemoveAndCopyValue(FieldName, RemovedType);
+		RemovedManagedTypes.Add(FieldName, RemovedType);
+
+		UE_LOGFMT(LogUnrealSharp, Warning, "Managed type {0} was removed from {1}. Its Unreal type stays loaded so assets that use it can be reparented.",
+			FieldName.GetFullName(), GetAssemblyFileName());
+	}
+	TypesPendingRemoval.Reset();
+#endif
 
 	for (const TSharedPtr<FCSManagedTypeDefinition>& QueuedType : PendingCompilationTypes)
 	{
@@ -189,6 +226,15 @@ TSharedPtr<FCSManagedTypeDefinition> UCSManagedAssembly::FindOrAddManagedTypeDef
 		return ManagedTypeDefinition;
 	}
 
+#if WITH_EDITOR
+	// A removed type keeps its definition; do not wrap its still-loaded field as a new native-field definition.
+	if (TSharedPtr<FCSManagedTypeDefinition> RemovedType = RemovedManagedTypes.FindRef(FieldName))
+	{
+		ManagedTypeRegistry.Remove(FieldName);
+		return RemovedType;
+	}
+#endif
+
 	UField* Field = FCSUtilities::FindField<UField>(FieldName);
 	if (!IsValid(Field))
 	{
@@ -209,6 +255,15 @@ void UCSManagedAssembly::RegisterManagedType(TCHAR* InFieldName, const TCHAR* In
 	TSharedPtr<FCSManagedTypeDefinition>& ManagedTypeDefinition = ManagedTypeRegistry.FindOrAdd(FieldName);
 	
 #if WITH_EDITOR
+	TypesPendingRemoval.Remove(FieldName);
+
+	// A type that comes back under the same name (e.g. a rename was undone) reuses its previous Unreal type.
+	// Compare its reflection data, since it was not tracked for changes while it was removed.
+	if (!ManagedTypeDefinition.IsValid() && RemovedManagedTypes.RemoveAndCopyValue(FieldName, ManagedTypeDefinition))
+	{
+		ManagedTypeDefinition->SetDirtyFlags(StructuralChanges);
+	}
+
 	if (ManagedTypeDefinition.IsValid() && !FCSUtilities::ShouldReloadDefinition(
 		ManagedTypeDefinition.ToSharedRef(), ReflectionJsonString))
 	{

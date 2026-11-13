@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using AutomationTool;
 using UnrealBuildTool;
+using UnrealSharp.Automation.Utilities.Platform;
 
 namespace UnrealSharp.Automation.Utilities;
 
@@ -16,27 +17,7 @@ public static class DotNetSdkUtilities
 
     public static string GetPlatformIdentifier(UnrealTargetPlatform platform)
     {
-        if (platform == UnrealTargetPlatform.Win64)
-        {
-            return "win";
-        }
-
-        if (platform == UnrealTargetPlatform.Mac)
-        {
-            return "osx";
-        }
-
-        if (platform == UnrealTargetPlatform.Linux)
-        {
-            return "linux";
-        }
-
-        if (platform == UnrealTargetPlatform.LinuxArm64)
-        {
-            return "linux";
-        }
-
-        throw new NotSupportedException($"Unsupported target platform for .NET publish: '{platform}'. " + $"Supported platforms: Win64, Mac, Linux, LinuxArm64.");
+        return PlatformUtilities.For(platform).DotNetPlatformIdentifier;
     }
 
     public static string GetArchitectureIdentifier(UnrealArch architecture)
