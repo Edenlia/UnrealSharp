@@ -65,6 +65,9 @@ public enum PropertyFlags : ulong
     
     [PropertyFlagsMap(NativePropertyFlags.Transient)]
     Transient = NativePropertyFlags.Transient,
+
+    [PropertyFlagsMap(NativePropertyFlags.DuplicateTransient)]
+    DuplicateTransient = NativePropertyFlags.DuplicateTransient,
 }
 
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
