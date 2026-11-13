@@ -16,13 +16,22 @@ internal sealed class IOSUtilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "ios";
     public override string NativeLibraryExtension => ".dylib";
     public override UnrealArch DefaultArchitecture => UnrealArch.Arm64;
-    // iOS forbids JIT compilation, so hostfxr-based JIT packages cannot run there.
-    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot];
+    // iOS forbids JIT compilation, so hostfxr-based JIT packages cannot run there. CoreCLR runs from ReadyToRun
+    // code plus its interpreter, started through the embedded host.
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot, RuntimeFlavor.CoreClrEmbedded];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {
         return OperatingSystem.IsMacOS() && architecture == UnrealArch.Arm64;
     }
+
+    public override bool SupportsCoreClrEmbedded(UnrealArch architecture)
+    {
+        return OperatingSystem.IsMacOS() && architecture == UnrealArch.Arm64;
+    }
+
+    // Apple platforms only map native code from signed Mach-O images; the SDK links the composite into a dylib.
+    public override string? CoreClrEmbeddedReadyToRunContainerFormat => "macho";
 
     public override void ConfigureNativeAOTProject(Action<string, string> setProperty)
     {
@@ -118,15 +127,24 @@ internal sealed class IOSUtilities : PlatformUtilities
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory)
     {
         // Publishing happens after the native build. The run-only Xcode project
-        // generated for packaging embeds and signs the framework with the app.
+        // generated for packaging embeds and signs every published framework with the app.
         DirectoryReference Frameworks = DirectoryReference.Combine(publishDirectory, "Frameworks");
-        string FrameworkPath = Path.Combine(Frameworks.FullName, FrameworkName + ".framework");
-        if (!File.Exists(Path.Combine(FrameworkPath, FrameworkName)) ||
-            !File.Exists(Path.Combine(FrameworkPath, "Info.plist")))
+        string[] FrameworkPaths = Directory.Exists(Frameworks.FullName)
+            ? Directory.GetDirectories(Frameworks.FullName, "*.framework")
+            : [];
+        if (FrameworkPaths.Length == 0)
         {
-            throw new AutomationException($"Missing published UnrealSharp iOS framework: {FrameworkPath}");
+            throw new AutomationException($"No UnrealSharp iOS frameworks were published to: {Frameworks}");
         }
-        Environment.SetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORK", FrameworkPath);
+        foreach (string FrameworkPath in FrameworkPaths)
+        {
+            string Name = Path.GetFileNameWithoutExtension(FrameworkPath);
+            if (!File.Exists(Path.Combine(FrameworkPath, Name)) || !File.Exists(Path.Combine(FrameworkPath, "Info.plist")))
+            {
+                throw new AutomationException($"Incomplete published UnrealSharp iOS framework: {FrameworkPath}");
+            }
+        }
+        Environment.SetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORKS", Frameworks.FullName);
         foreach (FileReference File in DirectoryReference.EnumerateFiles(publishDirectory, "*", SearchOption.AllDirectories))
         {
             if (File.IsUnderDirectory(Frameworks) || File.FullName.Contains(".dSYM/", StringComparison.Ordinal))

@@ -20,22 +20,34 @@ public class UnrealSharpCore : ModuleRules
 		bool bApple = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac;
 		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple ? "1" : "0"));
 
-		// The first native build precedes managed publication. Only the later
-		// run-only Xcode generation receives the staged receipt's framework path.
-		string IosFramework = Environment.GetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORK");
+		// The first native build precedes managed publication. Only the later run-only Xcode generation
+		// receives the published Frameworks directory: the NativeAOT library, or libcoreclr, the runtime's
+		// native libraries and the ReadyToRun composite for CoreClrEmbedded.
+		string IosFrameworks = Environment.GetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORKS");
 		if (Target.Platform == UnrealTargetPlatform.IOS && Target.ProjectFile != null &&
-			!string.IsNullOrEmpty(IosFramework))
+			!string.IsNullOrEmpty(IosFrameworks))
 		{
 			string PublishRoot = Path.Combine(Target.ProjectFile.Directory.FullName,
 				"Intermediate", "UnrealSharp", "Publish", Target.Name, "IOS") + Path.DirectorySeparatorChar;
-			string FrameworkPath = Path.GetFullPath(IosFramework);
-			if (!FrameworkPath.StartsWith(PublishRoot, StringComparison.Ordinal) ||
-				!File.Exists(Path.Combine(FrameworkPath, "UnrealSharpAOT")) ||
-				!File.Exists(Path.Combine(FrameworkPath, "Info.plist")))
+			string FrameworksDirectory = Path.GetFullPath(IosFrameworks);
+			if (!FrameworksDirectory.StartsWith(PublishRoot, StringComparison.Ordinal) || !Directory.Exists(FrameworksDirectory))
 			{
-				throw new BuildException("Missing published UnrealSharp iOS framework: {0}", FrameworkPath);
+				throw new BuildException("Missing published UnrealSharp iOS frameworks: {0}", FrameworksDirectory);
 			}
-			PublicAdditionalFrameworks.Add(new Framework("UnrealSharpAOT", FrameworkPath, Framework.FrameworkMode.Copy));
+
+			string[] FrameworkPaths = Directory.GetDirectories(FrameworksDirectory, "*.framework");
+			Array.Sort(FrameworkPaths, StringComparer.Ordinal);
+			foreach (string FrameworkPath in FrameworkPaths)
+			{
+				string FrameworkName = Path.GetFileNameWithoutExtension(FrameworkPath);
+				if (!File.Exists(Path.Combine(FrameworkPath, FrameworkName)) ||
+					!File.Exists(Path.Combine(FrameworkPath, "Info.plist")))
+				{
+					throw new BuildException("Incomplete published UnrealSharp iOS framework: {0}", FrameworkPath);
+				}
+				// Embedded and signed with the app; the runtime host loads each one with dlopen.
+				PublicAdditionalFrameworks.Add(new Framework(FrameworkName, FrameworkPath, Framework.FrameworkMode.Copy));
+			}
 		}
 		
 		PublicDependencyModuleNames.AddRange(
