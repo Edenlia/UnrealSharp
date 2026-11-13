@@ -33,8 +33,13 @@ namespace
 		case ECSRuntimeKind::CoreClrHostFxr:
 			return CreateHostFxrHost(ManagedDirectory);
 		case ECSRuntimeKind::NativeAot:
-			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::ResolveBundledLibraryPath(
-				ManagedDirectory, PlatformUtilities::GetLegacyNativeAotLibraryReference()));
+		{
+			// Packages that only carry the legacy marker do not name their library.
+			const FString LibraryReference = Manifest.Library.IsEmpty()
+				? PlatformUtilities::GetLegacyNativeAotLibraryReference()
+				: Manifest.Library;
+			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::ResolveBundledLibraryPath(ManagedDirectory, LibraryReference));
+		}
 		case ECSRuntimeKind::CoreClrEmbedded:
 			break;
 		}
