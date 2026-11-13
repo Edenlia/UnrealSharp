@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#if UNREALSHARP_WITH_HOSTFXR_HOST
+
 #include "Runtime/CSRuntimeHost.h"
 
 #include <coreclr_delegates.h>
@@ -61,3 +64,5 @@ private:
 
 	void* RuntimeHost = nullptr;
 };
+
+#endif // UNREALSHARP_WITH_HOSTFXR_HOST

@@ -6,8 +6,13 @@
 #include "Logging/StructuredLog.h"
 #include "Misc/Paths.h"
 #include "Runtime/CSRuntimeManifest.h"
+
+#if UNREALSHARP_WITH_HOSTFXR_HOST
 #include "Runtime/HostFxr/CSHostFxrRuntimeHost.h"
+#endif
+#if UNREALSHARP_WITH_NATIVEAOT_HOST
 #include "Runtime/NativeAot/CSNativeAotRuntimeHost.h"
+#endif
 
 using namespace UnrealSharp;
 
@@ -15,15 +20,12 @@ namespace
 {
 	TUniquePtr<FCSRuntimeHost> CreateHostFxrHost(const FString& ManagedDirectory)
 	{
-		if constexpr (!PlatformUtilities::SupportsJit)
-		{
-			UE_LOGFMT(LogUnrealSharp, Fatal, "This platform cannot start CoreCLR through hostfxr. Package a runtime that supports it into {0}", ManagedDirectory);
-			return nullptr;
-		}
-		else
-		{
-			return MakeUnique<FCSHostFxrRuntimeHost>();
-		}
+#if UNREALSHARP_WITH_HOSTFXR_HOST
+		return MakeUnique<FCSHostFxrRuntimeHost>();
+#else
+		UE_LOGFMT(LogUnrealSharp, Fatal, "This platform cannot start CoreCLR through hostfxr. Package a runtime that supports it into {0}", ManagedDirectory);
+		return nullptr;
+#endif
 	}
 
 	TUniquePtr<FCSRuntimeHost> CreateHostForManifest(const FCSRuntimeManifest& Manifest, const FString& ManagedDirectory)
@@ -33,6 +35,7 @@ namespace
 		case ECSRuntimeKind::CoreClrHostFxr:
 			return CreateHostFxrHost(ManagedDirectory);
 		case ECSRuntimeKind::NativeAot:
+#if UNREALSHARP_WITH_NATIVEAOT_HOST
 		{
 			// Packages that only carry the legacy marker do not name their library.
 			const FString LibraryReference = Manifest.Library.IsEmpty()
@@ -40,6 +43,9 @@ namespace
 				: Manifest.Library;
 			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::ResolveBundledLibraryPath(ManagedDirectory, LibraryReference));
 		}
+#else
+			break;
+#endif
 		case ECSRuntimeKind::CoreClrEmbedded:
 			break;
 		}

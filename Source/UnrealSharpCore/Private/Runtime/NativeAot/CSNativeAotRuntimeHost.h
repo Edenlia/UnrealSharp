@@ -1,6 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#if UNREALSHARP_WITH_NATIVEAOT_HOST
+
 #include "Runtime/CSRuntimeHost.h"
 
 /**
@@ -26,3 +29,5 @@ private:
 	// NativeAOT does not support unloading. Keep this library loaded until process exit.
 	void* Library = nullptr;
 };
+
+#endif // UNREALSHARP_WITH_NATIVEAOT_HOST

@@ -1,5 +1,7 @@
 #include "Runtime/HostFxr/CSHostFxrRuntimeHost.h"
 
+#if UNREALSHARP_WITH_HOSTFXR_HOST
+
 #include "UnrealSharpCore.h"
 #include "CSDotnetUtilties.h"
 #include "CSPathsUtilities.h"
@@ -219,3 +221,5 @@ load_assembly_and_get_function_pointer_fn FCSHostFxrRuntimeHost::ConfigureRuntim
 
 	return reinterpret_cast<load_assembly_and_get_function_pointer_fn>(LoadAssemblyAndGetFunctionPointer);
 }
+
+#endif // UNREALSHARP_WITH_HOSTFXR_HOST

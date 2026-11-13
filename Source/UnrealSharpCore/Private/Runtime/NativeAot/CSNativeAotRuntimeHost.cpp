@@ -1,5 +1,7 @@
 #include "Runtime/NativeAot/CSNativeAotRuntimeHost.h"
 
+#if UNREALSHARP_WITH_NATIVEAOT_HOST
+
 #include "CSPlatformUtilities.h"
 #include "UnrealSharpCore.h"
 #include "Logging/StructuredLog.h"
@@ -44,3 +46,5 @@ FInitializeUnrealSharp FCSNativeAotRuntimeHost::StartRuntime()
 
 	return InitializeUnrealSharp;
 }
+
+#endif // UNREALSHARP_WITH_NATIVEAOT_HOST

@@ -5,8 +5,6 @@
 
 namespace UnrealSharp::PlatformUtilities
 {
-	inline constexpr bool SupportsJit = !PLATFORM_IOS && !PLATFORM_ANDROID;
-
 	/** Directory passed to managed code as its base directory (the physical path on iOS). */
 	UNREALSHARPUTILITIES_API FString GetManagedWorkingDirectory(const FString& UserWorkingDirectory);
 

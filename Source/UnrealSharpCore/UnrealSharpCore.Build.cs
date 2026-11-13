@@ -12,6 +12,11 @@ public class UnrealSharpCore : ModuleRules
 		PublicDefinitions.Add("TARGET_TYPE=" + (int)Target.Type);
 		PublicDefinitions.Add("TARGET_CONFIGURATION=" + (int)Target.Configuration);
 
+		// Runtime hosts compiled into this target. Mobile platforms ship no hostfxr and do not allow a JIT.
+		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
+		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile ? "0" : "1"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
+
 		// The first native build precedes managed publication. Only the later
 		// run-only Xcode generation receives the staged receipt's framework path.
 		string IosFramework = Environment.GetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORK");
