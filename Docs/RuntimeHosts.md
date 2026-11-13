@@ -8,7 +8,7 @@ entry point. Everything after that (calling the entry point, reporting managed e
 | Kind | Host | Runtime | Platforms | Typical use |
 |---|---|---|---|---|
 | `CoreClrHostFxr` | `FCSHostFxrRuntimeHost` | CoreCLR started through hostfxr (shared or self-contained .NET) | Win64, Mac | Editor, desktop JIT packages |
-| `CoreClrEmbedded` | `FCSEmbeddedCoreClrRuntimeHost` | CoreCLR started through `coreclr_initialize`, code from a ReadyToRun composite | Mac | Platforms without hostfxr; Mac exercises the host on the desktop |
+| `CoreClrEmbedded` | `FCSEmbeddedCoreClrRuntimeHost` | CoreCLR started through `coreclr_initialize` | Mac, Android | Android (JIT); Mac exercises the host on the desktop |
 | `NativeAot` | `FCSNativeAotRuntimeHost` | A NativeAOT shared library; there is no separate runtime | Win64, Mac, iOS, Android | Shipping builds without a JIT |
 
 A .NET runtime can only be started once per process and cannot be restarted, so a host is initialized once and
@@ -42,7 +42,8 @@ const FCSRuntimeCapabilities Capabilities = FUnrealSharpCoreModule::Get().GetRun
 
 Which hosts exist in a build is decided at compile time by `UnrealSharpCore.Build.cs`:
 `UNREALSHARP_WITH_HOSTFXR_HOST` (not iOS or Android), `UNREALSHARP_WITH_NATIVEAOT_HOST` (all),
-`UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST` (iOS and Mac; the ReadyToRun loader reads Mach-O images).
+`UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST` (iOS, Mac and Android; the ReadyToRun loader reads Mach-O images, and
+Android hands assemblies to the runtime through `external_assembly_probe`).
 
 ### The runtime manifest
 
@@ -53,6 +54,7 @@ Packaging writes the manifest; `FCSRuntimeManifest` reads it.
   "Version": 1,
   "Kind": "CoreClrEmbedded",
   "Library": "libcoreclr.dylib",
+  "AssemblySource": "Files",
   "Properties": { "RUNTIME_IDENTIFIER": "osx-arm64", "System.GC.Concurrent": "false" },
   "NativeLibraries": { "libSystem.Native": "libSystem.Native.dylib" },
   "ReadyToRunImages": { "MyGame.CoreCLR.r2r.dylib": "MyGame.CoreCLR.r2r.dylib" }
@@ -61,6 +63,8 @@ Packaging writes the manifest; `FCSRuntimeManifest` reads it.
 
 Library references are platform relative (`PlatformUtilities::ResolveBundledLibraryPath`): relative to the managed
 directory on desktop, to the app's `Frameworks` directory on iOS, and a bare file name on Android.
+`AssemblySource` (CoreClrEmbedded only) is `Files` when omitted: the assemblies are files in the managed directory.
+`Probe` means the host reads them through the Unreal file system and returns them from `external_assembly_probe`.
 
 ## Choosing the runtime when packaging
 
@@ -74,7 +78,7 @@ The packaging scripts resolve a `RuntimeFlavor` (same names as the runtime kinds
 
 ```json
 {
-  "Runtime": { "Default": "CoreClrHostFxr", "Mac": "CoreClrEmbedded" },
+  "Runtime": { "Default": "CoreClrHostFxr", "Android": "CoreClrEmbedded" },
   "CoreClrEmbeddedDotNetRoot": "/path/to/dotnet11"
 }
 ```
@@ -104,6 +108,18 @@ Packaging (`CoreClrEmbeddedUtilities`) is a second stage, like NativeAOT:
    alone account for about 320 MB of native code.
 3. The platform arranges the result. Mac keeps the desktop layout: `libcoreclr`, the runtime's native libraries and
    the composite stay next to the managed assemblies.
+
+### Android
+
+Android runs CoreCLR with its JIT. The publish uses the `android-<arch>` RID, whose runtime pack is CoreCLR without
+hostfxr (`linux-bionic` stays the NativeAOT RID), and builds no ReadyToRun composite; the Android workload is not
+needed.
+
+- `libcoreclr`, `libclrjit`, the debugger libraries and the runtime's native libraries are copied into `Native/`,
+  which UPL packages as the APK's native libraries.
+- The assemblies are staged into the pak like other managed files, and the manifest says `"AssemblySource": "Probe"`.
+- `libSystem.Security.Cryptography.Native.Android` calls into Java: its jar goes into `Java/`, and UPL adds the jar
+  and loads the library with `System.loadLibrary` so its `JNI_OnLoad` runs.
 
 At startup `FCSEmbeddedCoreClrRuntimeHost`:
 

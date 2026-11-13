@@ -35,7 +35,7 @@ Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/U
 | macOS | Supported | CoreCLR (JIT), NativeAOT |
 | Linux | Planned | |
 | iOS | Supported | NativeAOT |
-| Android | Supported | NativeAOT |
+| Android | Supported | NativeAOT, CoreCLR JIT (.NET 11, experimental) |
 
 See [Runtime hosts](Docs/RuntimeHosts.md) for how each runtime is started and how to choose one.
 
