@@ -16,9 +16,11 @@ public class UnrealSharpCore : ModuleRules
 		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
 		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile ? "0" : "1"));
 		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
-		// coreclr_initialize hosting needs a platform loader for ReadyToRun images; only Mach-O is implemented.
-		bool bApple = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac;
-		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple ? "1" : "0"));
+		// coreclr_initialize hosting. Apple platforms load Mach-O ReadyToRun images; Android hands assemblies
+		// (and any PE ReadyToRun composite) to the runtime through external_assembly_probe.
+		bool bEmbeddedCoreClr = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac ||
+			Target.Platform == UnrealTargetPlatform.Android;
+		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bEmbeddedCoreClr ? "1" : "0"));
 
 		// The first native build precedes managed publication. Only the later
 		// run-only Xcode generation receives the staged receipt's framework path.

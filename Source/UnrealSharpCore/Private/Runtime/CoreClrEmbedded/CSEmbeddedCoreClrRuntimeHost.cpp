@@ -7,6 +7,7 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Logging/StructuredLog.h"
+#include "Misc/App.h"
 #include "Misc/ScopeLock.h"
 #include "Misc/Paths.h"
 
@@ -455,7 +456,12 @@ FInitializeUnrealSharp FCSEmbeddedCoreClrRuntimeHost::StartRuntime()
 		Values.Add(Storage.Add_GetRef(ToUtf8(Property.Value)).GetData());
 	}
 
+#if PLATFORM_ANDROID
+	// Android has no executable path (FPlatformProcess::ExecutablePath is fatal there); like dotnet/android, name the app.
+	const TArray<ANSICHAR> ExecutablePath = ToUtf8(FApp::GetProjectName());
+#else
 	const TArray<ANSICHAR> ExecutablePath = ToUtf8(FPlatformProcess::ExecutablePath());
+#endif
 	void* HostHandle = nullptr;
 	unsigned int DomainId = 0;
 	const int Result = Initialize(ExecutablePath.GetData(), "UnrealSharp", Keys.Num(), Keys.GetData(), Values.GetData(), &HostHandle, &DomainId);
