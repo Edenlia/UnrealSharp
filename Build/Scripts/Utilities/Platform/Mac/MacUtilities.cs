@@ -11,7 +11,8 @@ internal sealed class MacUtilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "osx";
     public override string NativeLibraryExtension => ".dylib";
     public override UnrealArch DefaultArchitecture => UnrealArch.X64;
-    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.CoreClrHostFxr, RuntimeFlavor.NativeAot];
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } =
+        [RuntimeFlavor.CoreClrHostFxr, RuntimeFlavor.NativeAot, RuntimeFlavor.CoreClrEmbedded];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {

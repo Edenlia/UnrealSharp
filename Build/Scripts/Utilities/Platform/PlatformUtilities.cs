@@ -71,6 +71,62 @@ internal abstract class PlatformUtilities
         return nativeLibrary;
     }
 
+    /// <summary>
+    /// Arranges a CoreClrEmbedded publish for this platform and reports what the host must load. The default keeps
+    /// the desktop layout: libcoreclr, the runtime's native libraries and the ReadyToRun composite stay next to the
+    /// managed assemblies, referenced by file name.
+    /// </summary>
+    public virtual CoreClrEmbeddedLayout FinalizeCoreClrEmbedded(string outputDirectory)
+    {
+        string CoreClr = "libcoreclr" + NativeLibraryExtension;
+        if (!File.Exists(Path.Combine(outputDirectory, CoreClr)))
+        {
+            throw new AutomationException($"CoreClrEmbedded publish did not produce '{CoreClr}' in '{outputDirectory}'.");
+        }
+
+        Dictionary<string, string> NativeLibraries = new(StringComparer.Ordinal);
+        Dictionary<string, string> ReadyToRunImages = new(StringComparer.Ordinal);
+        foreach (string Library in Directory.GetFiles(outputDirectory, "*" + NativeLibraryExtension))
+        {
+            string FileName = Path.GetFileName(Library);
+            if (IsHostingLibrary(FileName))
+            {
+                // Desktop self-contained publishes carry hostfxr; the embedded host never loads it.
+                File.Delete(Library);
+            }
+            else if (FileName.EndsWith(".r2r" + NativeLibraryExtension, StringComparison.Ordinal))
+            {
+                ReadyToRunImages[FileName] = FileName;
+            }
+            else if (!IsCoreClrPrivateLibrary(FileName))
+            {
+                NativeLibraries[Path.GetFileNameWithoutExtension(FileName)] = FileName;
+            }
+        }
+
+        // Static archives are only useful when linking the runtime into the executable.
+        foreach (string Archive in Directory.GetFiles(outputDirectory, "*.a"))
+        {
+            File.Delete(Archive);
+        }
+
+        return new CoreClrEmbeddedLayout(CoreClr, NativeLibraries, ReadyToRunImages);
+    }
+
+    /// <summary>Libraries CoreCLR loads itself (or that only debuggers need); p/invokes never bind to them.</summary>
+    protected static bool IsCoreClrPrivateLibrary(string fileName)
+    {
+        string Name = Path.GetFileNameWithoutExtension(fileName);
+        return Name is "libcoreclr" or "libclrjit" or "libmscordaccore" or "libmscordbi" or "libclrgc" or "libclrgcexp";
+    }
+
+    /// <summary>hostfxr and hostpolicy start CoreCLR for the hostfxr layout only.</summary>
+    private static bool IsHostingLibrary(string fileName)
+    {
+        string Name = Path.GetFileNameWithoutExtension(fileName);
+        return Name is "libhostfxr" or "libhostpolicy" or "hostfxr" or "hostpolicy";
+    }
+
     public virtual string GetPublishRoot(BuildCommand command, TargetReceipt receipt)
     {
         return Path.Combine(command.GetUnrealSharpIntermediateDirectory(), "Publish",

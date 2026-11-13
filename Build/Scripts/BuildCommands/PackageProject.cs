@@ -37,6 +37,12 @@ public class PackageProject : BuildCommand
         string[]? UserParams = null)
     {
         public bool NativeAot => Runtime == RuntimeFlavor.NativeAot;
+
+        /// <summary>
+        /// Runtimes other than CoreClrHostFxr publish framework-dependent IL first, then build the final runtime
+        /// image from it in a second stage.
+        /// </summary>
+        public bool UsesSecondStage => Runtime != RuntimeFlavor.CoreClrHostFxr;
     }
 
     public override void ExecuteBuild()
@@ -55,9 +61,10 @@ public class PackageProject : BuildCommand
         string OutputDirectory = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
         string PublishDirectory = OutputDirectory;
 
-        if (options.NativeAot)
+        if (options.UsesSecondStage)
         {
-            PublishDirectory = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), "NativeAOT",
+            string StageFolder = options.NativeAot ? "NativeAOT" : options.Runtime.ToString();
+            PublishDirectory = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), StageFolder,
                 options.TargetType.ToString(), options.TargetPlatform.ToString(),
                 options.TargetArchitecture.ToString(), options.BuildConfiguration.ToString());
         }
@@ -68,7 +75,7 @@ public class PackageProject : BuildCommand
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishDirectory);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
-        if (options.NativeAot)
+        if (options.UsesSecondStage)
         {
             // Both generated glue and user code must bind to the freshly published target.
             Arguments.Add($"-p:UnrealSharpPackageDirectory=\"{PublishDirectory}\"");
@@ -78,7 +85,7 @@ public class PackageProject : BuildCommand
 
         EmitInstalledFlagFile(PublishDirectory);
 
-        if (!options.NativeAot)
+        if (!options.UsesSecondStage)
         {
             RuntimeManifestWriter.Write(PublishDirectory, options.Runtime);
             LoggerUtilities.LogUnrealSharpInfo("Packaging complete. Packaged assemblies published to: " + PublishDirectory);
@@ -86,7 +93,14 @@ public class PackageProject : BuildCommand
         }
 
         CleanBuildArtifacts(OutputDirectory);
-        NativeAOTUtilities.RunAOT(this, options, PublishDirectory, OutputDirectory);
+        if (options.NativeAot)
+        {
+            NativeAOTUtilities.RunAOT(this, options, PublishDirectory, OutputDirectory);
+        }
+        else
+        {
+            CoreClrEmbeddedUtilities.Run(this, options, PublishDirectory, OutputDirectory);
+        }
         EmitInstalledFlagFile(OutputDirectory);
     }
 
@@ -147,6 +161,10 @@ public class PackageProject : BuildCommand
                 throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 target on Windows, a Mac/IOS arm64 target on macOS, or an Android arm64 target. Use JIT for Editor and managed Hot Reload.");
             }
         }
+        else if (options.Runtime == RuntimeFlavor.CoreClrEmbedded)
+        {
+            CoreClrEmbeddedUtilities.Validate(options);
+        }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
         if (!File.Exists(HostFxrPath))
@@ -202,7 +220,8 @@ public class PackageProject : BuildCommand
 
             "-p:UseDefaultOutputPath=true",
 
-            $"-p:PublishSelfContained={(options.NativeAot ? "false" : "true")}",
+            // The second stage brings its own runtime; only the hostfxr layout ships the runtime from this publish.
+            $"-p:PublishSelfContained={(options.UsesSecondStage ? "false" : "true")}",
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",
