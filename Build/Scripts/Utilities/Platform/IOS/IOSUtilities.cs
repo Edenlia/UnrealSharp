@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -32,6 +33,43 @@ internal sealed class IOSUtilities : PlatformUtilities
     public override string FinalizeNativeAOT(string outputDirectory, string nativeLibrary)
     {
         return MoveIntoFramework(outputDirectory, nativeLibrary, FrameworkName, "com.unrealsharp.nativeaot");
+    }
+
+    public override CoreClrEmbeddedLayout FinalizeCoreClrEmbedded(string outputDirectory)
+    {
+        CoreClrEmbeddedLayout Published = base.FinalizeCoreClrEmbedded(outputDirectory);
+
+        // iOS forbids JIT code generation, and the DAC/DBI libraries only serve an attached debugger.
+        foreach (string Library in Directory.GetFiles(outputDirectory, "*" + NativeLibraryExtension))
+        {
+            if (IsCoreClrPrivateLibrary(Path.GetFileName(Library)) && Path.GetFileName(Library) != Published.CoreClrLibrary)
+            {
+                File.Delete(Library);
+            }
+        }
+
+        string CoreClr = MoveIntoFramework(outputDirectory, Published.CoreClrLibrary, "libcoreclr", "com.unrealsharp.coreclr");
+
+        Dictionary<string, string> NativeLibraries = new(StringComparer.Ordinal);
+        foreach ((string Name, string File) in Published.NativeLibraries)
+        {
+            NativeLibraries[Name] = MoveIntoFramework(outputDirectory, File, Name, "com.unrealsharp.coreclr." + ToBundleIdentifierPart(Name));
+        }
+
+        Dictionary<string, string> ReadyToRunImages = new(StringComparer.Ordinal);
+        foreach ((string Composite, string File) in Published.ReadyToRunImages)
+        {
+            string Name = Path.GetFileNameWithoutExtension(File);
+            ReadyToRunImages[Composite] = MoveIntoFramework(outputDirectory, File, Name, "com.unrealsharp.r2r." + ToBundleIdentifierPart(Name));
+        }
+
+        return new CoreClrEmbeddedLayout(CoreClr, NativeLibraries, ReadyToRunImages);
+    }
+
+    private static string ToBundleIdentifierPart(string name)
+    {
+        // Bundle identifiers allow letters, digits, hyphens and periods.
+        return new string(name.Select(Character => char.IsAsciiLetterOrDigit(Character) || Character is '.' or '-' ? Character : '-').ToArray());
     }
 
     /// <summary>
