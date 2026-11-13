@@ -93,8 +93,15 @@ Packaging (`CoreClrEmbeddedUtilities`) is a second stage, like NativeAOT:
 1. The normal publish produces framework-dependent IL for the target RID.
 2. A generated `<Project>.CoreCLR.csproj` (net11.0) republishes it self-contained with the .NET 11 SDK
    (`"CoreClrEmbeddedDotNetRoot"`, `UNREALSHARP_DOTNET11_ROOT`, or the default installation). It trims only the
-   framework (`TrimMode=partial`) and compiles the framework plus every UnrealSharp assembly into one ReadyToRun
-   composite with `PublishReadyToRunContainerFormat=macho`, which the SDK links into a dylib exporting `RTR_HEADER`.
+   framework (`TrimMode=partial`) and compiles it into one ReadyToRun composite with
+   `PublishReadyToRunContainerFormat=macho`, which the SDK links into a dylib exporting `RTR_HEADER`. The
+   `"CoreClrEmbeddedReadyToRun"` setting chooses what else goes into the composite:
+   - `"ExcludeEngineBindings"` (default): UnrealSharp and user assemblies, except the generated engine bindings
+     (`UnrealSharp.dll`), which stay IL and run on the interpreter (JIT on Mac);
+   - `"All"`: every assembly, including the engine bindings.
+
+   For the test project the composite is about 21 MB with the default and 345 MB with `"All"`; the engine bindings
+   alone account for about 320 MB of native code.
 3. The platform arranges the result. Mac keeps the desktop layout: `libcoreclr`, the runtime's native libraries and
    the composite stay next to the managed assemblies.
 
@@ -114,8 +121,8 @@ the v11.0.0 tag in `Managed/DotNetRuntime/inc`. A newer runtime may need them re
 
 ### Known limitations
 
-- Packaged size is large: the composite contains the whole (partially trimmed) framework and every UnrealSharp
-  assembly, about 350 MB for the test project. Trimming UnrealSharp assemblies or a partial composite would reduce it.
+- Engine binding calls are not precompiled by default, which trades speed for about 320 MB of package size. Use
+  `"CoreClrEmbeddedReadyToRun": "All"` when that speed matters more than size.
 - On Mac the process aborts when a thread exits during shutdown. The .NET 11 `libclrjit.dylib` keeps a private
   `operator delete(void*)` but imports `operator new(size_t, nothrow_t)` from libc++. Unreal's executable replaces the
   global `operator new`, and dyld binds the JIT's import to Unreal's allocator, so the JIT frees Unreal-allocated

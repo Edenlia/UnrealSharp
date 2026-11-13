@@ -23,8 +23,8 @@ public sealed record CoreClrEmbeddedLayout(
 
 /// <summary>
 /// Publishes managed code for the CoreClrEmbedded runtime: CoreCLR started through coreclr_initialize, with the
-/// framework and all UnrealSharp assemblies compiled into one platform-native ReadyToRun composite image. On iOS,
-/// code missing from the composite runs on the CoreCLR interpreter.
+/// framework and UnrealSharp assemblies compiled into one platform-native ReadyToRun composite image (see
+/// <see cref="ReadyToRunScope"/>). On iOS, code missing from the composite runs on the CoreCLR interpreter.
 ///
 /// Like NativeAOT this is a second stage. The normal publish produces framework-dependent IL for the target, then a
 /// generated project republishes it self-contained with the .NET 11 SDK, which is the first SDK that ships CoreCLR
@@ -36,6 +36,13 @@ public static class CoreClrEmbeddedUtilities
     private const string TargetFramework = "net11.0";
     private const string DotNetRootSettingName = "CoreClrEmbeddedDotNetRoot";
     private const string DotNetRootEnvironmentVariable = "UNREALSHARP_DOTNET11_ROOT";
+    private const string ReadyToRunSettingName = "CoreClrEmbeddedReadyToRun";
+
+    /// <summary>
+    /// The generated engine bindings. Compiled into the composite they take about 320 MB of the image; left as IL
+    /// they are about 30 MB and run on the interpreter.
+    /// </summary>
+    private const string EngineBindingsAssembly = "UnrealSharp";
 
     /// <summary>Runtime properties the embedded host computes itself; runtimeconfig.json values for them are dropped.</summary>
     private static readonly HashSet<string> HostProperties = new(StringComparer.Ordinal)
@@ -62,7 +69,9 @@ public static class CoreClrEmbeddedUtilities
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture, options.Runtime);
         string ProjectName = command.GetProjectName() + ".CoreCLR";
 
-        string ProjectFile = CreateProject(command, Platform, ProjectName, publishDirectory);
+        ReadyToRunScope Scope = GetReadyToRunScope(command);
+        LoggerUtilities.LogUnrealSharpInfo($"CoreClrEmbedded ReadyToRun scope: {Scope}");
+        string ProjectFile = CreateProject(command, Platform, ProjectName, publishDirectory, Scope);
         Publish(command, ProjectFile, RuntimeIdentifier, outputDirectory);
 
         foreach (string LoadOrder in Directory.GetFiles(publishDirectory, "*.LoadOrder.json"))
@@ -112,7 +121,33 @@ public static class CoreClrEmbeddedUtilities
         }
     }
 
-    private static string CreateProject(BuildCommand command, PlatformUtilities platform, string projectName, string directory)
+    /// <summary>Which assemblies are precompiled into the ReadyToRun composite.</summary>
+    public enum ReadyToRunScope
+    {
+        /// <summary>Everything except the generated engine bindings, which stay IL and run on the interpreter.</summary>
+        ExcludeEngineBindings,
+
+        /// <summary>The framework and every UnrealSharp and user assembly.</summary>
+        All,
+    }
+
+    /// <summary>Reads the "CoreClrEmbeddedReadyToRun" setting ("ExcludeEngineBindings" by default, or "All").</summary>
+    public static ReadyToRunScope GetReadyToRunScope(BuildCommand command)
+    {
+        if (!command.TryGetElement(ReadyToRunSettingName, out JsonElement Setting) || Setting.ValueKind == JsonValueKind.Null)
+        {
+            return ReadyToRunScope.ExcludeEngineBindings;
+        }
+        if (Setting.ValueKind == JsonValueKind.String &&
+            Enum.TryParse(Setting.GetString(), ignoreCase: true, out ReadyToRunScope Scope) && Enum.IsDefined(Scope))
+        {
+            return Scope;
+        }
+        throw new AutomationException($"\"{ReadyToRunSettingName}\" must be one of: {string.Join(", ", Enum.GetNames<ReadyToRunScope>())}.");
+    }
+
+    private static string CreateProject(BuildCommand command, PlatformUtilities platform, string projectName, string directory,
+        ReadyToRunScope scope)
     {
         XmlDocument Document = new XmlDocument();
         XmlElement Project = Document.CreateElement("Project");
@@ -209,6 +244,13 @@ public static class CoreClrEmbeddedUtilities
             XmlElement TrimmerRootAssembly = Document.CreateElement("TrimmerRootAssembly");
             TrimmerRootAssembly.SetAttribute("Include", Root);
             ItemGroup.AppendChild(TrimmerRootAssembly);
+        }
+
+        if (scope == ReadyToRunScope.ExcludeEngineBindings)
+        {
+            XmlElement Exclude = Document.CreateElement("PublishReadyToRunExclude");
+            Exclude.SetAttribute("Include", EngineBindingsAssembly + ".dll");
+            ItemGroup.AppendChild(Exclude);
         }
 
         string ProjectFile = Path.Combine(directory, projectName + ".csproj");
