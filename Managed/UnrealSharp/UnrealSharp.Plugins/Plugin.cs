@@ -42,7 +42,7 @@ public class Plugin
         }
         else
         {
-            _loadContext = new PluginLoadContext(assemblyName.Name!, new AssemblyDependencyResolver(assemblyPath), isCollectible);
+            _loadContext = new PluginLoadContext(assemblyName.Name!, PluginLoadContext.CreateDependencyResolver(assemblyPath), isCollectible);
         }
 #endif
     }
