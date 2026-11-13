@@ -95,6 +95,11 @@ internal sealed class IOSUtilities : PlatformUtilities
         // Let the final Xcode packaging step embed and sign the framework with the app's identity.
         RunXcrun("install_name_tool", "-id", $"@rpath/{frameworkName}.framework/{frameworkName}", FrameworkBinary);
 
+        // Libraries from the .NET runtime pack carry an ad-hoc signature whose identifier is the file name. Xcode keeps
+        // that identifier when it re-signs embedded frameworks, and iOS refuses to install a framework whose signing
+        // identifier differs from its bundle identifier.
+        RunXcrun("codesign", "--force", "--sign", "-", "--identifier", bundleIdentifier, FrameworkBinary);
+
         File.WriteAllText(Path.Combine(FrameworkDirectory, "Info.plist"), $$"""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
