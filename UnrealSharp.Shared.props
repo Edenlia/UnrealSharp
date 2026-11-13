@@ -1,4 +1,8 @@
 <Project>
+  <PropertyGroup Condition="'$(UnrealSharpTargetProps)' == '' and '$(SolutionDir)' != '' and Exists('$(SolutionDir)/.vs/UnrealSharp.Target.props')">
+    <UnrealSharpTargetProps>$(SolutionDir)/.vs/UnrealSharp.Target.props</UnrealSharpTargetProps>
+  </PropertyGroup>
+  <Import Project="$(UnrealSharpTargetProps)" Condition="'$(UnrealSharpTargetRoot)' == '' and '$(UnrealSharpTargetProps)' != '' and Exists('$(UnrealSharpTargetProps)')" />
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\..\</SolutionDir>
@@ -6,43 +10,54 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <LangVersion>latest</LangVersion>
+    <IsAotCompatible Condition="'$(BuildingAOT)' == 'true'">true</IsAotCompatible>
+    <UnrealSharpBindingsDirectory Condition="'$(UnrealSharpBindingsDirectory)' == ''">$(UnrealSharpPluginDir)Binaries/Managed/$(TargetFramework)</UnrealSharpBindingsDirectory>
+    <UnrealSharpAnalyzersDirectory Condition="'$(UnrealSharpBindingsRoot)' != ''">$(UnrealSharpBindingsRoot)/netstandard2.0</UnrealSharpAnalyzersDirectory>
+    <UnrealSharpAnalyzersDirectory Condition="'$(UnrealSharpAnalyzersDirectory)' == ''">$(UnrealSharpPluginDir)Binaries/Managed/netstandard2.0</UnrealSharpAnalyzersDirectory>
   </PropertyGroup>
   
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.AOT.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.AOT.props')" />
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.Build.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.Build.props')" />
+  <Import Project="$(UnrealSharpEngineGlue)/UE5Rules.Defines.props" Condition="'$(UnrealSharpEngineGlue)' != '' and Exists('$(UnrealSharpEngineGlue)/UE5Rules.Defines.props')" />
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(UnrealSharpBuildingFramework)' != 'true'">
   
     <Reference Include="UnrealSharp">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.dll</HintPath>
+      <HintPath>$(UnrealSharpBindingsDirectory)/UnrealSharp.dll</HintPath>
+    </Reference>
+
+    <!-- Merged bindings are built before project glue, just like UnrealSharp.dll. -->
+    <Reference Include="_MergedEnginePlugin" Condition="'$(UnrealSharpReferencesMergedBindings)' == 'true' and '$(MSBuildProjectName)' != '_MergedEnginePlugin'">
+      <HintPath>$(UnrealSharpUserAssemblyDirectory)/_MergedEnginePlugin.dll</HintPath>
     </Reference>
 	
 	<Reference Include="UnrealSharp.Binds">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Binds.dll</HintPath>
+      <HintPath>$(UnrealSharpBindingsDirectory)/UnrealSharp.Binds.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Core">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Core.dll</HintPath>
+      <HintPath>$(UnrealSharpBindingsDirectory)/UnrealSharp.Core.dll</HintPath>
     </Reference>
 	
     <Reference Include="UnrealSharp.Log">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Log.dll</HintPath>
+      <HintPath>$(UnrealSharpBindingsDirectory)/UnrealSharp.Log.dll</HintPath>
     </Reference>
 
     <Reference Include="UnrealSharp.Plugins">
-      <HintPath>$(UnrealSharpPluginDir)Binaries\Managed\$(TargetFramework)\UnrealSharp.Plugins.dll</HintPath>
+      <HintPath>$(UnrealSharpBindingsDirectory)/UnrealSharp.Plugins.dll</HintPath>
     </Reference>
     
   </ItemGroup>
 
-  <ItemGroup Condition="'$(SkipIncludeAnalyzers)' == ''">
-    <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\Newtonsoft.Json.dll" Private="false" CopyToPublishDirectory="Never" />
-    <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\UnrealSharp.GlueGenerator.dll" Private="false" CopyToPublishDirectory="Never" />
-    <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\UnrealSharp.Analyzers.dll" Private="false" CopyToPublishDirectory="Never" />
-    <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\UnrealSharp.CodeFixer.dll" Private="false" CopyToPublishDirectory="Never" />
+  <ItemGroup Condition="'$(SkipIncludeAnalyzers)' == '' and '$(UnrealSharpBuildingFramework)' != 'true'">
+    <Analyzer Include="$(UnrealSharpAnalyzersDirectory)/Newtonsoft.Json.dll" Private="false" CopyToPublishDirectory="Never" />
+    <Analyzer Include="$(UnrealSharpAnalyzersDirectory)/UnrealSharp.GlueGenerator.dll" Private="false" CopyToPublishDirectory="Never" />
+    <Analyzer Include="$(UnrealSharpAnalyzersDirectory)/UnrealSharp.Analyzers.dll" Private="false" CopyToPublishDirectory="Never" />
+    <Analyzer Include="$(UnrealSharpAnalyzersDirectory)/UnrealSharp.CodeFixer.dll" Private="false" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Analyzer Include="$(UnrealSharpPluginDir)Binaries\Managed\netstandard2.0\UnrealSharp.SourceGenerators.dll" Private="false" CopyToPublishDirectory="Never" />
+  <ItemGroup Condition="'$(UnrealSharpBuildingFramework)' != 'true'">
+    <Analyzer Include="$(UnrealSharpAnalyzersDirectory)/UnrealSharp.SourceGenerators.dll" Private="false" CopyToPublishDirectory="Never" />
   </ItemGroup>
+  <Import Project="$(UnrealSharpTargetRoot)/UnrealSharp.References.targets" Condition="'$(UnrealSharpTargetRoot)' != '' and Exists('$(UnrealSharpTargetRoot)/UnrealSharp.References.targets')" />
 </Project>
