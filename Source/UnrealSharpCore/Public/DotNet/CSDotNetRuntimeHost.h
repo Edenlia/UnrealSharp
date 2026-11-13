@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 
-#include "HAL/PlatformProcess.h"
 #include "Runtime/CSRuntimeTypes.h"
 #include "Templates/UniquePtr.h"
 
@@ -15,10 +14,8 @@ public:
 	~FCSDotNetRuntimeHost();
 
 	bool InitializeManagedRuntime();
-	bool IsNativeAOT() const { return NativeAotLibrary != nullptr; }
+	bool IsNativeAOT() const;
 
 private:
-	TUniquePtr<FCSRuntimeHost> JitHost;
-	// NativeAOT does not support unloading. Keep this library loaded until process exit.
-	void* NativeAotLibrary = nullptr;
+	TUniquePtr<FCSRuntimeHost> Host;
 };
