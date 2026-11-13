@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -37,11 +38,19 @@ internal abstract class PlatformUtilities
     public abstract string DotNetPlatformIdentifier { get; }
     public abstract string NativeLibraryExtension { get; }
     public abstract UnrealArch DefaultArchitecture { get; }
-    public abstract bool RequiresNativeAOT { get; }
+
+    /// <summary>Runtimes this platform can package, the default first.</summary>
+    public abstract IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; }
+    public RuntimeFlavor DefaultRuntime => SupportedRuntimes[0];
+
     public abstract bool SupportsNativeAOT(UnrealArch architecture);
 
-    public virtual void ValidatePackagingMode(bool nativeAot)
+    public void ValidateRuntime(UnrealTargetPlatform platform, RuntimeFlavor runtime)
     {
+        if (!SupportedRuntimes.Contains(runtime))
+        {
+            throw new NotSupportedException($"{platform} cannot package the {runtime} runtime. Supported runtimes: {string.Join(", ", SupportedRuntimes)}.");
+        }
     }
 
     public virtual void ConfigureNativeAOTProject(Action<string, string> setProperty)

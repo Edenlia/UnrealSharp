@@ -15,19 +15,12 @@ internal sealed class AndroidUtilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "linux-bionic";
     public override string NativeLibraryExtension => ".so";
     public override UnrealArch DefaultArchitecture => UnrealArch.Arm64;
-    public override bool RequiresNativeAOT => true;
+    // UnrealSharp does not ship a CoreCLR host for Android yet; NativeAOT is the only packaged runtime.
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {
         return architecture == UnrealArch.Arm64;
-    }
-
-    public override void ValidatePackagingMode(bool nativeAot)
-    {
-        if (!nativeAot)
-        {
-            throw new NotSupportedException("Android requires NativeAOT; JIT packaging is not supported.");
-        }
     }
 
     public override void ConfigureNativeAOTProject(Action<string, string> setProperty)

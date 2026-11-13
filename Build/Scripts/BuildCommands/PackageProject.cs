@@ -138,10 +138,7 @@ public class PackageProject : BuildCommand
         }
 
         PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
-        if (options.Runtime == RuntimeFlavor.CoreClrEmbedded)
-        {
-            throw new NotSupportedException("Packaging for the CoreClrEmbedded runtime is not supported yet.");
-        }
+        Platform.ValidateRuntime(options.TargetPlatform, options.Runtime);
         if (options.NativeAot)
         {
             if (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture))
@@ -149,8 +146,6 @@ public class PackageProject : BuildCommand
                 throw new NotSupportedException("NativeAOT requires a non-Editor Win64 x64 target on Windows, a Mac/IOS arm64 target on macOS, or an Android arm64 target. Use JIT for Editor and managed Hot Reload.");
             }
         }
-
-        Platform.ValidatePackagingMode(options.NativeAot);
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
         if (!File.Exists(HostFxrPath))

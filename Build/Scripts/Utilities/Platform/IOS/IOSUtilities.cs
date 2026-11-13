@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using AutomationTool;
@@ -14,19 +15,12 @@ internal sealed class IOSUtilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "ios";
     public override string NativeLibraryExtension => ".dylib";
     public override UnrealArch DefaultArchitecture => UnrealArch.Arm64;
-    public override bool RequiresNativeAOT => true;
+    // iOS forbids JIT compilation, so hostfxr-based JIT packages cannot run there.
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {
         return OperatingSystem.IsMacOS() && architecture == UnrealArch.Arm64;
-    }
-
-    public override void ValidatePackagingMode(bool nativeAot)
-    {
-        if (!nativeAot)
-        {
-            throw new NotSupportedException("iOS requires NativeAOT; JIT packaging is not supported.");
-        }
     }
 
     public override void ConfigureNativeAOTProject(Action<string, string> setProperty)

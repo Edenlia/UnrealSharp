@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -10,7 +11,7 @@ internal sealed class MacUtilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "osx";
     public override string NativeLibraryExtension => ".dylib";
     public override UnrealArch DefaultArchitecture => UnrealArch.X64;
-    public override bool RequiresNativeAOT => false;
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.CoreClrHostFxr, RuntimeFlavor.NativeAot];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {

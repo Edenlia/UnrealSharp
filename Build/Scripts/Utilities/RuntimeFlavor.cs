@@ -91,7 +91,7 @@ public static class RuntimeFlavorUtilities
             return RuntimeFlavor.NativeAot;
         }
 
-        return platformUtilities.RequiresNativeAOT ? RuntimeFlavor.NativeAot : RuntimeFlavor.CoreClrHostFxr;
+        return platformUtilities.DefaultRuntime;
     }
 
     private static string? GetPlatformRuntime(JsonElement setting, UnrealTargetPlatform platform)
