@@ -13,6 +13,9 @@
 #if UNREALSHARP_WITH_NATIVEAOT_HOST
 #include "Runtime/NativeAot/CSNativeAotRuntimeHost.h"
 #endif
+#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+#include "Runtime/CoreClrEmbedded/CSEmbeddedCoreClrRuntimeHost.h"
+#endif
 
 using namespace UnrealSharp;
 
@@ -47,7 +50,11 @@ namespace
 			break;
 #endif
 		case ECSRuntimeKind::CoreClrEmbedded:
+#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+			return MakeUnique<FCSEmbeddedCoreClrRuntimeHost>(Manifest, ManagedDirectory);
+#else
 			break;
+#endif
 		}
 
 		UE_LOGFMT(LogUnrealSharp, Fatal, "Runtime kind {0} from {1} is not available in this build.", LexToString(Manifest.Kind), Manifest.SourcePath);
