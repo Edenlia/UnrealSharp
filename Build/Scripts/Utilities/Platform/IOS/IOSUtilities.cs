@@ -31,37 +31,50 @@ internal sealed class IOSUtilities : PlatformUtilities
 
     public override string FinalizeNativeAOT(string outputDirectory, string nativeLibrary)
     {
-        string FrameworkDirectory = Path.Combine(outputDirectory, "Frameworks", FrameworkName + ".framework");
+        return MoveIntoFramework(outputDirectory, nativeLibrary, FrameworkName, "com.unrealsharp.nativeaot");
+    }
+
+    /// <summary>
+    /// Moves a published dylib into Frameworks/&lt;name&gt;.framework, because App Store apps may only load dynamic
+    /// libraries from embedded frameworks. Returns the reference relative to the app's Frameworks directory.
+    /// </summary>
+    private static string MoveIntoFramework(string outputDirectory, string dylib, string frameworkName, string bundleIdentifier)
+    {
+        string FrameworkDirectory = Path.Combine(outputDirectory, "Frameworks", frameworkName + ".framework");
         Directory.CreateDirectory(FrameworkDirectory);
-        string FrameworkBinary = Path.Combine(FrameworkDirectory, FrameworkName);
-        File.Move(Path.Combine(outputDirectory, nativeLibrary), FrameworkBinary);
+        string FrameworkBinary = Path.Combine(FrameworkDirectory, frameworkName);
+        File.Move(Path.Combine(outputDirectory, dylib), FrameworkBinary);
 
         // Let the final Xcode packaging step embed and sign the framework with the app's identity.
-        ProcessStartInfo StartInfo = new("/usr/bin/xcrun") { UseShellExecute = false };
-        foreach (string Argument in new[] { "install_name_tool", "-id",
-                     $"@rpath/{FrameworkName}.framework/{FrameworkName}", FrameworkBinary })
-        {
-            StartInfo.ArgumentList.Add(Argument);
-        }
-        using Process Process = Process.Start(StartInfo) ?? throw new AutomationException("Could not run install_name_tool.");
-        Process.WaitForExit();
-        if (Process.ExitCode != 0) throw new AutomationException($"install_name_tool failed with exit code {Process.ExitCode}.");
+        RunXcrun("install_name_tool", "-id", $"@rpath/{frameworkName}.framework/{frameworkName}", FrameworkBinary);
 
         File.WriteAllText(Path.Combine(FrameworkDirectory, "Info.plist"), $$"""
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             <plist version="1.0"><dict>
-              <key>CFBundleName</key><string>{{FrameworkName}}</string>
-              <key>CFBundleIdentifier</key><string>com.unrealsharp.nativeaot</string>
+              <key>CFBundleName</key><string>{{frameworkName}}</string>
+              <key>CFBundleIdentifier</key><string>{{bundleIdentifier}}</string>
               <key>CFBundleVersion</key><string>1.0</string>
               <key>CFBundleShortVersionString</key><string>1.0</string>
-              <key>CFBundleExecutable</key><string>{{FrameworkName}}</string>
+              <key>CFBundleExecutable</key><string>{{frameworkName}}</string>
               <key>CFBundlePackageType</key><string>FMWK</string>
             </dict></plist>
             """);
 
         // Relative to the app's Frameworks directory, where Xcode embeds the framework.
-        return $"{FrameworkName}.framework/{FrameworkName}";
+        return $"{frameworkName}.framework/{frameworkName}";
+    }
+
+    private static void RunXcrun(params string[] arguments)
+    {
+        ProcessStartInfo StartInfo = new("/usr/bin/xcrun") { UseShellExecute = false };
+        foreach (string Argument in arguments)
+        {
+            StartInfo.ArgumentList.Add(Argument);
+        }
+        using Process Process = Process.Start(StartInfo) ?? throw new AutomationException($"Could not run {arguments[0]}.");
+        Process.WaitForExit();
+        if (Process.ExitCode != 0) throw new AutomationException($"{arguments[0]} failed with exit code {Process.ExitCode}.");
     }
 
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory)
