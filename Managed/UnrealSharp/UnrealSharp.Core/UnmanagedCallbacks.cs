@@ -27,7 +27,7 @@ public static class UnmanagedCallbacks
         }
         catch (Exception ex)
         {
-            LogUnrealSharpCore.LogError($"Failed to create new managed object: {ex.Message}");
+            LogUnrealSharpCore.LogError($"Failed to create new managed object: {ex}");
             *error = (char*)Marshal.StringToHGlobalUni(ex.ToString());
         }
 
@@ -73,7 +73,7 @@ public static class UnmanagedCallbacks
         }
         catch (Exception ex)
         {
-            LogUnrealSharpCore.LogError($"Failed to create new managed object: {ex.Message}");
+            LogUnrealSharpCore.LogError($"Failed to create new managed object wrapper: {ex}");
         }
 
         return IntPtr.Zero;
@@ -149,7 +149,7 @@ public static class UnmanagedCallbacks
         }
         catch (Exception e)
         {
-            LogUnrealSharpCore.LogError($"Exception while trying to initialize struct: {e.Message}");
+            LogUnrealSharpCore.LogError($"Exception while trying to initialize struct: {e}");
         }
     }
     
