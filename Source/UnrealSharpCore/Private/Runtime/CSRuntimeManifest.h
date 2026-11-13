@@ -11,8 +11,12 @@
  *   "Version": 1,
  *   "Kind": "CoreClrHostFxr" | "CoreClrEmbedded" | "NativeAot",
  *   "Library": "<optional native library the host loads>",
- *   "Properties": { "<runtime property>": "<value>" }
+ *   "Properties": { "<runtime property>": "<value>" },
+ *   "NativeLibraries": { "<p/invoke library name>": "<library reference>" },
+ *   "ReadyToRunImages": { "<composite image name>": "<library reference>" }
  * }
+ *
+ * Library references use the platform convention of PlatformUtilities::ResolveBundledLibraryPath.
  */
 struct FCSRuntimeManifest
 {
@@ -24,6 +28,10 @@ struct FCSRuntimeManifest
 	ECSRuntimeKind Kind = ECSRuntimeKind::CoreClrHostFxr;
 	FString Library;
 	TMap<FString, FString> Properties;
+	/** Native libraries that p/invokes by these names must bind to (for runtimes without a probing host). */
+	TMap<FString, FString> NativeLibraries;
+	/** Platform-native ReadyToRun composite images, keyed by the composite name recorded in component assemblies. */
+	TMap<FString, FString> ReadyToRunImages;
 	/** File the manifest was read from, for diagnostics. */
 	FString SourcePath;
 

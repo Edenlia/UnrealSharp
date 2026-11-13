@@ -22,6 +22,28 @@ namespace
 		}
 		return false;
 	}
+
+	/** Reads an optional object of string values. Returns false (after logging) if it has a non-string value. */
+	bool ReadStringMap(const FJsonObject& Root, const TCHAR* FieldName, const FString& ManifestPath, TMap<FString, FString>& OutMap)
+	{
+		const TSharedPtr<FJsonObject>* Object = nullptr;
+		if (!Root.TryGetObjectField(FieldName, Object))
+		{
+			return true;
+		}
+
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Entry : (*Object)->Values)
+		{
+			FString Value;
+			if (!Entry.Value.IsValid() || !Entry.Value->TryGetString(Value))
+			{
+				UE_LOGFMT(LogUnrealSharp, Fatal, "'{0}.{1}' in {2} must be a string", FieldName, Entry.Key, ManifestPath);
+				return false;
+			}
+			OutMap.Add(Entry.Key, MoveTemp(Value));
+		}
+		return true;
+	}
 }
 
 TOptional<FCSRuntimeManifest> FCSRuntimeManifest::Load(const FString& ManagedDirectory)
@@ -75,19 +97,11 @@ TOptional<FCSRuntimeManifest> FCSRuntimeManifest::Load(const FString& ManagedDir
 
 	Root->TryGetStringField(TEXT("Library"), Manifest.Library);
 
-	const TSharedPtr<FJsonObject>* Properties = nullptr;
-	if (Root->TryGetObjectField(TEXT("Properties"), Properties))
+	if (!ReadStringMap(*Root, TEXT("Properties"), ManifestPath, Manifest.Properties)
+		|| !ReadStringMap(*Root, TEXT("NativeLibraries"), ManifestPath, Manifest.NativeLibraries)
+		|| !ReadStringMap(*Root, TEXT("ReadyToRunImages"), ManifestPath, Manifest.ReadyToRunImages))
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Property : (*Properties)->Values)
-		{
-			FString Value;
-			if (!Property.Value.IsValid() || !Property.Value->TryGetString(Value))
-			{
-				UE_LOGFMT(LogUnrealSharp, Fatal, "Runtime property '{0}' in {1} must be a string", Property.Key, ManifestPath);
-				return {};
-			}
-			Manifest.Properties.Add(Property.Key, MoveTemp(Value));
-		}
+		return {};
 	}
 
 	return Manifest;
