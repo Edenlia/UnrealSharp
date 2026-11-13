@@ -136,6 +136,11 @@ public static class DotNetUtilities
 
 	public static DotnetVersionInfo ParseLatestDotnetVersionsInDirectory(string directory)
 	{
+		return ParseLatestDotnetVersionsInDirectory(directory, DotnetMajorVersion);
+	}
+
+	public static DotnetVersionInfo ParseLatestDotnetVersionsInDirectory(string directory, int majorVersion)
+	{
 		string[] FolderPaths = Directory.GetDirectories(directory);
 
 		string? VersionName = null;
@@ -152,7 +157,7 @@ public static class DotNetUtilities
 				continue;
 			}
 
-			if (ParsedVersion.Major != DotnetMajorVersion)
+			if (ParsedVersion.Major != majorVersion)
 			{
 				continue;
 			}
@@ -168,7 +173,7 @@ public static class DotNetUtilities
 
 		if (VersionName == null)
 		{
-			throw new Exception($"Couldn't find .NET SDK version {DotnetMajorVersion}.x in {DotNetSdkDirectory}");
+			throw new Exception($"Couldn't find .NET version {majorVersion}.x in {directory}");
 		}
 		
 		return new DotnetVersionInfo
@@ -178,6 +183,29 @@ public static class DotNetUtilities
 		};
 	}
 	
+	/// <summary>
+	/// Finds the newest SDK with the given major version in a .NET installation (the default installation when
+	/// <paramref name="dotnetRoot"/> is null) and returns its muxer and SDK directory.
+	/// </summary>
+	public static (string Executable, string SdkPath) FindSdk(int majorVersion, string? dotnetRoot = null)
+	{
+		string Root = string.IsNullOrEmpty(dotnetRoot) ? DotnetFolder : dotnetRoot;
+		string Executable = Path.Combine(Root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+		if (!File.Exists(Executable))
+		{
+			throw new FileNotFoundException($"No dotnet executable in the .NET installation '{Root}'.", Executable);
+		}
+
+		string SdkDirectory = Path.Combine(Root, "sdk");
+		if (!Directory.Exists(SdkDirectory))
+		{
+			throw new DirectoryNotFoundException($"The .NET installation '{Root}' contains no SDKs.");
+		}
+
+		DotnetVersionInfo Sdk = ParseLatestDotnetVersionsInDirectory(SdkDirectory, majorVersion);
+		return (Executable, Path.Combine(SdkDirectory, Sdk.VersionName));
+	}
+
 	public static string LatestHostFxrPath
 	{
 		get
