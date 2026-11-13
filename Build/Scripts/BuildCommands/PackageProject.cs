@@ -80,6 +80,7 @@ public class PackageProject : BuildCommand
 
         if (!options.NativeAot)
         {
+            RuntimeManifestWriter.Write(PublishDirectory, options.Runtime);
             LoggerUtilities.LogUnrealSharpInfo("Packaging complete. Packaged assemblies published to: " + PublishDirectory);
             return;
         }

@@ -62,6 +62,10 @@ internal abstract class PlatformUtilities
         return null;
     }
 
+    /// <summary>
+    /// Arranges the published NativeAOT library for this platform and returns the reference the native plugin
+    /// resolves at runtime (see PlatformUtilities::ResolveBundledLibraryPath in UnrealSharpUtilities).
+    /// </summary>
     public virtual string FinalizeNativeAOT(string outputDirectory, string nativeLibrary)
     {
         return nativeLibrary;

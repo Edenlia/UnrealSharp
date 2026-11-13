@@ -31,8 +31,8 @@ public static class NativeAOTUtilities
 		{
 			File.Copy(Manifest, Path.Combine(outputDirectory, Path.GetFileName(Manifest)), true);
 		}
-		NativeLibrary = Platform.FinalizeNativeAOT(outputDirectory, NativeLibrary);
-		File.WriteAllText(Path.Combine(outputDirectory, "UnrealSharp.NativeAOT"), NativeLibrary);
+		string LibraryReference = Platform.FinalizeNativeAOT(outputDirectory, NativeLibrary);
+		RuntimeManifestWriter.Write(outputDirectory, RuntimeFlavor.NativeAot, LibraryReference);
 		LoggerUtilities.LogUnrealSharpInfo("NativeAOT packaging complete. Native library published to: " + outputDirectory);
 	}
 

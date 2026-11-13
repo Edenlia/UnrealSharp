@@ -60,7 +60,8 @@ internal sealed class IOSUtilities : PlatformUtilities
             </dict></plist>
             """);
 
-        return $"Frameworks/{FrameworkName}.framework/{FrameworkName}";
+        // Relative to the app's Frameworks directory, where Xcode embeds the framework.
+        return $"{FrameworkName}.framework/{FrameworkName}";
     }
 
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory)
