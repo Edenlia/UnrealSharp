@@ -16,9 +16,16 @@ DEFINE_LOG_CATEGORY(LogUnrealSharp);
 FUnrealSharpCoreModule::FUnrealSharpCoreModule() = default;
 FUnrealSharpCoreModule::~FUnrealSharpCoreModule() = default;
 
-bool FUnrealSharpCoreModule::IsNativeAOT() const
+ECSRuntimeKind FUnrealSharpCoreModule::GetRuntimeKind() const
 {
-	return RuntimeHost && RuntimeHost->GetKind() == ECSRuntimeKind::NativeAot;
+	check(RuntimeHost);
+	return RuntimeHost->GetKind();
+}
+
+FCSRuntimeCapabilities FUnrealSharpCoreModule::GetRuntimeCapabilities() const
+{
+	check(RuntimeHost);
+	return RuntimeHost->GetCapabilities();
 }
 
 void FUnrealSharpCoreModule::StartupModule()

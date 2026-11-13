@@ -27,7 +27,7 @@ void UCSManagedAssembly::Initialize(const FStringView InAssemblyPath, bool bInIs
 	AssemblyFilePath.ReplaceInline(TEXT("/"), TEXT("\\"));
 #endif
 
-	bIsCollectible = bInIsCollectible && !FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT();
+	bIsCollectible = bInIsCollectible && FUnrealSharpCoreModule::Get().GetRuntimeCapabilities().bSupportsCollectibleLoadContexts;
 
 	FOnManagedTypeStructureChanged::FDelegate Delegate = FOnManagedTypeStructureChanged::FDelegate::CreateUObject(
 		this, &UCSManagedAssembly::OnTypeReflectionDataChanged);
@@ -44,8 +44,8 @@ bool UCSManagedAssembly::LoadAssembly()
 		return true;
 	}
 
-	// AOT manifests name assemblies embedded in the native library, without separate DLLs.
-	if (!FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT()
+	// Prelinked runtimes (NativeAOT) name assemblies embedded in the native image, without separate DLLs.
+	if (!FUnrealSharpCoreModule::Get().GetRuntimeCapabilities().bAssembliesArePrelinked
 		&& !FPaths::FileExists(AssemblyFilePath))
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Assembly path does not exist: {0}", AssemblyFilePath);

@@ -17,7 +17,19 @@ public:
 
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
-	bool IsNativeAOT() const;
+
+	/** Kind of the runtime this process started. Only meaningful after the module has started up. */
+	ECSRuntimeKind GetRuntimeKind() const;
+	/** What the active runtime supports. Prefer this over checking GetRuntimeKind(). */
+	FCSRuntimeCapabilities GetRuntimeCapabilities() const;
+
+	static FUnrealSharpCoreModule& Get()
+	{
+		return FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore"));
+	}
+
+	UE_DEPRECATED(5.6, "Test GetRuntimeCapabilities() for the behavior you need instead.")
+	bool IsNativeAOT() const { return GetRuntimeCapabilities().bAssembliesArePrelinked; }
 private:
 	TUniquePtr<FCSRuntimeHost> RuntimeHost;
 };
