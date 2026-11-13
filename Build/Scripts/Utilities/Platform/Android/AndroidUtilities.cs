@@ -11,17 +11,33 @@ namespace UnrealSharp.Automation.Utilities.Platform.Android;
 internal sealed class AndroidUtilities : PlatformUtilities
 {
     private const string NativeLibraryName = "libUnrealSharp.AOT.so";
+    private const string CryptoLibraryName = "libSystem.Security.Cryptography.Native.Android";
 
+    // NativeAOT publishes for linux-bionic; CoreCLR for Android apps uses the android RID (see GetDotNetPlatformIdentifier).
     public override string DotNetPlatformIdentifier => "linux-bionic";
     public override string NativeLibraryExtension => ".so";
     public override UnrealArch DefaultArchitecture => UnrealArch.Arm64;
-    // UnrealSharp does not ship a CoreCLR host for Android yet; NativeAOT is the only packaged runtime.
-    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot];
+    // NativeAOT stays the default. CoreClrEmbedded runs CoreCLR with its JIT, started without hostfxr.
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.NativeAot, RuntimeFlavor.CoreClrEmbedded];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {
         return architecture == UnrealArch.Arm64;
     }
+
+    public override bool SupportsCoreClrEmbedded(UnrealArch architecture)
+    {
+        return architecture == UnrealArch.Arm64;
+    }
+
+    public override string GetDotNetPlatformIdentifier(RuntimeFlavor runtime)
+    {
+        // The android runtime pack is CoreCLR without hostfxr, and its crypto library uses the Android platform APIs.
+        return runtime == RuntimeFlavor.CoreClrEmbedded ? "android" : DotNetPlatformIdentifier;
+    }
+
+    // Code is compiled on the device by the JIT.
+    public override bool CoreClrEmbeddedReadyToRun => false;
 
     public override void ConfigureNativeAOTProject(Action<string, string> setProperty)
     {
@@ -61,7 +77,32 @@ internal sealed class AndroidUtilities : PlatformUtilities
     public override string FinalizeNativeAOT(string outputDirectory, string nativeLibrary)
     {
         File.Move(Path.Combine(outputDirectory, nativeLibrary), Path.Combine(outputDirectory, NativeLibraryName), true);
+        CopyNativeLibraries(outputDirectory);
+        return NativeLibraryName;
+    }
 
+    public override CoreClrEmbeddedLayout FinalizeCoreClrEmbedded(string outputDirectory)
+    {
+        CoreClrEmbeddedLayout Published = base.FinalizeCoreClrEmbedded(outputDirectory);
+        CopyNativeLibraries(outputDirectory);
+
+        // The crypto library calls into Java; UPL packages its classes (the jar; the dex is a prebuilt copy).
+        string Jar = Path.Combine(outputDirectory, CryptoLibraryName + ".jar");
+        if (File.Exists(Jar))
+        {
+            string JavaDirectory = Path.Combine(outputDirectory, "Java");
+            Directory.CreateDirectory(JavaDirectory);
+            File.Move(Jar, Path.Combine(JavaDirectory, Path.GetFileName(Jar)), true);
+        }
+        File.Delete(Path.Combine(outputDirectory, CryptoLibraryName + ".dex"));
+
+        // Assemblies stay in the pak; the host reads them through the Unreal file system.
+        return Published with { AssemblySource = RuntimeAssemblySource.Probe };
+    }
+
+    /// <summary>Copies every published library into Native/, which UPL packages as the APK's native libraries.</summary>
+    private static void CopyNativeLibraries(string outputDirectory)
+    {
         // APK native libraries share one linker namespace, including NuGet runtime assets.
         string NativeDirectory = Path.Combine(outputDirectory, "Native");
         Directory.CreateDirectory(NativeDirectory);
@@ -78,7 +119,6 @@ internal sealed class AndroidUtilities : PlatformUtilities
                 File.Copy(Library, Path.Combine(NativeDirectory, Name));
             }
         }
-        return NativeLibraryName;
     }
 
     public override string GetPublishRoot(BuildCommand command, TargetReceipt receipt)
@@ -95,11 +135,12 @@ internal sealed class AndroidUtilities : PlatformUtilities
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory,
         StagedDirectoryReference stageDirectory)
     {
-        // Native libraries are packaged by UPL; metadata and content use Unreal's UFS.
+        // Native libraries and Java classes are packaged by UPL; assemblies, metadata and content use Unreal's UFS.
         var Content = Directory.EnumerateFiles(publishDirectory.FullName, "*", SearchOption.AllDirectories)
             .Where(file => !file.EndsWith(".so", StringComparison.OrdinalIgnoreCase) &&
                 !file.EndsWith(".dbg", StringComparison.OrdinalIgnoreCase) &&
-                !file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase))
+                !file.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) &&
+                !file.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))
             .Select(file => new FileReference(file));
         context.StageFiles(StagedFileType.UFS, publishDirectory, Content, stageDirectory);
     }

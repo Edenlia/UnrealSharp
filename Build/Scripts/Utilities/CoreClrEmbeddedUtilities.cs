@@ -60,7 +60,7 @@ public static class CoreClrEmbeddedUtilities
         }
         if (!PlatformUtilities.For(options.TargetPlatform).SupportsCoreClrEmbedded(options.TargetArchitecture))
         {
-            throw new NotSupportedException("CoreClrEmbedded packaging currently supports arm64 Apple targets built on macOS.");
+            throw new NotSupportedException("CoreClrEmbedded packaging supports arm64 Apple targets built on macOS and arm64 Android targets.");
         }
     }
 
