@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using EpicGames.UHT.Tables;
 using EpicGames.UHT.Utils;
 using UnrealSharpManagedGlue;
-using UnrealSharpManagedGlue.PropertyTranslators;
 using UnrealSharpManagedGlue.Utilities;
+using UnrealSharpManagedGlue.PropertyTranslators;
 
 [UnrealHeaderTool]
 public static class Program
@@ -52,25 +53,36 @@ public static class Program
         // Serialize exporter runs to protect shared static state and output files.
         lock (ExporterLock)
         {
-            RunExporter(factory);
+            GenerateBindings(factory);
         }
     }
 
-    private static void RunExporter(IUhtExportFactory factory)
+    private static void GenerateBindings(IUhtExportFactory factory)
     {
-        ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
-
+        ConsoleUtilities.Log($"Initializing UnrealSharp C# bindings generator for {factory.Session.Manifest?.TargetName}...");
+        
         try
         {
             ResetRunState();
             GeneratorStatics.Initialize(factory);
+            // Source targets share the active glue context per target type. A build
+            // for another platform can replace it without changing native headers.
+            // Track the context so returning to a cached target regenerates its glue.
+            factory.AddExternalDependency(GeneratorStatics.Target.ManifestPath);
+            // Files track edits/removals; directories also invalidate UHT for newly added framework inputs.
+            foreach (string input in BuildUtilities.GetFrameworkInputDirectories().Concat(BuildUtilities.GetFrameworkInputFiles()))
+                factory.AddExternalDependency(input);
             PropertyTranslatorManager.Initialize();
+            ModuleFactory.Initialize();
             ExportBindings();
 
             FileExporter.CleanOldExportedFiles();
-            BuildUtilities.BuildBindings();
-
+            BuildUtilities.PrepareBindings();
+            BuildUtilities.BuildUnrealSharpBindings();
             ModuleFactory.SyncModuleProjects();
+            BuildUtilities.BuildEnginePluginBindings();
+            BuildUtilities.BuildProjectBindings();
+            BuildUtilities.PublishRuntimeContext();
             BuildUtilities.GenerateUserSolution();
         }
         finally
@@ -93,6 +105,9 @@ public static class Program
         PackageHeadersTracker.Reset();
         ModuleUtilities.Reset();
         PropertyTranslatorManager.Reset();
+        InclusionLists.Reset();
+        ModuleFactory.Reset();
+        ExporterValidator.Reset();
         UnrealSharpSettingsUtilities.Reset();
         UnrealSharp.Automation.Utilities.UnrealSharpSettingsUtilities.Reset();
         GeneratorStatics.Reset();
@@ -108,6 +123,7 @@ public static class Program
             
             GlueGenerator.GenerateBindings();
             TaskManager.WaitForTasks();
+            ExporterValidator.CompleteExport();
 
             stopwatch.Stop();
             
