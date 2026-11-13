@@ -6,17 +6,20 @@ using System.Runtime.CompilerServices;
 using AutomationTool;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Automation.Utilities.Platform;
 using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.BuildCommands;
 
 [Help("Packages the UnrealSharp managed code into an Unreal Engine packaged build.")]
 [Help("ArchiveDirectory=<Path>", "REQUIRED. The base directory containing the packaged game.")]
+[Help("UETargetName=<Name>", "Optional. Resolve ArchiveDirectory using this Unreal build target's receipt.")]
 [Help("UETargetType=<TargetType>", "REQUIRED. The Unreal Engine target type (Editor, Game, Client, Server).")]
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
-[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to X64.")]
+[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to the platform architecture.")]
 [Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
+[Help("ReadyToRun", "Experimental iOS arm64 CoreCLR/composite R2R mode. Requires UNREALSHARP_R2R_DOTNET pointing to a .NET 11 SDK dotnet executable.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
@@ -24,6 +27,7 @@ public class PackageProject : BuildCommand
     private const string BindingsProjectFolder = "UnrealSharp";
     private const int CleanupMaxAttempts = 5;
     private const int CleanupRetryDelayMs = 1000;
+    private GlueTarget _glueTarget = null!;
 
     public sealed record PackagingOptions(
         string ArchiveDirectory,
@@ -32,7 +36,8 @@ public class PackageProject : BuildCommand
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
         bool NativeAot,
-        string[]? UserParams = null);
+        string[]? UserParams = null,
+        bool ReadyToRun = false);
 
     public override void ExecuteBuild()
     {
@@ -40,24 +45,48 @@ public class PackageProject : BuildCommand
         StartPackaging(Options);
     }
 
-    private void StartPackaging(PackagingOptions options)
+    internal void StartPackaging(PackagingOptions options)
     {
         ValidateOptions(options);
         LogOptions(options);
 
+        _glueTarget = GlueTargetUtilities.Resolve(this);
+
         DotNetSdkUtilities.CopyGlobalJson(this);
 
-        string PublishFolder = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
+        string OutputDirectory = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
+        string PublishFolder = options.NativeAot || options.ReadyToRun
+            ? Path.Combine(this.GetUnrealSharpIntermediateDirectory(), options.ReadyToRun ? "ReadyToRun" : "NativeAOT", _glueTarget.Name, options.TargetPlatform.ToString(), options.TargetArchitecture.ToString(), options.BuildConfiguration.ToString())
+            : OutputDirectory;
         CleanBuildArtifacts(PublishFolder);
 
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        foreach (string Argument in GlueTargetUtilities.BuildArguments(_glueTarget)) Arguments.Add(Argument);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
+        // Glue and user code must compile against the just-published runtime
+        // bindings, not the shared development Editor assembly.
+        Arguments.Add($"-p:UnrealSharpBindingsDirectory={PublishFolder}");
+        Arguments.Add($"-p:UnrealSharpUserAssemblyDirectory={PublishFolder}");
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
         
         EmitInstalledFlagFile(PublishFolder);
+
+        if (options.ReadyToRun)
+        {
+            CleanBuildArtifacts(OutputDirectory);
+            PlatformUtilities.For(options.TargetPlatform).PublishReadyToRun(PublishFolder, OutputDirectory);
+            EmitInstalledFlagFile(OutputDirectory);
+        }
+
+        if (options.NativeAot)
+        {
+            CleanBuildArtifacts(OutputDirectory);
+            NativeAOTUtilities.RunAOT(this, options, PublishFolder, OutputDirectory);
+            EmitInstalledFlagFile(OutputDirectory);
+        }
 
         LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
     }
@@ -71,14 +100,32 @@ public class PackageProject : BuildCommand
         string? PlatformString = ParseOptionalStringParam("TargetPlatform");
         UnrealTargetPlatform TargetPlatform = string.IsNullOrEmpty(PlatformString) ? UnrealTargetPlatform.Win64 : UnrealTargetPlatform.Parse(PlatformString);
 
-        string? ArchString = ParseOptionalStringParam("TargetArchitecture");
-        UnrealArch TargetArchitecture = string.IsNullOrEmpty(ArchString) ? UnrealArch.X64 : UnrealArch.Parse(ArchString);
+        string? TargetName = ParseOptionalStringParam("UETargetName");
 
-        bool NativeAot = ParseParam("NativeAOT");
+        PlatformUtilities Platform = PlatformUtilities.For(TargetPlatform);
+        string? ArchString = ParseOptionalStringParam("TargetArchitecture");
+        UnrealArchitectures Architectures = !string.IsNullOrEmpty(ArchString)
+            ? UnrealArchitectures.FromString(ArchString, TargetPlatform)!
+            : !string.IsNullOrEmpty(TargetName)
+                ? UnrealArchitectureConfig.ForPlatform(TargetPlatform).ActiveArchitectures(this.GetUProjectFile(), TargetName)
+                : new UnrealArchitectures(Platform.DefaultArchitecture);
+        if (Architectures.Architectures.Count != 1)
+        {
+            throw new AutomationException("Managed packaging requires a single target architecture. Universal Mac archives are not supported.");
+        }
+        UnrealArch TargetArchitecture = Architectures.SingleArchitecture;
+
+        string ProjectDirectory = string.IsNullOrEmpty(TargetName)
+            ? ArchiveDirectory
+            : PackageArchiveUtilities.GetProjectDirectory(ArchiveDirectory, this.GetUProjectFile(), TargetName,
+                TargetType, TargetPlatform, TargetConfiguration, TargetArchitecture);
+
+        bool ReadyToRun = ParseParam("ReadyToRun");
+        bool NativeAot = ParseParam("NativeAOT") || !ReadyToRun && (this.IsNativeAotEnabled() || Platform.RequiresNativeAOT);
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        return new PackagingOptions(ProjectDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams, ReadyToRun);
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -90,6 +137,7 @@ public class PackageProject : BuildCommand
         LoggerUtilities.LogUnrealSharpInfo($"UE Build Configuration: {options.BuildConfiguration}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Target Type: {options.TargetType}");
         LoggerUtilities.LogUnrealSharpInfo($"Native AOT: {options.NativeAot}");
+        LoggerUtilities.LogUnrealSharpInfo($"ReadyToRun: {options.ReadyToRun}");
 
         if (options.UserParams is { Length: > 0 })
         {
@@ -100,16 +148,22 @@ public class PackageProject : BuildCommand
     private void ValidateOptions(PackagingOptions options)
     {
         ArgumentException.ThrowIfNullOrEmpty(options.ArchiveDirectory);
-
+        PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
+        if (options.ReadyToRun)
+        {
+            if (options.NativeAot || options.TargetType == TargetType.Editor)
+                throw new NotSupportedException("ReadyToRun requires a non-Editor target without NativeAOT.");
+            Platform.ValidateReadyToRun(options.TargetArchitecture);
+        }
         if (!Directory.Exists(options.ArchiveDirectory))
         {
             throw new DirectoryNotFoundException($"Archive directory does not exist: {options.ArchiveDirectory}");
         }
-
-        if (options.NativeAot)
+        if (options.NativeAot && (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture)))
         {
-            throw new NotSupportedException("Native AOT packaging is not currently supported. This option is reserved for future use and should not be set.");
+            throw new NotSupportedException("NativeAOT requires a supported non-Editor target on a compatible host OS.");
         }
+        Platform.ValidatePackagingMode(options.NativeAot, options.ReadyToRun);
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
         if (!File.Exists(HostFxrPath))
@@ -117,15 +171,6 @@ public class PackageProject : BuildCommand
             throw new FileNotFoundException($"Could not locate hostfxr library at expected path: {HostFxrPath}. Ensure that the .NET SDK is installed and accessible.");
         }
 
-        ValidatePlatformArchitecture(options.TargetPlatform, options.TargetArchitecture);
-    }
-
-    private static void ValidatePlatformArchitecture(UnrealTargetPlatform platform, UnrealArch architecture)
-    {
-        if (platform == UnrealTargetPlatform.LinuxArm64 && architecture != UnrealArch.Arm64)
-        {
-            throw new ArgumentException($"Platform '{platform}' requires architecture '{UnrealArch.Arm64}', " + $"but '{architecture}' was specified.");
-        }
     }
 
     private static void CleanBuildArtifacts(string folder)
@@ -165,10 +210,12 @@ public class PackageProject : BuildCommand
 
             "-p:UseDefaultOutputPath=true",
             
-            $"-p:PublishSelfContained={(options.NativeAot ? "false" : "true")}",
+            $"-p:PublishSelfContained={(options.NativeAot || options.ReadyToRun ? "false" : "true")}",
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",
+
+            $"-p:BuildingAOT={(options.NativeAot ? "true" : "false")}",
 
             $"-p:PublishDir=\"{publishFolder}\"",
         ];
@@ -176,8 +223,8 @@ public class PackageProject : BuildCommand
 
     private void BuildBindingsSolution(IList<string> arguments, UnrealTargetConfiguration buildConfig)
     {
-        string BindingsPath = Path.Combine(this.GetUnrealSharpRootFolder(), ManagedFolderName, BindingsProjectFolder);
-        BuildCommands.BuildSolution.RunBuild(BindingsPath, buildConfig, publish: true, arguments);
+        List<string> FrameworkArguments = arguments.Where(argument => !argument.StartsWith("-p:UnrealSharpBuildingFramework=", StringComparison.Ordinal)).ToList();
+        GlueBuildUtilities.BuildFramework(_glueTarget, publish: true, FrameworkArguments);
     }
 
     private void BuildUserSolution(string publishFolder, IList<string> buildArguments, PackagingOptions options)
@@ -193,7 +240,7 @@ public class PackageProject : BuildCommand
         }
 
         string SolutionDirectory = GenerateUserSolution.PrepareSolution(this, Target, ProjectFiles,
-            GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser", forceGenerate: true);
+            _glueTarget.IsDistributionBuild ? Path.Combine(_glueTarget.Root, "Build", "User") : GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser", forceGenerate: true);
 
         IList<string> BuildUserSolutionArguments = buildArguments;
         if (options.UserParams is { Length: > 0 })
@@ -237,7 +284,7 @@ public class PackageProject : BuildCommand
     private void CopyInstalledGlue(string publishFolder)
     {
         string GlueFileName = AssemblyUtilities.MakeLoadOrderFileName(LoadOrderUtilities.GlueLoadOrderName);
-        string GlueSource = PathUtilities.BuildOutputPath(this.GetProjectRootFolder());
+        string GlueSource = _glueTarget.OutputDirectory;
         string GlueManifest = Path.Combine(GlueSource, GlueFileName);
 
         if (!File.Exists(GlueManifest))
