@@ -18,3 +18,6 @@
 | US0012  | Usage       | Error    | UFunctionConflictAnalyzer |
 | US0013  | Category    | Error    | DefaultComponentAnalyzer  |
 | US0014  | Category    | Error    | DefaultComponentAnalyzer  |
+| US0015  | UnrealSharp | Error    | NativeInteropSignatureAnalyzer |
+| US0016  | UnrealSharp | Error    | ConsoleObjectInitializerGenerator |
+| US0017  | UnrealSharp | Warning  | ConsoleObjectInitializerGenerator |

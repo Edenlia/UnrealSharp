@@ -16,6 +16,7 @@ UnrealSharp is a free, open-source plugin for writing Unreal Engine 5 games in C
 
 - [Ballistic Brews (Steam Page)](https://store.steampowered.com/app/4095000/Ballistic_Brews/)
 - [Forged: Reconquest (Steam Page)](https://store.steampowered.com/app/3509080/Forged_Reconquest/)
+- [Unsound (Steam Page)](https://store.steampowered.com/app/5249750/Unsound/)
 - [Prompt Crisis (Steam Page)](https://store.steampowered.com/app/5203720/Prompt_Crisis/)
 
 Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/UnrealSharp/issues) or submit a PR to add your project here!
@@ -33,8 +34,8 @@ Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/U
 | Windows | Supported |
 | macOS | Supported |
 | Linux | Planned |
-| iOS | Planned |
-| Android | Planned |
+| iOS | Supported |
+| Android | Supported |
 
 ## Prerequisites
 

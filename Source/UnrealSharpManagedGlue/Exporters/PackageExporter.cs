@@ -19,6 +19,10 @@ public static class PackageExporter
         }
         
         TaskManager.WaitForTasks();
+        if (GeneratorStatics.Factory.Session.HasErrors)
+        {
+            throw new InvalidOperationException("UnrealSharp export tasks failed.");
+        }
     }
     
     private static void ExportPackage(UhtPackage package)
@@ -103,7 +107,11 @@ public static class PackageExporter
 
         if (exportAction != null)
         {
-            TaskManager.StartTask(_ => exportAction());
+            TaskManager.StartTask(_ =>
+            {
+                using NameCollisionScope names = new();
+                exportAction();
+            });
         }
     }
 

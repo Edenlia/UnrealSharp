@@ -3,11 +3,15 @@
 
 #include "CSBuildUtilties.h"
 #include "CSBuildActionUtilities.h"
+#include "CSCompileLog.h"
 #include "CSPathsUtilities.h"
 #include "CSProcessUtilities.h"
 #include "CSUnrealSharpUtilitiesSettings.h"
+#include "CoreGlobals.h"
+#include "HAL/PlatformMisc.h"
 #include "IUATHelperModule.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/Guid.h"
 #include "Misc/MonitoredProcess.h"
 #include "Styling/SlateStyleRegistry.h"
 
@@ -74,7 +78,31 @@ bool UnrealSharp::Build::BuildUserSolution(const FCSCommandError& OnError)
 		Arguments.Add(TEXT("clp"), TEXT("ErrorsOnly"));
 	}
 
-	return InvokeUnrealSharpAutomation(BuildAction::BuildUserSolution, &Arguments, OnError);
+	FString CommandArguments;
+	BuildArguments(BuildAction::BuildUserSolution, &Arguments, CommandArguments);
+
+	FCSCompileLog& CompileLog = FCSCompileLog::Get();
+	CompileLog.BeginSession();
+	// A full build re-reports every project's diagnostics.
+	CompileLog.ClearAllDiagnostics();
+
+	const double StartTime = FPlatformTime::Seconds();
+	int32 ReturnCode = 0;
+	FString Output;
+	const bool bSucceeded = Process::InvokeCommand(FSerializedUATProcess::GetUATPath(), CommandArguments, ReturnCode, Output, nullptr, OnError);
+
+	const int32 ErrorCount = CompileLog.ParseMSBuildOutput(Output, TEXT("Build"));
+	if (bSucceeded)
+	{
+		CompileLog.AddMessage(ECSCompileLogSeverity::Info, TEXT("Build"),
+			FString::Printf(TEXT("C# build succeeded in %.2f seconds."), FPlatformTime::Seconds() - StartTime));
+	}
+	else if (ErrorCount == 0)
+	{
+		CompileLog.AddMessage(ECSCompileLogSeverity::Error, TEXT("Build"), TEXT("C# build failed."), Output);
+	}
+
+	return bSucceeded;
 }
 
 void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<FString, FString>* ActionArgs, FString& OutArgs)
@@ -86,6 +114,14 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	
 	OutArgs.Reset();
 	OutArgs += BuildAction;
+	const FString ParentLogFolder = FPlatformMisc::GetEnvironmentVariable(TEXT("uebp_LogFolder"));
+	if (IsRunningCommandlet() && !ParentLogFolder.IsEmpty())
+	{
+		// Reuse the parent's tools and pass child isolation through UAT arguments.
+		const FString ChildLogFolder = FPaths::Combine(ParentLogFolder, TEXT("UnrealSharp"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+		OutArgs += TEXT(" -nocompileuat -nocompile uebp_UATMutexNoWait=1 uebp_UATChildInstance=1");
+		OutArgs += FString::Printf(TEXT(" uebp_LogFolder=\"%s\" uebp_FinalLogFolder=\"%s\""), *ChildLogFolder, *ChildLogFolder);
+	}
 	if (FPaths::IsUnderDirectory(PluginFolder, ProjectFolder))
 	{
 		// Use the same discovery and build-record root as -ScriptsForProject.
@@ -99,6 +135,21 @@ void UnrealSharp::Build::BuildArguments(const FString& BuildAction, const TMap<F
 	}
 	// -Project selects the command target; -ScriptsForProject also scopes UAT script discovery.
 	OutArgs += FString::Printf(TEXT(" -ScriptsForProject=\"%s\" -Project=\"%s\""), *ProjectFile, *ProjectFile);
+	// Packaging may request Game/Shipping from an Editor/Development process.
+	// Only forward the running context when the requested target agrees with it.
+	bool bUseRunningTarget = true;
+	if (ActionArgs)
+	{
+		for (const TCHAR* Key : { TEXT("UETargetType"), TEXT("TargetType") })
+			if (const FString* Value = ActionArgs->Find(Key)) bUseRunningTarget &= Value->Equals(LexToString(FApp::GetBuildTargetType()), ESearchCase::IgnoreCase);
+		for (const TCHAR* Key : { TEXT("UEBuildConfig"), TEXT("TargetConfiguration") })
+			if (const FString* Value = ActionArgs->Find(Key)) bUseRunningTarget &= Value->Equals(LexToString(FApp::GetBuildConfiguration()), ESearchCase::IgnoreCase);
+	}
+	const FString ManagedTargetManifest = bUseRunningTarget ? Paths::GetManagedTargetManifest() : FString();
+	if (!ManagedTargetManifest.IsEmpty())
+	{
+		OutArgs += FString::Printf(TEXT(" -UnrealSharpTargetManifest=\"%s\""), *ManagedTargetManifest);
+	}
 	
 	if (ActionArgs && ActionArgs->Num() > 0)
 	{

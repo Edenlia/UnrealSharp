@@ -6,6 +6,14 @@ namespace UnrealSharpManagedGlue;
 
 public static class InclusionLists
 {
+    public static void Reset()
+    {
+        BannedProperties.Clear();
+        BannedFunctions.Clear();
+        BannedArithmetic.Clear();
+        BannedConstructors.Clear();
+    }
+
     private static readonly IDictionary<string, HashSet<string>> BannedProperties = new Dictionary<string, HashSet<string>>();
     private static readonly IDictionary<string, HashSet<string>> BannedFunctions = new Dictionary<string, HashSet<string>>();
     private static readonly HashSet<string> BannedArithmetic = new();

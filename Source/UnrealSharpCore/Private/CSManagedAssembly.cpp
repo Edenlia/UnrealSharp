@@ -3,6 +3,7 @@
 #include "CSManagedPluginCallbacks.h"
 #include "UnrealSharpCore.h"
 #include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #include "CSManager.h"
 #include "Logging/StructuredLog.h"
 #include "ReflectionData/CSEnumReflectionData.h"
@@ -23,11 +24,18 @@ void UCSManagedAssembly::Initialize(const FStringView InAssemblyPath, bool bInIs
 
 	AssemblyFilePath = FPaths::ConvertRelativePathToFull(InAssemblyPath.GetData());
 
+#if PLATFORM_IOS
+	// R2R assemblies retain their CLR filename case. Convert only the virtual
+	// directory, then append the original name before querying the physical file.
+	AssemblyFilePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*FPaths::GetPath(AssemblyFilePath)) /
+		FPaths::GetCleanFilename(AssemblyFilePath);
+#endif
+
 #if defined(_WIN32)
 	AssemblyFilePath.ReplaceInline(TEXT("/"), TEXT("\\"));
 #endif
 
-	bIsCollectible = bInIsCollectible;
+	bIsCollectible = bInIsCollectible && !FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT();
 
 	FOnManagedTypeStructureChanged::FDelegate Delegate = FOnManagedTypeStructureChanged::FDelegate::CreateUObject(
 		this, &UCSManagedAssembly::OnTypeReflectionDataChanged);
@@ -44,7 +52,9 @@ bool UCSManagedAssembly::LoadAssembly()
 		return true;
 	}
 
-	if (!FPaths::FileExists(AssemblyFilePath))
+	// AOT manifests name assemblies embedded in the native library, without separate DLLs.
+	if (!FModuleManager::GetModuleChecked<FUnrealSharpCoreModule>(TEXT("UnrealSharpCore")).IsNativeAOT()
+		&& !FPaths::FileExists(AssemblyFilePath))
 	{
 		UE_LOGFMT(LogUnrealSharp, Error, "Assembly path does not exist: {0}", AssemblyFilePath);
 		return false;
@@ -245,6 +255,13 @@ TSharedPtr<FGCHandle> UCSManagedAssembly::CreateManagedObjectFromNative(
 	const UObject* Object, const TSharedPtr<FGCHandle>& TypeGCHandle)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UCSManagedAssembly::CreateManagedObjectFromNative);
+
+	// The managed type can be missing if it was removed from C# and hot reloaded while the UClass is still alive.
+	if (!TypeGCHandle.IsValid() || TypeGCHandle->IsNull())
+	{
+		UE_LOGFMT(LogUnrealSharp, Warning, "No managed type found for {0}. Was the C# type removed?", Object->GetName());
+		return nullptr;
+	}
 
 	TCHAR* Error = nullptr;
 	FGCHandle NewObjectHandle = GetManagedCallbacks().

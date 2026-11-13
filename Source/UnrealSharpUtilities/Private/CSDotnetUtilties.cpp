@@ -7,6 +7,8 @@
 #include "CSProjectUtilities.h"
 #include "UnrealSharpUtils.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 
 static TAutoConsoleVariable<int32> CVarSimulateNoDotNetSDK(
@@ -60,14 +62,19 @@ FString UnrealSharp::DotNetUtilities::GetDotNetDirectory()
 	PathVariable.ParseIntoArray(Paths, FPlatformMisc::GetPathVarDelimiter());
 
 #if defined(_WIN32)
-	const FString PathMarker = TEXT("Program Files\\dotnet\\");
+	const FString PathMarker = TEXT("Program Files/dotnet/");
 #else
 	const FString PathMarker = TEXT("dotnet");
 #endif
 
 	FString DotNetPathFromEnv;
-	for (const FString& Path : Paths)
+	for (FString Path : Paths)
 	{
+		// PATH entries need not have a trailing separator (for example after Conda activation).
+		// Normalize before matching and keep the directory form expected by callers.
+		FPaths::NormalizeDirectoryName(Path);
+		Path += TEXT("/");
+
 		if (!Path.Contains(PathMarker))
 		{
 			continue;
@@ -203,12 +210,15 @@ bool UnrealSharp::DotNetUtilities::BuildUserSolution()
 		return true;
 	}
 
-	if (FCSUnrealSharpUtils::IsStandalonePIE() || FApp::IsUnattended())
+	if (FCSUnrealSharpUtils::IsStandalonePIE())
 	{
+		UE_LOG(LogUnrealSharpUtilities, Verbose, TEXT("Skipping the C# user build for standalone PIE."));
 		return true;
 	}
 
-	return Build::BuildUserSolution(Dialogs::MakeOkCancelDialogOnError());
+	UE_LOG(LogUnrealSharpUtilities, Display, TEXT("Building C# user projects..."));
+	// Failures are reported through FCSCompileLog instead of a blocking dialog.
+	return Build::BuildUserSolution();
 }
 #endif
 

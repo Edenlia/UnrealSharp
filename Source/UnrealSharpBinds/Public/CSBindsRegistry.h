@@ -1,5 +1,9 @@
 #pragma once
 
+#include "CoreMinimal.h"
+#include "CSInteropTypeTraits.h"
+#include <type_traits>
+
 template <typename T>
 struct TArgSize
 {
@@ -40,6 +44,7 @@ namespace Name { static const FName UnrealSharpBinderName(#Name); } \
 namespace Name
 
 #define BIND_UNREALSHARP_FUNCTION(FunctionName) \
+CS_ASSERT_INTEROP_SAFE_FUNCTION(decltype(&FunctionName)); \
 static const FCSBoundFunction ANONYMOUS_VARIABLE(ZUnrealSharpBind_) = FCSBindsRegistry::RegisterBoundFunction( \
 UnrealSharpBinderName, \
 FName(#FunctionName), \

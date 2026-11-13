@@ -4,6 +4,7 @@ using System.Linq;
 using AutomationTool;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.BuildCommands;
 
@@ -16,7 +17,9 @@ public class BuildUserSolution : BuildCommand
 {
     public override void ExecuteBuild()
     {
-        ManagedBuildTarget Target = ManagedBuildTarget.FromCommand(this);
+        GlueTarget Glue = GlueTargetUtilities.Resolve(this);
+        ManagedBuildTarget Target = new(UnrealTargetPlatform.Parse(Glue.Platform),
+            System.Enum.Parse<TargetType>(Glue.Type), System.Enum.Parse<UnrealTargetConfiguration>(Glue.Configuration));
         List<FileInfo> Projects = this.GetManagedProjectFiles(Target)
             .Where(file => Target.Type == TargetType.Editor || !ProjectUtilities.IsEditorOnlyProject(file.FullName))
             .ToList();
@@ -27,7 +30,10 @@ public class BuildUserSolution : BuildCommand
         }
 
         string SolutionDirectory = GenerateUserSolution.PrepareSolution(this, Target, Projects,
-            GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser");
+            Glue.IsDistributionBuild ? Path.Combine(Glue.Root, "Build", "User") : GenerateUserSolution.GetBuildDirectory(this, Target), "UnrealSharpUser");
+        string OutputPath = ParseRequiredStringParam("OutputPath");
+        if (Path.GetFullPath(OutputPath) == Path.GetFullPath(PathUtilities.BuildOutputPath(this.GetProjectRootFolder())))
+            OutputPath = Glue.OutputDirectory;
         List<KeyValuePair<string, string>> CommandParams = new List<KeyValuePair<string, string>>
         {
             new("TargetConfiguration", Target.Configuration.ToString()),
@@ -37,10 +43,11 @@ public class BuildUserSolution : BuildCommand
             new("ExtraArguments", $"-p:UEBuildConfig={Target.Configuration}"),
             new("LoadOrderName", LoadOrderUtilities.UserLoadOrderName),
             new("SolutionDirectory", SolutionDirectory),
-            new("OutputPath", ParseRequiredStringParam("OutputPath")),
+            new("OutputPath", OutputPath),
             new("IsCollectible", "true"),
             new("Priority", LoadOrderUtilities.UserLoadOrderPriority.ToString())
         };
+        CommandParams.AddRange(GlueTargetUtilities.BuildArguments(Glue).Select(argument => new KeyValuePair<string, string>("ExtraArguments", argument)));
 
         foreach (string ClpValue in ParseParamValues("clp"))
         {

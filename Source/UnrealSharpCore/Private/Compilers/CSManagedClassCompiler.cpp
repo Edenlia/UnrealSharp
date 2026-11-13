@@ -12,7 +12,9 @@
 #include "Factories/CSPropertyFactory.h"
 #include "UnrealSharpUtils.h"
 #include "Subsystems/CSManagedSubsystemManager.h"
+#include "Subsystems/SubsystemCollection.h"
 #include "Utilities/CSClassUtilities.h"
+#include "Misc/ScopeExit.h"
 
 #if WITH_EDITOR
 #include "BlueprintActionDatabase.h"
@@ -90,6 +92,62 @@ void UCSManagedClassCompiler::CreateOrUpdateOwningBlueprint(TSharedPtr<FCSClassR
 
 void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> ClassReflectionData, UCSClass* Field, UClass* SuperClass)
 {
+	static int32 CompilationDepth = 0;
+	static bool bFinalizingClasses = false;
+	static TArray<TStrongObjectPtr<UCSClass>> PendingClasses;
+
+	++CompilationDepth;
+	ON_SCOPE_EXIT
+	{
+		if (--CompilationDepth == 0 && !bFinalizingClasses)
+		{
+			TGuardValue<bool> FinalizingGuard(bFinalizingClasses, true);
+			// SCS templates instantiate component classes. Finish their defaults before actors,
+			// even when a component's reflected functions refer back to an actor in this batch.
+			// Constructors can add classes; keep strong copies rather than array references.
+			while (!PendingClasses.IsEmpty())
+			{
+				auto IsParentReady = [](const TStrongObjectPtr<UCSClass>& Candidate)
+				{
+					const UClass* Parent = Candidate->GetSuperClass();
+					return !PendingClasses.ContainsByPredicate([Parent](const TStrongObjectPtr<UCSClass>& Pending)
+					{
+						return Pending.Get() == Parent;
+					});
+				};
+				int32 Index = PendingClasses.IndexOfByPredicate([&IsParentReady](const TStrongObjectPtr<UCSClass>& Candidate)
+				{
+					return !Candidate->IsChildOf<AActor>() && IsParentReady(Candidate);
+				});
+				if (Index == INDEX_NONE)
+				{
+					Index = PendingClasses.IndexOfByPredicate(IsParentReady);
+				}
+				check(Index != INDEX_NONE);
+				TStrongObjectPtr<UCSClass> PendingClass = PendingClasses[Index];
+				PendingClasses.RemoveAt(Index);
+				UCSClass* Class = PendingClass.Get();
+				// Recursive property references can resolve a child before its parent is linked.
+				// Link in parent-first order as well, so child offsets include the full base layout.
+				Class->Bind();
+				Class->StaticLink(true);
+				Class->AssembleReferenceTokenStream();
+				TSharedPtr<FCSClassReflectionData> ReflectionData = Class->GetManagedTypeDefinition()->GetReflectionData<FCSClassReflectionData>();
+				FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Class, &Class->SimpleConstructionScript, ReflectionData->Properties);
+#if WITH_EDITOR
+				Class->GetOwningBlueprint()->SimpleConstructionScript = Class->SimpleConstructionScript;
+#endif
+				CreateDeferredManagedCDO(Class);
+				FinalizeManagedCDO(Class);
+				Class->SetUpRuntimeReplicationData();
+				Class->UpdateCustomPropertyListForPostConstruction();
+				RegisterFieldToLoader(Class, ENotifyRegistrationType::NRT_Class);
+				ActivateSubsystem(Class);
+			}
+			PendingClasses.Reset();
+		}
+	};
+
 	SetClassFlags(Field, ClassReflectionData);
 	SetConfigName(Field, ClassReflectionData);
 	
@@ -97,14 +155,6 @@ void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> Cl
 	
 	FCSPropertyFactory::CreateAndAssignProperties(Field, ClassReflectionData->Properties);
 
-	// Build the construction script that will spawn the components
-	FCSSimpleConstructionScriptCompiler::CompileSimpleConstructionScript(Field, &Field->SimpleConstructionScript, ClassReflectionData->Properties);
-
-#if WITH_EDITOR
-	UBlueprint* Blueprint = Field->GetOwningBlueprint();
-	Blueprint->SimpleConstructionScript = Field->SimpleConstructionScript;
-#endif
-	
 	PopulateComponentOverrides(&Field->ComponentClassOverrides, ClassReflectionData);
 	
 	FCSFunctionFactory::GenerateVirtualFunctions(Field, ClassReflectionData);
@@ -112,18 +162,10 @@ void UCSManagedClassCompiler::CompileClass(TSharedPtr<FCSClassReflectionData> Cl
 	
 	Field->ClassConstructor = &UCSClass::ManagedObjectConstructor;
 
-	Field->Bind();
-	Field->StaticLink(true);
-	Field->AssembleReferenceTokenStream();
-	
-	CreateDeferredManagedCDO(Field);
-	FinalizeManagedCDO(Field);
-
-	Field->SetUpRuntimeReplicationData();
-	Field->UpdateCustomPropertyListForPostConstruction();
-
-	RegisterFieldToLoader(Field, ENotifyRegistrationType::NRT_Class);
-	ActivateSubsystem(Field);
+	// A property dependency may still be compiling a parent class. Running managed
+	// constructors here can resolve a derived class before that parent's layout is linked.
+	Field->SetDeferredCreation(true);
+	PendingClasses.Emplace(Field);
 }
 
 void UCSManagedClassCompiler::PopulateComponentOverrides(TArray<FBPComponentClassOverride>* Overrides, const TSharedPtr<FCSClassReflectionData>& ClassReflectionData)

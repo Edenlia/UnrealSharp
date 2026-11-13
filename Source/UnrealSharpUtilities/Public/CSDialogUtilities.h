@@ -10,6 +10,9 @@ namespace UnrealSharp::Dialogs
 	 */
 	UNREALSHARPUTILITIES_API bool IsHeadless();
 
+	/** Whether editor UI can be shown interactively on the current thread. */
+	UNREALSHARPUTILITIES_API bool CanShowEditorUI();
+
 	/**
 	 * Opens a modal message dialog. When headless (see IsHeadless), logs the message, shows a non-blocking
 	 * notification if Slate is running, and returns DefaultResult without blocking.

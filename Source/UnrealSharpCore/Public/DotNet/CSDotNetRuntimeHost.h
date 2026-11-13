@@ -6,6 +6,7 @@
 #include <hostfxr.h>
 
 #include "HAL/PlatformProcess.h"
+#include "CSInteropTypeTraits.h"
 
 struct FCSManagedCallbacks;
 struct FCSManagedPluginCallbacks;
@@ -23,8 +24,12 @@ struct FCSInitializationResult
 };
 
 static_assert(sizeof(FCSInitializationResult) == 1 + FCSInitializationResult::MessageCapacity, "FCSInitializationResult must match the managed layout.");
+CS_ASSERT_INTEROP_SAFE_TYPE(FCSInitializationResult);
 
 using FInitializeUnrealSharp = void (*)(const UTF8CHAR*, FCSManagedPluginCallbacks*, const void*, FCSManagedCallbacks*, FCSInitializationResult*);
+CS_ASSERT_INTEROP_SAFE_FUNCTION(FInitializeUnrealSharp);
+
+static_assert(sizeof(TCHAR) == sizeof(char16_t), "TCHAR must be a 16-bit character.");
 
 struct FCSDotNetLayout
 {
@@ -48,9 +53,12 @@ public:
 
 	bool InitializeManagedRuntime();
 	void ShutdownManagedRuntime();
+	bool IsNativeAOT() const { return NativeAotLibrary != nullptr; }
 
 private:
 	static FCSDotNetLayout ResolveDotNetLayout(const FString& PluginAssemblyPath);
+	FInitializeUnrealSharp ResolveJitEntryPoint();
+	FInitializeUnrealSharp ResolvePlatformEntryPoint(const FString& UserWorkingDirectory);
 
 	load_assembly_and_get_function_pointer_fn InitializeHost();
 	load_assembly_and_get_function_pointer_fn ConfigureRuntime(const FCSDotNetLayout& Layout) const;
@@ -68,4 +76,6 @@ private:
 	hostfxr_close_fn Hostfxr_Close = nullptr;
 
 	void* RuntimeHost = nullptr;
+	// NativeAOT does not support unloading. Keep this library loaded until process exit.
+	void* NativeAotLibrary = nullptr;
 };

@@ -7,15 +7,20 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class UnrealSharpSettingsUtilities
 {
+    public static void Reset()
+    {
+        _config = null;
+    }
+
     private static Dictionary<string, JsonElement>? _config;
     
     public static void InitializeConfigFile(string projectRoot, string unrealSharpRoot)
     {
         if (_config != null)
         {
-            return;
+            throw new InvalidOperationException("UnrealSharp settings already initialized for this UHT session.");
         }
-        
+
         string pluginConfigPath = GetConfigFile(unrealSharpRoot);
         string projectConfigPath = GetConfigFile(projectRoot);
 

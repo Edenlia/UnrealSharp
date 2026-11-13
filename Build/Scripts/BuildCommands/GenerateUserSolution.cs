@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Xml.Linq;
 using AutomationTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.BuildCommands;
 
@@ -21,6 +23,11 @@ public class GenerateUserSolution : BuildCommand
         ManagedBuildTarget Target = ManagedBuildTarget.FromCommand(this);
         PrepareSolution(this, Target, this.GetManagedProjectFiles(Target),
             OutputFolder, SolutionName, ForceGenerate);
+        GlueTarget glue = GlueTargetUtilities.Resolve(this);
+        // This pointer supplies this project's exact glue references to the IDE.
+        // Ordinary projects retain their normal obj/bin directories.
+        GlueTarget.WriteIfChanged(Path.Combine(OutputFolder, ".vs", "UnrealSharp.Target.props"),
+            new XElement("Project", new XElement("Import", new XAttribute("Project", glue.PropsPath))).ToString());
     }
 
     internal static string GetBuildDirectory(BuildCommand command, ManagedBuildTarget target)
@@ -36,6 +43,7 @@ public class GenerateUserSolution : BuildCommand
         string StampPath = SolutionPath + ".projects.json";
         string[] ProjectPaths = projects.Select(project => project.FullName).Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+        CsProjectUtilities.UpdateUnrealSharpImports(command, ProjectPaths);
         string Stamp = JsonSerializer.Serialize(new { Platform = target.Platform.ToString(), target.Type, target.Configuration, ProjectPaths });
 
         if (!forceGenerate && File.Exists(SolutionPath) && File.Exists(StampPath) && File.ReadAllText(StampPath) == Stamp)

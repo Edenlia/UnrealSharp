@@ -1,5 +1,7 @@
 #include "CSDialogUtilities.h"
 
+#include "HAL/PlatformMisc.h"
+#include "Misc/MessageDialog.h"
 #include "UnrealSharpUtilities.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Notifications/NotificationManager.h"
@@ -29,9 +31,14 @@ bool UnrealSharp::Dialogs::IsHeadless()
 	return FApp::IsUnattended() || GIsRunningUnattendedScript || IsRunningCommandlet() || !FApp::CanEverRender();
 }
 
+bool UnrealSharp::Dialogs::CanShowEditorUI()
+{
+	return !IsHeadless() && FSlateApplication::IsInitialized() && IsInGameThread();
+}
+
 EAppReturnType::Type UnrealSharp::Dialogs::OpenMessageDialog(EAppMsgType::Type MessageType, EAppReturnType::Type DefaultResult, const FText& Message, const FText& Title)
 {
-	if (!IsHeadless())
+	if (CanShowEditorUI())
 	{
 		return Title.IsEmpty()
 			? FMessageDialog::Open(MessageType, DefaultResult, Message)
@@ -48,7 +55,7 @@ namespace
 {
 	void ShowOkDialogOrNotification(const FText& Message, const FText& Title)
 	{
-		if (UnrealSharp::Dialogs::IsHeadless())
+		if (!UnrealSharp::Dialogs::CanShowEditorUI())
 		{
 			ShowHeadlessNotification(Message, Title);
 		}
@@ -92,7 +99,7 @@ FCSCommandError UnrealSharp::Dialogs::MakeOkCancelDialogOnError()
 {
 	return FCSCommandError::CreateLambda([](const FString& ErrorOutput)
 	{
-		if (IsHeadless())
+		if (!CanShowEditorUI())
 		{
 			// RequestExit(true) exits with 0 on Windows; let StartupModule fail instead.
 			UE_LOGFMT(LogUnrealSharpUtilities, Display, "Running headless, not showing the OK/Cancel dialog for this error.");

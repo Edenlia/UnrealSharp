@@ -10,6 +10,11 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class PropertyUtilities
 {
+    public static PropertyTranslator? GetTranslator(this UhtProperty property)
+    {
+        return PropertyTranslatorManager.GetTranslator(property);
+    }
+
     public static bool CanExportProperty(this UhtProperty property)
     {
         if (InclusionLists.HasBannedProperty(property))

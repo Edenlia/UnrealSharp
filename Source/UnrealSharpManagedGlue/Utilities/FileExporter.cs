@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using EpicGames.UHT.Types;
 using UnrealSharpManagedGlue.PropertyTranslators;
@@ -11,6 +12,13 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class FileExporter
 {
+	public static void Reset()
+	{
+		AffectedFiles.Clear();
+		HasModifiedEngineGlue = false;
+	}
+
+	// Sessions can share engine-level output files.
 	private static readonly ReaderWriterLockSlim ReadWriteLock = new();
 	private static readonly HashSet<string> AffectedFiles = new(StringComparer.OrdinalIgnoreCase);
     
@@ -35,7 +43,8 @@ public static class FileExporter
 		if (File.Exists(absoluteFilePath))
 		{
 			FileInfo fileInfo = new(absoluteFilePath);
-			if (fileInfo.Length == text.Length && File.ReadAllText(absoluteFilePath) == text)
+			// File.WriteAllText writes generated files as UTF-8 without a BOM.
+			if (fileInfo.Length == Encoding.UTF8.GetByteCount(text) && File.ReadAllText(absoluteFilePath) == text)
 			{
 				needsWrite = false;
 			}
@@ -59,7 +68,7 @@ public static class FileExporter
 			File.WriteAllText(absoluteFilePath, text);
 			package.GetModuleInfo().MarkDirty();
 
-			if (package.IsPartOfEngine())
+			if (package.GetModuleInfo().IsPartOfEngine)
 			{
 				HasModifiedEngineGlue = true;
 			}
@@ -98,7 +107,7 @@ public static class FileExporter
 
 		foreach (ModuleInfo plugin in ModuleUtilities.PackageToModuleInfo.Values)
 		{
-			CleanOldFilesInDirectories(plugin.GlueOutputDirectory);
+			CleanOldFilesInDirectories(plugin.GlueOutputDirectory, plugin);
 		}
 	}
 
@@ -123,7 +132,7 @@ public static class FileExporter
 		}
 	}
 
-	private static void CleanOldFilesInDirectories(string path)
+	private static void CleanOldFilesInDirectories(string path, ModuleInfo module)
 	{
 		if (!Directory.Exists(path))
 		{
@@ -137,7 +146,7 @@ public static class FileExporter
         
 		foreach (string directory in Directory.GetDirectories(path))
 		{
-			CleanOldFilesInDirectories(directory);
+			CleanOldFilesInDirectories(directory, module);
 		}
         
 		string[] files = Directory.GetFiles(path);
@@ -151,6 +160,8 @@ public static class FileExporter
 			try 
 			{
 				File.Delete(file);
+				module.MarkDirty();
+				if (module.IsPartOfEngine) HasModifiedEngineGlue = true;
 			}
 			catch (IOException exception) 
 			{

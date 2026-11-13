@@ -52,13 +52,24 @@ public class CustomLogSourceGenerator : IIncrementalGenerator
 
         builder.AppendLine($"{accessibility} partial class {classLogInfo.Name}");
         builder.AppendLine("{");
-        builder.AppendLine($"    {accessibility} static void Log(string message) => UnrealLogger.Log(\"{classLogInfo.Name}\", message, (ELogVerbosity){classLogInfo.LogVerbosity});");
-        builder.AppendLine($"    {accessibility} static void LogWarning(string message) => UnrealLogger.LogWarning(\"{classLogInfo.Name}\", message);");
-        builder.AppendLine($"    {accessibility} static void LogError(string message) => UnrealLogger.LogError(\"{classLogInfo.Name}\", message);");
-        builder.AppendLine($"    {accessibility} static void LogFatal(string message) => UnrealLogger.LogFatal(\"{classLogInfo.Name}\", message);");
+        AppendLogMethod(builder, classLogInfo, accessibility, "Log", $"(ELogVerbosity){classLogInfo.LogVerbosity}");
+        AppendLogMethod(builder, classLogInfo, accessibility, "LogWarning", "ELogVerbosity.Warning");
+        AppendLogMethod(builder, classLogInfo, accessibility, "LogError", "ELogVerbosity.Error");
+        AppendLogMethod(builder, classLogInfo, accessibility, "LogFatal", "ELogVerbosity.Fatal");
+        // An unimplemented partial hook and its calls are removed by the compiler.
+        builder.AppendLine("    static partial void OnMessageLogged(string message, ELogVerbosity verbosity);");
         builder.AppendLine("}");
 
         sourceProductionContext.AddSource($"{classLogInfo.Name}_CustomLog.g.cs", SourceText.From(builder.ToString(), Encoding.UTF8));
+    }
+
+    private static void AppendLogMethod(StringBuilder builder, ClassLogInfo classLogInfo, string accessibility, string method, string verbosity)
+    {
+        builder.AppendLine($"    {accessibility} static void {method}(string message)");
+        builder.AppendLine("    {");
+        builder.AppendLine($"        UnrealLogger.Log(\"{classLogInfo.Name}\", message, {verbosity});");
+        builder.AppendLine($"        OnMessageLogged(message, {verbosity});");
+        builder.AppendLine("    }");
     }
 
     private ClassLogInfo Transform(GeneratorAttributeSyntaxContext arg1, CancellationToken arg2)

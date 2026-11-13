@@ -11,7 +11,9 @@ public class Plugin
     public readonly AssemblyName AssemblyName;
     public WeakReference? Assembly { get; private set; }
     
+#if !NATIVE_AOT
     private AssemblyLoadContext? _loadContext;
+#endif
 
     private readonly List<IModuleInterface> _moduleInterfaces = new();
     private readonly List<Func<IModuleInterface>> _moduleInitFunctions = new();
@@ -20,6 +22,15 @@ public class Plugin
     {
         AssemblyName = assemblyName;
         
+#if !NATIVE_AOT
+        // The iOS CoreCLR host supplies the complete target TPA list. There is no
+        // hostpolicy/AssemblyDependencyResolver in this embedded runtime layout.
+        if (AppContext.GetData("UnrealSharp.ReadyToRun") as string == "true")
+        {
+            if (isCollectible) throw new PlatformNotSupportedException("iOS ReadyToRun plugins are process-lifetime assemblies.");
+            _loadContext = AssemblyLoadContext.Default;
+            return;
+        }
         Assembly? existingAssembly = AssemblyCache.GetUniqueAssembly(assemblyName.Name!);
         if (existingAssembly != null)
         {
@@ -41,6 +52,7 @@ public class Plugin
         {
             _loadContext = new PluginLoadContext(assemblyName.Name!, new AssemblyDependencyResolver(assemblyPath), isCollectible);
         }
+#endif
     }
 
     public void AddModuleInterfaceInit(Func<IModuleInterface> initFunction)
@@ -50,15 +62,28 @@ public class Plugin
 
     public bool Load()
     {
-        if (_loadContext == null || Assembly != null)
+        if (Assembly != null)
         {
             return false;
         }
-        
+
+        #if NATIVE_AOT
+        Assembly assembly = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == AssemblyName.Name)
+                            ?? throw new InvalidOperationException($"Assembly '{AssemblyName}' not found in current AppDomain.");
+        #else
+        if (_loadContext == null)
+        {
+            return false;
+        }
         Assembly assembly = _loadContext.LoadFromAssemblyName(AssemblyName);
+        #endif
+
         Assembly = new WeakReference(assembly);
         
+        #if !NATIVE_AOT
         RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+        #endif
+        ModuleInitializerJobManager.ExecuteAllJobsForModule(assembly);
         
         StartupModule();
         return true;
@@ -79,9 +104,15 @@ public class Plugin
     [MethodImpl(MethodImplOptions.NoInlining)]
     public WeakReference Unload()
     {
+#if NATIVE_AOT
+        throw new PlatformNotSupportedException("NativeAOT plugins remain loaded for the process lifetime.");
+#else
+        if (AppContext.GetData("UnrealSharp.ReadyToRun") as string == "true")
+            throw new PlatformNotSupportedException("iOS ReadyToRun plugins remain loaded for the process lifetime.");
         ShutdownModule();
         
         AssemblyCache.RemoveAssembly(AssemblyName.Name!);
+        ModuleInitializerJobManager.RemoveAllJobsForModule((Assembly)Assembly!.Target!);
         GCHandleUtilities.FreeAssembly((Assembly)Assembly!.Target!);
         Assembly = null;
         
@@ -90,6 +121,7 @@ public class Plugin
         _loadContext = null;
         
         return loadContextWeak;
+#endif
     }
 
     public void StartupModule()

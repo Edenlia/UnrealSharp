@@ -2,11 +2,15 @@
 
 #include "CSDialogUtilities.h"
 #include "CSInstallationUtilities.h"
+#include "CSCompileLog.h"
 #include "CSManager.h"
 #include "CSStyle.h"
+#include "CompileLog/CSCompileLogTab.h"
+#include "Framework/Notifications/NotificationManager.h"
 #include "CSUnrealSharpEditorSettings.h"
 #include "DirectoryWatcherModule.h"
 #include "IDirectoryWatcher.h"
+#include "Interfaces/IMainFrameModule.h"
 #include "Kismet2/DebuggerCommands.h"
 #include "Types/CSEnum.h"
 #include "Types/CSScriptStruct.h"
@@ -14,6 +18,7 @@
 #include "CSProjectUtilities.h"
 #include "HotReload/CSHotReloadUtilities.h"
 #include "Kismet2/StructureEditorUtils.h"
+#include "Misc/App.h"
 #include "Utilities/CSAssemblyUtilities.h"
 #include "Utilities/CSEditorUtilities.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -42,17 +47,57 @@ void UCSHotReloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	RefreshDirectoryWatchers();
 	
 	PauseHotReload(TEXT("Waiting for initial C# load..."));
+
+	// The startup build ran before this subsystem existed; its errors are already in the compile log.
+	if (UnrealSharp::Dialogs::CanShowEditorUI() && FCSCompileLog::Get().GetCount(ECSCompileLogSeverity::Error) > 0)
+	{
+		IMainFrameModule& MainFrameModule = IMainFrameModule::Get();
+		if (MainFrameModule.IsWindowInitialized())
+		{
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float)
+			{
+				NotifyStartupBuildFailed();
+				return false;
+			}));
+		}
+		else
+		{
+			MainFrameModule.OnMainFrameCreationFinished().AddUObject(this, &UCSHotReloadSubsystem::OnMainFrameCreationFinished);
+		}
+	}
+}
+
+void UCSHotReloadSubsystem::OnMainFrameCreationFinished(TSharedPtr<SWindow> InRootWindow, bool bIsRunningStartupDialog)
+{
+	IMainFrameModule::Get().OnMainFrameCreationFinished().RemoveAll(this);
+	NotifyStartupBuildFailed();
+}
+
+void UCSHotReloadSubsystem::NotifyStartupBuildFailed()
+{
+	if (!UnrealSharp::Dialogs::CanShowEditorUI())
+	{
+		return;
+	}
+
+	UnrealSharp::CompileLog::RevealTab();
+	ShowCompileFailedNotification(LOCTEXT("StartupBuildFailedNotification", "C# build failed at startup. The Editor is running with the last successfully built C# assemblies."));
 }
 
 bool UCSHotReloadSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	return !FApp::IsUnattended() && !IsRunningCommandlet() && UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled();
+	return !IsRunningCommandlet() && UnrealSharp::InstallationUtilities::IsDotNetSdkInstalled();
 }
 
 void UCSHotReloadSubsystem::Deinitialize()
 {
 	Super::Deinitialize();
 	FTSTicker::GetCoreTicker().RemoveTicker(HotReloadTickDelegate);
+
+	if (IMainFrameModule* MainFrameModule = FModuleManager::GetModulePtr<IMainFrameModule>("MainFrame"))
+	{
+		MainFrameModule->OnMainFrameCreationFinished().RemoveAll(this);
+	}
 }
 
 void UCSHotReloadSubsystem::OnHotReloadReady_Callback()
@@ -74,7 +119,7 @@ bool UCSHotReloadSubsystem::HasPendingHotReloadChanges() const
 	bool bHasPendingChanges = false;
 	for (const UCSManagedAssembly* Assembly : PendingModifiedAssemblies)
 	{
-		if (FCSAssemblyUtilities::IsRuntimeGlueAssembly(Assembly))
+		if (!Assembly || FCSAssemblyUtilities::IsRuntimeGlueAssembly(Assembly))
 		{
 			continue;
 		}
@@ -116,23 +161,28 @@ void UCSHotReloadSubsystem::PerformHotReload()
 	
 	UE_LOGFMT(LogUnrealSharpEditor, Display, "Starting C# Hot Reload...");
 	
-	CurrentHotReloadStatus = Active;
+	CurrentHotReloadStatus = EHotReloadStatus::Active;
 	double StartTime = FPlatformTime::Seconds();
 
+	BeginCompileSession();
+
 	FScopedSlowTask Progress(4, LOCTEXT("HotReload", "Reloading C#..."));
-	Progress.MakeDialog(false, true);
-	
+	if (UnrealSharp::Dialogs::CanShowEditorUI())
+	{
+		Progress.MakeDialog(false, true);
+	}
+
 	TArray<UCSManagedAssembly*> AssembliesSortedByDependencies;
 	FCSAssemblyUtilities::SortAssembliesByDependencyOrder(PendingModifiedAssemblies, AssembliesSortedByDependencies);
 
 	FString ExceptionMessage;
 	if (!FCSHotReloadUtilities::RecompileDirtyProjects(AssembliesSortedByDependencies, ExceptionMessage))
 	{
-		CurrentHotReloadStatus = FailedToCompile;
-		UnrealSharp::Dialogs::ShowError(FText::FromString(ExceptionMessage), LOCTEXT("CompilationFailedTitle", "C# Compilation Failed"));
+		CurrentHotReloadStatus = EHotReloadStatus::FailedToCompile;
+		ReportCompileFailure(ExceptionMessage, TEXT("C# Compilation Failed"));
 		return;
 	}
-	
+
 	PendingModifiedAssemblies.Reset();
 
 	Progress.EnterProgressFrame(1, LOCTEXT("HotReload_Reloading", "Reloading Assemblies..."));
@@ -165,11 +215,110 @@ void UCSHotReloadSubsystem::PerformHotReload()
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 	}
 	
-	CurrentHotReloadStatus = Inactive;
+	CurrentHotReloadStatus = EHotReloadStatus::Inactive;
 	bDetectedNewManagedType = false;
 	ReloadedTypes.Reset();
-	
-	UE_LOG(LogUnrealSharpEditor, Display, TEXT("C# Hot Reload completed in %.2f seconds."), FPlatformTime::Seconds() - StartTime);
+
+	const double ElapsedTime = FPlatformTime::Seconds() - StartTime;
+	UE_LOG(LogUnrealSharpEditor, Display, TEXT("C# Hot Reload completed in %.2f seconds."), ElapsedTime);
+
+	FCSCompileLog& CompileLog = FCSCompileLog::Get();
+	FString CompletedMessage = FString::Printf(TEXT("C# Hot Reload completed in %.2f seconds."), ElapsedTime);
+
+	// Files rejected while parsing keep their last good version, so the reload can succeed while they are still broken.
+	const int32 OutstandingErrorCount = CompileLog.GetOutstandingErrorCount();
+	if (OutstandingErrorCount > 0)
+	{
+		CompletedMessage += FString::Printf(TEXT(" %d %s still outstanding; affected files were not reloaded."),
+			OutstandingErrorCount, OutstandingErrorCount == 1 ? TEXT("error is") : TEXT("errors are"));
+	}
+
+	CompileLog.AddMessage(ECSCompileLogSeverity::Info, TEXT("HotReload"), CompletedMessage);
+	EndCompileSession();
+
+	if (OutstandingErrorCount > 0)
+	{
+		return;
+	}
+
+	if (TSharedPtr<SNotificationItem> Notification = CompileFailedNotification.Pin())
+	{
+		Notification->ExpireAndFadeout();
+	}
+}
+
+bool UCSHotReloadSubsystem::HasCompileErrors() const
+{
+	return CurrentHotReloadStatus == EHotReloadStatus::FailedToCompile || FCSCompileLog::Get().HasOutstandingErrors();
+}
+
+void UCSHotReloadSubsystem::BeginCompileSession()
+{
+	if (bCompileSessionOpen)
+	{
+		return;
+	}
+
+	bCompileSessionOpen = true;
+	FCSCompileLog::Get().BeginSession();
+}
+
+void UCSHotReloadSubsystem::ReportCompileFailure(const FString& ExceptionMessage, const FString& DialogTitle)
+{
+	UE_LOG(LogUnrealSharpEditor, Error, TEXT("%s: %s"), *DialogTitle, *ExceptionMessage);
+	FCSCompileLog& CompileLog = FCSCompileLog::Get();
+
+	// Managed code reports structured diagnostics; fall back to the raw exception when it could not.
+	if (CompileLog.GetErrorCountSinceSessionStart() == 0)
+	{
+		CompileLog.AddMessage(ECSCompileLogSeverity::Error, TEXT("HotReload"), DialogTitle, ExceptionMessage);
+	}
+
+	const int32 ErrorCount = FMath::Max(CompileLog.GetOutstandingErrorCount(), CompileLog.GetErrorCountSinceSessionStart());
+	EndCompileSession();
+
+	if (!UnrealSharp::Dialogs::CanShowEditorUI())
+	{
+		return;
+	}
+
+	UnrealSharp::CompileLog::RevealTab();
+
+	if (GetDefault<UCSUnrealSharpEditorSettings>()->bShowCompileErrorDialog)
+	{
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(ExceptionMessage), FText::FromString(DialogTitle));
+		return;
+	}
+
+	ShowCompileFailedNotification(ErrorCount);
+}
+
+void UCSHotReloadSubsystem::ShowCompileFailedNotification(int32 ErrorCount)
+{
+	ShowCompileFailedNotification(FText::Format(LOCTEXT("CompileFailedNotification", "C# compilation failed with {0} {0}|plural(one=error,other=errors)"), ErrorCount));
+}
+
+void UCSHotReloadSubsystem::ShowCompileFailedNotification(const FText& Text)
+{
+	if (TSharedPtr<SNotificationItem> OldNotification = CompileFailedNotification.Pin())
+	{
+		OldNotification->ExpireAndFadeout();
+	}
+
+	FNotificationInfo Info(Text);
+	Info.Image = UnrealSharp::Icons::GetUnrealSharpIcon_HotReloadFailed().GetIcon();
+	Info.bFireAndForget = true;
+	Info.ExpireDuration = 6.0f;
+	Info.Hyperlink = FSimpleDelegate::CreateStatic(&UnrealSharp::CompileLog::OpenTab);
+	Info.HyperlinkText = LOCTEXT("OpenCompileLog", "Open C# Compile Log");
+
+	TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
+	if (Notification.IsValid())
+	{
+		Notification->SetCompletionState(SNotificationItem::CS_Fail);
+	}
+
+	CompileFailedNotification = Notification;
 }
 
 void UCSHotReloadSubsystem::OnStructRebuilt(UCSScriptStruct* NewStruct)
@@ -281,9 +430,12 @@ void UCSHotReloadSubsystem::PauseHotReload(const FString& Reason)
 		return;
 	}
 	
-	FString NotificationFormat = FString::Printf(TEXT("C# Reload Paused: %s"), *Reason);
-	PauseNotification = FCSEditorUtilities::MakeNotification(UnrealSharp::Icons::GetUnrealSharpIcon(), NotificationFormat);
 	bIsHotReloadPaused = true;
+	if (UnrealSharp::Dialogs::CanShowEditorUI())
+	{
+		FString NotificationFormat = FString::Printf(TEXT("C# Reload Paused: %s"), *Reason);
+		PauseNotification = FCSEditorUtilities::MakeNotification(UnrealSharp::Icons::GetUnrealSharpIcon(), NotificationFormat);
+	}
 }
 
 void UCSHotReloadSubsystem::ResumeHotReload()
@@ -340,14 +492,27 @@ void UCSHotReloadSubsystem::HandleScriptFileChanges(const TArray<FFileChangeData
 		return;
 	}
 	
+	BeginCompileSession();
+
 	FString ExceptionMessage;
 	if (!FCSHotReloadUtilities::ApplyDirtiedFiles(ProjectName.ToString(), DirtiedFiles, ExceptionMessage))
 	{
-		UnrealSharp::Dialogs::ShowError(FText::FromString(ExceptionMessage), LOCTEXT("HotReloadErrorTitle", "C# Hot Reload Error"));
+		CurrentHotReloadStatus = EHotReloadStatus::FailedToCompile;
+		ReportCompileFailure(ExceptionMessage, TEXT("C# Hot Reload Error"));
 		return;
 	}
 	
 	UCSManagedAssembly* ModifiedAssembly = UCSManager::Get().FindAssembly(ProjectName);
+	if (!ModifiedAssembly)
+	{
+		// The startup build failed for this project and no earlier build exists to load.
+		const FString Message = FString::Printf(TEXT("C# project '%s' has no loaded assembly because it has never been built successfully. Fix the compile errors and restart the Editor to build it."), *ProjectName.ToString());
+		UE_LOG(LogUnrealSharpEditor, Warning, TEXT("%s"), *Message);
+		FCSCompileLog::Get().AddMessage(ECSCompileLogSeverity::Error, TEXT("HotReload"), Message);
+		EndCompileSession();
+		return;
+	}
+
 	if (!PendingModifiedAssemblies.Contains(ModifiedAssembly))
 	{
 		PendingModifiedAssemblies.Add(ModifiedAssembly);

@@ -1,4 +1,10 @@
 #include "Factories/PropertyGenerators/CSSimplePropertyGenerator.h"
+#include "UObject/UnrealType.h"
+#include "Runtime/Launch/Resources/Version.h"
+
+#if ENGINE_MINOR_VERSION >= 6
+#include "UObject/TextProperty.h"
+#endif
 
 UCSSimplePropertyGenerator::UCSSimplePropertyGenerator(FObjectInitializer const& ObjectInitializer): Super(ObjectInitializer)
 {
@@ -15,6 +21,7 @@ UCSSimplePropertyGenerator::UCSSimplePropertyGenerator(FObjectInitializer const&
 		{ ECSPropertyType::Double, FDoubleProperty::StaticClass() },
 		{ ECSPropertyType::Float, FFloatProperty::StaticClass() },
 		{ ECSPropertyType::String, FStrProperty::StaticClass() },
+		{ ECSPropertyType::Utf8String, FUtf8StrProperty::StaticClass() },
 		{ ECSPropertyType::Name, FNameProperty::StaticClass() },
 		{ ECSPropertyType::Text, FTextProperty::StaticClass() },
 	};

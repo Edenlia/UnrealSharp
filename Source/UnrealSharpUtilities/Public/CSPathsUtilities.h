@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CoreMinimal.h"
+
 namespace UnrealSharp::Paths
 {
 	UNREALSHARPUTILITIES_API FString GetPluginDirectory();
@@ -8,6 +10,7 @@ namespace UnrealSharp::Paths
 	UNREALSHARPUTILITIES_API FString GetUnrealSharpPluginsPath();
 	UNREALSHARPUTILITIES_API FString GetUnrealSharpBuildToolPath();
 	UNREALSHARPUTILITIES_API FString GetUserAssemblyDirectory();
+	UNREALSHARPUTILITIES_API FString GetManagedTargetManifest();
 	UNREALSHARPUTILITIES_API FString GetUnrealSharpMetadataPath();
 	UNREALSHARPUTILITIES_API FString GetGeneratedClassesDirectory();
 	UNREALSHARPUTILITIES_API const FString& GetScriptFolderDirectory();

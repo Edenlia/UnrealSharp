@@ -114,6 +114,12 @@ public static class AutocastExporter
 		{
 			UhtStructProperty structProperty = (UhtStructProperty)function.Properties.First();
 			UhtStruct conversionStruct = structProperty.ScriptStruct;
+			// Partial declarations cannot extend a type in another assembly. The
+			// library function and its extension method remain available in that case.
+			if (conversionStruct.Package.GetModuleInfo().AssemblyName != function.Package.GetModuleInfo().AssemblyName)
+			{
+				continue;
+			}
 
 			if (!conversionStructs.ContainsKey(conversionStruct))
 			{

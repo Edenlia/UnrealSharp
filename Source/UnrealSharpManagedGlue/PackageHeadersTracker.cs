@@ -15,9 +15,15 @@ public class PackageHeaders
 
 public static class PackageHeadersTracker
 {
+    public static void Reset()
+    {
+        _packageHeadersWriteRecord.Clear();
+    }
+
     const string PackageDataFileName = "UnrealSharpPackagesData.json";
     
     private static Dictionary<string, PackageHeaders?> _packageHeadersWriteRecord = new();
+
     
     public static void DeserializeModuleHeaders()
     {
@@ -31,7 +37,7 @@ public static class PackageHeadersTracker
             return;
         }
 
-        string outputPath = Path.Combine(GeneratorStatics.PluginModule.OutputDirectory, PackageDataFileName);
+        string outputPath = Path.Combine(GeneratorStatics.Target.Root, PackageDataFileName);
 
         if (!File.Exists(outputPath))
         {
@@ -52,7 +58,7 @@ public static class PackageHeadersTracker
     
     public static void SerializeModuleData()
     {
-        string outputPath = Path.Combine(GeneratorStatics.PluginModule.OutputDirectory, PackageDataFileName);
+        string outputPath = Path.Combine(GeneratorStatics.Target.Root, PackageDataFileName);
         using FileStream filestream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
         JsonSerializer.Serialize(filestream, _packageHeadersWriteRecord);
         filestream.Close();

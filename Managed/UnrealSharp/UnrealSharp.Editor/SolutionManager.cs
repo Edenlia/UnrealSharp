@@ -9,6 +9,8 @@ using Microsoft.CodeAnalysis.Text;
 using UnrealSharp.Core;
 using UnrealSharp.Editor.Utilities;
 using UnrealSharp.UnrealSharpEditor;
+using UnrealSharp.UnrealSharpUtilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharp.Editor;
 
@@ -45,7 +47,20 @@ public sealed class GenState
 
 public static class SolutionManager
 {
-    public static readonly MSBuildWorkspace UnrealSharpWorkspace = MSBuildWorkspace.Create();
+    public static readonly MSBuildWorkspace UnrealSharpWorkspace = CreateWorkspace();
+    private static MSBuildWorkspace CreateWorkspace()
+    {
+        string props = Path.GetFullPath(Path.Combine(UCSPathsBlueprintFunctionLibrary.UserAssemblyDirectory, "..", "UnrealSharp.Target.props"));
+        if (!File.Exists(props)) return MSBuildWorkspace.Create();
+        GlueTarget target = GlueTarget.Read(Path.Combine(Path.GetDirectoryName(props)!, GlueTarget.FileName));
+        Dictionary<string, string> properties = new()
+        {
+            ["UnrealSharpTargetProps"] = props
+        };
+        if (target.IsDistributionBuild)
+            properties["CustomBeforeDirectoryBuildProps"] = Path.Combine(target.PluginDirectory, "UnrealSharp.Target.props");
+        return MSBuildWorkspace.Create(properties);
+    }
     public static IList<Project> CurrentProjects => UnrealSharpWorkspace.CurrentSolution.Projects.ToList();
     private static readonly ConcurrentDictionary<ProjectId, GenState> States = new();
 
@@ -241,5 +256,19 @@ public static class SolutionManager
     {
         States.TryGetValue(projectId, out GenState? state);
         return state;
+    }
+
+    public static Compilation? GetCompilationByAssemblyName(string assemblyName)
+    {
+        foreach (Project project in UnrealSharpWorkspace.CurrentSolution.Projects)
+        {
+            Compilation? compilation = GetProjectState(project.Id)?.InitialCompilation;
+            if (compilation?.AssemblyName == assemblyName)
+            {
+                return compilation;
+            }
+        }
+
+        return null;
     }
 }

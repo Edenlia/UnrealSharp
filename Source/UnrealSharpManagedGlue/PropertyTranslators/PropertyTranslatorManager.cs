@@ -12,11 +12,19 @@ namespace UnrealSharpManagedGlue.PropertyTranslators;
 
 public static class PropertyTranslatorManager
 {
-    private static readonly Dictionary<Type, List<PropertyTranslator>?> RegisteredTranslators = new();
-    public static SpecialTypeInfo SpecialTypeInfo { get; } = new();
-    
-    static PropertyTranslatorManager()
+    public static void Reset()
     {
+        RegisteredTranslators.Clear();
+        SpecialTypeInfo = new();
+    }
+
+    private static readonly Dictionary<Type, List<PropertyTranslator>?> RegisteredTranslators = new();
+    public static SpecialTypeInfo SpecialTypeInfo { get; private set; } = new();
+    
+    internal static void Initialize()
+    {
+        RegisteredTranslators.Clear();
+        SpecialTypeInfo = new();
         string? projectDirectory = GeneratorStatics.Factory.Session.ProjectDirectory;
         string configDirectory = Path.Combine(projectDirectory!, "Config");
         
@@ -77,6 +85,7 @@ public static class PropertyTranslatorManager
         
         AddPropertyTranslator(typeof(UhtBoolProperty), new BoolPropertyTranslator());
         AddPropertyTranslator(typeof(UhtStrProperty), new StringPropertyTranslator());
+        AddPropertyTranslator(typeof(UhtUtf8StrProperty), new Utf8StringPropertyTranslator());
         AddPropertyTranslator(typeof(UhtNameProperty), new NamePropertyTranslator());
         AddPropertyTranslator(typeof(UhtTextProperty), new TextPropertyTranslator());
         
@@ -225,7 +234,7 @@ public static class PropertyTranslatorManager
         }
     }
     
-    public static PropertyTranslator? GetTranslator(this UhtProperty property)
+    public static PropertyTranslator? GetTranslator(UhtProperty property)
     {
         if (!RegisteredTranslators.TryGetValue(property.GetType(), out List<PropertyTranslator>? translator))
         {

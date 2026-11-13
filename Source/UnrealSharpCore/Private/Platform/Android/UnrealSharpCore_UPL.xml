@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+    <resourceCopies>
+        <isArch arch="arm64-v8a">
+            <copyDir src="$S(ProjectDir)/Intermediate/UnrealSharp/Android/$S(Configuration)/arm64-v8a/Binaries/Managed/net10.0/Native"
+                     dst="$S(BuildDir)/libs/arm64-v8a" />
+        </isArch>
+    </resourceCopies>
+</root>

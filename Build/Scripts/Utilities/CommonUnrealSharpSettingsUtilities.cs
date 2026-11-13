@@ -10,4 +10,5 @@ public static class CommonUnrealSharpSettingsUtilities
         JsonElement ScriptDirectoryName = buildCommand.GetElement("ScriptDirectoryName");
         return ScriptDirectoryName.GetString()!;
     }
+    public static bool IsNativeAotEnabled(this BuildCommand buildCommand) => buildCommand.GetElement("NativeAOT").GetBoolean();
 }

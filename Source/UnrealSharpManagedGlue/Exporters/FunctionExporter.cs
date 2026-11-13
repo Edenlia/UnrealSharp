@@ -452,7 +452,8 @@ public class FunctionExporter
         return exporter;
     }
     
-    public static void ExportOverridableFunction(GeneratorStringBuilder builder, UhtFunction function, HashSet<string>? exportedFunctions = null)
+    public static void ExportOverridableFunction(GeneratorStringBuilder builder, UhtFunction function,
+        HashSet<string>? exportedFunctions = null, UhtFunction? reflectedImplementation = null)
     {
         builder.TryAddWithEditor(function);
         
@@ -502,12 +503,18 @@ public class FunctionExporter
             ? function.ReturnProperty.GetTranslator()!.GetManagedType(function.ReturnProperty)
             : "void";
         
-        AttributeBuilder attributeBuilder = new AttributeBuilder(function);
-        attributeBuilder.AddGeneratedFunctionName(function);
-        attributeBuilder.Finish();
-        builder.AppendLine(attributeBuilder.ToString());
+        // An independently reflected helper retains its own binding and metadata.
+        // Do not generate a second implementation method or annotate its invoker
+        // as though it were that synthesized method.
+        if (reflectedImplementation == null || !function.IsBlueprintCallable())
+        {
+            AttributeBuilder attributeBuilder = new AttributeBuilder(function);
+            attributeBuilder.AddGeneratedFunctionName(function);
+            attributeBuilder.Finish();
+            builder.AppendLine(attributeBuilder.ToString());
+        }
 
-        if (function.IsBlueprintCallable())
+        if (function.IsBlueprintCallable() && reflectedImplementation == null)
         {
             ExportDeprecation(builder, function);
             builder.AppendLine($"protected virtual {returnType} {methodName}_Implementation({paramsStringApi})");
@@ -570,10 +577,10 @@ public class FunctionExporter
         });
         
         string implementationFunctionName = function.IsBlueprintCallable()
-            ? "_Implementation"
-            : string.Empty;
+            ? reflectedImplementation?.GetFunctionName() ?? $"{methodName}_Implementation"
+            : methodName;
         
-        builder.AppendLine($"{returnAssignment}{methodName}{implementationFunctionName}({paramsCallString});");
+        builder.AppendLine($"{returnAssignment}{implementationFunctionName}({paramsCallString});");
 
         if (function.ReturnProperty != null)
         {
@@ -971,6 +978,13 @@ public class FunctionExporter
                     !BlittableFunction);
             }
 
+            bool initializedParams = HasCustomStructParamSupport || !BlittableFunction;
+            if (initializedParams)
+            {
+                builder.AppendLine("try");
+                builder.OpenBrace();
+            }
+
             ForEachParameter((translator, parameter) =>
             {
                 if (parameter.HasAllFlags(EPropertyFlags.ReturnParm))
@@ -1043,15 +1057,18 @@ public class FunctionExporter
             
             builder.AppendLine();
             
-            ForEachParameter((translator, parameter) =>
-            {
-                if (!parameter.HasAnyFlags(EPropertyFlags.ReturnParm | EPropertyFlags.OutParm))
-                {
-                    translator.ExportCleanupMarshallingBuffer(builder, parameter, parameter.SourceName);
-                }
-            });
-            
             ExportReturnStatement(builder);
+
+            // Release initialized parameters on both normal and exceptional exits, after copying outputs.
+            if (initializedParams)
+            {
+                builder.CloseBrace();
+                builder.AppendLine("finally");
+                builder.OpenBrace();
+                string initializedFunctionIntPtr = HasCustomStructParamSupport ? "Specialization" : nativeFunctionIntPtr;
+                builder.AppendLine($"{ExporterCallbacks.Bind_UFunction}.CallDestroyFunctionParams({initializedFunctionIntPtr}, paramsBuffer);");
+                builder.CloseBrace();
+            }
         }
         builder.EndUnsafeBlock();
     }

@@ -1,0 +1,11 @@
+<Project>
+  <!-- CustomBeforeDirectoryBuildProps runs before NuGet project extensions are resolved. -->
+  <Import Project="$(UnrealSharpTargetProps)" Condition="'$(UnrealSharpTargetProps)' != '' and Exists('$(UnrealSharpTargetProps)')" />
+  <PropertyGroup Condition="'$(UnrealSharpTargetRoot)' != ''">
+    <!-- Relocating obj must not make old SDK-generated source files become user Compile items. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/obj/**;**/bin/**</DefaultItemExcludes>
+    <BaseIntermediateOutputPath>$(UnrealSharpTargetRoot)/MSBuild/$(UEBuildConfig)/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(UnrealSharpTargetRoot)/MSBuild/$(UEBuildConfig)/$(MSBuildProjectName)/bin/</BaseOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

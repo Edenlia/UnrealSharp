@@ -9,6 +9,11 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class PackageUtilities
 {
+    public static ModuleInfo GetModuleInfo(this UhtPackage package)
+    {
+        return ModuleUtilities.GetModuleInfo(package);
+    }
+
     public const string SkipGlueGenerationDefine = "SkipGlueGeneration";
 
     public static string GetModuleShortName(this UhtPackage package)

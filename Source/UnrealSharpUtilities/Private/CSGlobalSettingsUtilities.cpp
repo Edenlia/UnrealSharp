@@ -2,6 +2,13 @@
 #include "CSPathsBlueprintFunctionLibrary.h"
 #include "UnrealSharpUtilities.h"
 #include "Logging/StructuredLog.h"
+#include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 static TMap<FString, TSharedPtr<FJsonValue>> Config;
 
@@ -82,9 +89,9 @@ TMap<FString, TSharedPtr<FJsonValue>> UnrealSharp::GlobalSettings::Private::Load
 		UE_LOG(LogUnrealSharpUtilities, Fatal, TEXT("Invalid JSON in config file: %s"), *Path);
 	}
 
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : JsonObject->Values)
+	for (const auto& Pair : JsonObject->Values)
 	{
-		Result.Add(Pair.Key, Pair.Value);
+		Result.Add(FString(Pair.Key), Pair.Value);
 	}
 
 	return Result;

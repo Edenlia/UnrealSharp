@@ -2,6 +2,7 @@
 using AutomationTool;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.BuildCommands;
 
@@ -14,13 +15,18 @@ public class StageUnrealSharp : BuildCommand
 {
     public override void ExecuteBuild()
     {
+        GlueTarget target = GlueTargetUtilities.Resolve(this);
+        string architecture = ParseParamValue("TargetArchitecture", target.Architecture);
+        if (architecture.Contains('+'))
+            throw new AutomationException("Select one -TargetArchitecture when staging a universal native target.");
         List<KeyValuePair<string, string>> ActionArgs =
         [
             new("ArchiveDirectory", this.GetProjectRootFolder()),
-            new("UEBuildConfig", ParseParamValue("UEBuildConfig", nameof(UnrealTargetConfiguration.Development))),
-            new("UETargetType", ParseParamValue("UETargetType", nameof(TargetType.Editor))),
-            new("TargetPlatform", ParseParamValue("TargetPlatform", string.Empty)),
-            new("TargetArchitecture", ParseParamValue("TargetArchitecture", string.Empty))
+            new("UEBuildConfig", target.Configuration),
+            new("UETargetType", target.Type),
+            new("TargetPlatform", target.Platform),
+            new("TargetArchitecture", architecture),
+            new("UnrealSharpTargetManifest", target.ManifestPath)
         ];
         
         CommandUtilities.RunCommand(nameof(PackageProject), this, ActionArgs);
