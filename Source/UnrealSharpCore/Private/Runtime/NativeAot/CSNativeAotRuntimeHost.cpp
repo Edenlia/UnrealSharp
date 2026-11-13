@@ -23,10 +23,10 @@ FCSRuntimeCapabilities FCSNativeAotRuntimeHost::GetCapabilities() const
 
 FInitializeUnrealSharp FCSNativeAotRuntimeHost::StartRuntime()
 {
-	Library = PlatformUtilities::LoadNativeAotLibrary(LibraryPath);
+	Library = PlatformUtilities::LoadBundledLibrary(LibraryPath);
 	if (!Library)
 	{
-		const TOptional<FString> LoadError = PlatformUtilities::GetNativeAotLoadError();
+		const TOptional<FString> LoadError = PlatformUtilities::GetBundledLibraryLoadError();
 		if (LoadError.IsSet())
 		{
 			UE_LOGFMT(LogUnrealSharp, Error, "NativeAOT dlopen error: {0}", LoadError.GetValue());
@@ -35,7 +35,7 @@ FInitializeUnrealSharp FCSNativeAotRuntimeHost::StartRuntime()
 	}
 
 	FInitializeUnrealSharp InitializeUnrealSharp = reinterpret_cast<FInitializeUnrealSharp>(
-		PlatformUtilities::GetNativeAotEntryPoint(Library));
+		PlatformUtilities::GetBundledLibraryExport(Library, TEXT("InitializeAotRuntime")));
 	if (!InitializeUnrealSharp)
 	{
 		UE_LOGFMT(LogUnrealSharp, Fatal, "NativeAOT library is missing InitializeAotRuntime: {0}", LibraryPath);

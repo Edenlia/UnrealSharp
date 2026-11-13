@@ -33,7 +33,8 @@ namespace
 		case ECSRuntimeKind::CoreClrHostFxr:
 			return CreateHostFxrHost(ManagedDirectory);
 		case ECSRuntimeKind::NativeAot:
-			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::GetNativeAotLibraryPath(ManagedDirectory));
+			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::ResolveBundledLibraryPath(
+				ManagedDirectory, PlatformUtilities::GetLegacyNativeAotLibraryReference()));
 		case ECSRuntimeKind::CoreClrEmbedded:
 			break;
 		}

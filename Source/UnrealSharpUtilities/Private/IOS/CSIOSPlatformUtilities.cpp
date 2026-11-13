@@ -13,26 +13,36 @@ FString UnrealSharp::PlatformUtilities::GetManagedWorkingDirectory(const FString
 	return IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*UserWorkingDirectory);
 }
 
-FString UnrealSharp::PlatformUtilities::GetNativeAotLibraryPath(const FString& UserWorkingDirectory)
+FString UnrealSharp::PlatformUtilities::ResolveBundledLibraryPath(const FString& ManagedDirectory, const FString& LibraryReference)
 {
-	return FPaths::GetPath(FPlatformProcess::ExecutablePath()) /
-		TEXT("Frameworks/UnrealSharpAOT.framework/UnrealSharpAOT");
+	// App Store builds may only load dynamic libraries from signed frameworks inside the app bundle.
+	return FPaths::GetPath(FPlatformProcess::ExecutablePath()) / TEXT("Frameworks") / LibraryReference;
 }
 
-void* UnrealSharp::PlatformUtilities::LoadNativeAotLibrary(const FString& LibraryPath)
+FString UnrealSharp::PlatformUtilities::GetLegacyNativeAotLibraryReference()
+{
+	return TEXT("UnrealSharpAOT.framework/UnrealSharpAOT");
+}
+
+void* UnrealSharp::PlatformUtilities::LoadBundledLibrary(const FString& LibraryPath)
 {
 	// iOS inherits the unimplemented generic FPlatformProcess DLL operations.
 	return dlopen(TCHAR_TO_UTF8(*LibraryPath), RTLD_NOW | RTLD_LOCAL);
 }
 
-void* UnrealSharp::PlatformUtilities::GetNativeAotEntryPoint(void* Library)
+void* UnrealSharp::PlatformUtilities::GetBundledLibraryExport(void* Library, const TCHAR* ExportName)
 {
-	return dlsym(Library, "InitializeAotRuntime");
+	return dlsym(Library, TCHAR_TO_UTF8(ExportName));
 }
 
-TOptional<FString> UnrealSharp::PlatformUtilities::GetNativeAotLoadError()
+TOptional<FString> UnrealSharp::PlatformUtilities::GetBundledLibraryLoadError()
 {
-	return FString(UTF8_TO_TCHAR(dlerror()));
+	const char* Error = dlerror();
+	if (!Error)
+	{
+		return {};
+	}
+	return FString(UTF8_TO_TCHAR(Error));
 }
 
 #endif
