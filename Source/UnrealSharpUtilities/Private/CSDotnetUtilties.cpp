@@ -172,7 +172,7 @@ bool UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment()
 	if (DotNetInstallationPath.IsEmpty() && !InstallationUtilities::IsUnrealSharpInstalled())
 	{
 		FString DialogText = FString::Printf(TEXT("UnrealSharp can't be initialized. An installation of .NET %s SDK can't be found on your system."), TEXT(DOTNET_MAJOR_VERSION));
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(DialogText));
+		Dialogs::ShowError(FText::FromString(DialogText));
 		return false;
 	}
 
@@ -185,7 +185,7 @@ bool UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment()
 			"Most likely, the bindings library failed to build due to invalid generated glue."
 		), *FullPath);
 
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(DialogText));
+		Dialogs::ShowError(FText::FromString(DialogText));
 		return false;
 	}
 
@@ -202,7 +202,7 @@ bool UnrealSharp::DotNetUtilities::BuildUserSolution()
 		return true;
 	}
 
-	if (FCSUnrealSharpUtils::IsStandalonePIE() || FApp::IsUnattended())
+	if (FCSUnrealSharpUtils::IsStandalonePIE())
 	{
 		return true;
 	}

@@ -15,7 +15,15 @@ public static class PropertyTranslatorManager
     private static readonly Dictionary<Type, List<PropertyTranslator>?> RegisteredTranslators = new();
     public static SpecialTypeInfo SpecialTypeInfo { get; } = new();
     
-    static PropertyTranslatorManager()
+    public static void Reset()
+    {
+        RegisteredTranslators.Clear();
+        SpecialTypeInfo.Structs.SkippedTypes.Clear();
+        SpecialTypeInfo.Structs.BlittableTypes.Clear();
+        SpecialTypeInfo.Structs.NativelyCopyableTypes.Clear();
+    }
+
+    public static void Initialize()
     {
         string? projectDirectory = GeneratorStatics.Factory.Session.ProjectDirectory;
         string configDirectory = Path.Combine(projectDirectory!, "Config");
@@ -23,10 +31,15 @@ public static class PropertyTranslatorManager
         string pluginDirectory = Path.Combine(projectDirectory!, "Plugins");
         DirectoryInfo pluginDirInfo = new DirectoryInfo(pluginDirectory);
         
-        IEnumerable<string> files = pluginDirInfo.GetFiles("*.uplugin", SearchOption.AllDirectories)
+        IEnumerable<FileInfo> pluginFiles = pluginDirInfo.Exists
+            ? pluginDirInfo.GetFiles("*.uplugin", SearchOption.AllDirectories)
+            : Array.Empty<FileInfo>();
+
+        IEnumerable<string> files = pluginFiles
             .Select(x => x.DirectoryName!)
             .Select(x => Path.Combine(x, "Config"))
-            .Concat(new List<string> { configDirectory })
+            .Concat(new List<string> { Path.Combine(GeneratorStatics.PluginDirectory, "Config"), configDirectory })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(x => new DirectoryInfo(x))
             .Where(x => x.Exists)
             .SelectMany(x => x.GetFiles("*.UnrealSharpTypes.json", SearchOption.AllDirectories))
@@ -72,6 +85,7 @@ public static class PropertyTranslatorManager
         
         AddPropertyTranslator(typeof(UhtBoolProperty), new BoolPropertyTranslator());
         AddPropertyTranslator(typeof(UhtStrProperty), new StringPropertyTranslator());
+        AddPropertyTranslator(typeof(UhtUtf8StrProperty), new Utf8StringPropertyTranslator());
         AddPropertyTranslator(typeof(UhtNameProperty), new NamePropertyTranslator());
         AddPropertyTranslator(typeof(UhtTextProperty), new TextPropertyTranslator());
         
