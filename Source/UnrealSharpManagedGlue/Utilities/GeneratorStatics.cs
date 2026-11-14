@@ -30,6 +30,21 @@ public static class GeneratorStatics
 	public static UnrealTargetPlatform TargetPlatform { get; private set; }
 	public static GlueTarget Target { get; private set; } = null!;
 	public static PluginGluePolicy PluginPolicy { get; private set; } = null!;
+
+
+	public static void Reset()
+	{
+		_factory = null;
+		PluginModuleInfo = null!;
+		BlueprintFunctionLibrary = null!;
+		PluginDirectory = "";
+		ManagedPath = "";
+		TargetType = default;
+		TargetConfiguration = default;
+		TargetPlatform = default;
+		Target = null!;
+		PluginPolicy = null!;
+	}
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
@@ -62,6 +77,7 @@ public static class GeneratorStatics
 		
 		BlueprintFunctionLibrary = (Factory.Session.FindType(null, UhtFindOptions.SourceName | UhtFindOptions.Class, "UBlueprintFunctionLibrary") as UhtClass)!;
 		
+		ModuleUtilities.Initialize();
 		PluginModuleInfo = ModuleUtilities.GetModuleInfo(factory.PluginModule!.Name);
 
 	}

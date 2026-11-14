@@ -18,6 +18,7 @@ public class BuildUserGlue : BuildCommand
     public static void Build(BuildCommand command, TargetType targetType, UnrealTargetConfiguration buildConfig,
         string outputDirectory, bool addReferences, IList<string>? extraArguments = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(outputDirectory);
         GlueTarget target = GlueTargetUtilities.Resolve(command);
         if (target.Type != targetType.ToString() || target.Configuration != buildConfig.ToString())
             throw new AutomationException("Selected UnrealSharp glue context does not match the requested target type/configuration.");
