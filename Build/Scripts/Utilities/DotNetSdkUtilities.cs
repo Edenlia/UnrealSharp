@@ -15,6 +15,12 @@ public static class DotNetSdkUtilities
         return $"{PlatformPart}-{ArchitecturePart}";
     }
 
+    /// <summary>The runtime identifier to publish a runtime for; a platform may use different RIDs per runtime.</summary>
+    public static string GetDotNetRuntimeIdentifier(UnrealTargetPlatform platform, UnrealArch architecture, RuntimeFlavor runtime)
+    {
+        return $"{PlatformUtilities.For(platform).GetDotNetPlatformIdentifier(runtime)}-{GetArchitectureIdentifier(architecture)}";
+    }
+
     public static string GetPlatformIdentifier(UnrealTargetPlatform platform)
     {
         return PlatformUtilities.For(platform).DotNetPlatformIdentifier;

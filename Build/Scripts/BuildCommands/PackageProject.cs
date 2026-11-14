@@ -71,7 +71,7 @@ public class PackageProject : BuildCommand
 
         CleanBuildArtifacts(PublishDirectory);
 
-        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
+        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture, options.Runtime);
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishDirectory);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);

@@ -45,6 +45,27 @@ internal abstract class PlatformUtilities
 
     public abstract bool SupportsNativeAOT(UnrealArch architecture);
 
+    /// <summary>Whether this host can publish the CoreClrEmbedded runtime for the architecture.</summary>
+    public virtual bool SupportsCoreClrEmbedded(UnrealArch architecture)
+    {
+        return false;
+    }
+
+    /// <summary>The .NET platform part of the runtime identifier for a runtime; most platforms use one for all.</summary>
+    public virtual string GetDotNetPlatformIdentifier(RuntimeFlavor runtime)
+    {
+        return DotNetPlatformIdentifier;
+    }
+
+    /// <summary>Whether the CoreClrEmbedded publish compiles the framework and UnrealSharp into a ReadyToRun composite.</summary>
+    public virtual bool CoreClrEmbeddedReadyToRun => true;
+
+    /// <summary>
+    /// The native container the ReadyToRun composite is emitted in, or null for a PE composite that the runtime
+    /// loads like any other assembly. A platform with a native container must produce at least one composite image.
+    /// </summary>
+    public virtual string? CoreClrEmbeddedReadyToRunContainerFormat => null;
+
     public void ValidateRuntime(UnrealTargetPlatform platform, RuntimeFlavor runtime)
     {
         if (!SupportedRuntimes.Contains(runtime))

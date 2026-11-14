@@ -19,6 +19,14 @@ internal sealed class MacUtilities : PlatformUtilities
         return OperatingSystem.IsMacOS() && architecture == UnrealArch.Arm64;
     }
 
+    public override bool SupportsCoreClrEmbedded(UnrealArch architecture)
+    {
+        return OperatingSystem.IsMacOS() && architecture == UnrealArch.Arm64;
+    }
+
+    // Apple platforms only map native code from signed Mach-O images; the SDK links the composite into a dylib.
+    public override string? CoreClrEmbeddedReadyToRunContainerFormat => "macho";
+
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory)
     {
         context.StageFiles(StagedFileType.NonUFS, publishDirectory, "*", StageFilesSearch.AllDirectories, stageDirectory);

@@ -50,7 +50,7 @@ public static class CoreClrEmbeddedUtilities
         {
             throw new NotSupportedException("CoreClrEmbedded is a packaged-game runtime. The Editor always uses CoreClrHostFxr.");
         }
-        if (!OperatingSystem.IsMacOS() || options.TargetArchitecture != UnrealArch.Arm64)
+        if (!PlatformUtilities.For(options.TargetPlatform).SupportsCoreClrEmbedded(options.TargetArchitecture))
         {
             throw new NotSupportedException("CoreClrEmbedded packaging currently supports arm64 Apple targets built on macOS.");
         }
@@ -59,10 +59,10 @@ public static class CoreClrEmbeddedUtilities
     public static void Run(BuildCommand command, PackageProject.PackagingOptions options, string publishDirectory, string outputDirectory)
     {
         PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
-        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
+        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture, options.Runtime);
         string ProjectName = command.GetProjectName() + ".CoreCLR";
 
-        string ProjectFile = CreateProject(command, ProjectName, publishDirectory);
+        string ProjectFile = CreateProject(command, Platform, ProjectName, publishDirectory);
         Publish(command, ProjectFile, RuntimeIdentifier, outputDirectory);
 
         foreach (string LoadOrder in Directory.GetFiles(publishDirectory, "*.LoadOrder.json"))
@@ -74,7 +74,7 @@ public static class CoreClrEmbeddedUtilities
         Properties["RUNTIME_IDENTIFIER"] = RuntimeIdentifier;
 
         CoreClrEmbeddedLayout Layout = Platform.FinalizeCoreClrEmbedded(outputDirectory);
-        if (Layout.ReadyToRunImages.Count == 0)
+        if (Layout.ReadyToRunImages.Count == 0 && Platform.CoreClrEmbeddedReadyToRun && Platform.CoreClrEmbeddedReadyToRunContainerFormat != null)
         {
             throw new AutomationException($"CoreClrEmbedded publish produced no ReadyToRun composite image in '{outputDirectory}'.");
         }
@@ -112,7 +112,7 @@ public static class CoreClrEmbeddedUtilities
         }
     }
 
-    private static string CreateProject(BuildCommand command, string projectName, string directory)
+    private static string CreateProject(BuildCommand command, PlatformUtilities platform, string projectName, string directory)
     {
         XmlDocument Document = new XmlDocument();
         XmlElement Project = Document.CreateElement("Project");
@@ -136,11 +136,16 @@ public static class CoreClrEmbeddedUtilities
         SetProperty("UseMonoRuntime", "false");
         SetProperty("UseAppHost", "false");
         SetProperty("GenerateRuntimeConfigurationFiles", "true");
-        // One composite image for the framework and every UnrealSharp assembly. Apple platforms can only map
-        // native code from signed Mach-O images, so the composite is emitted as Mach-O and linked into a dylib.
-        SetProperty("PublishReadyToRun", "true");
-        SetProperty("PublishReadyToRunComposite", "true");
-        SetProperty("PublishReadyToRunContainerFormat", "macho");
+        // One composite image for the framework and every UnrealSharp assembly, in the platform's container format.
+        if (platform.CoreClrEmbeddedReadyToRun)
+        {
+            SetProperty("PublishReadyToRun", "true");
+            SetProperty("PublishReadyToRunComposite", "true");
+            if (platform.CoreClrEmbeddedReadyToRunContainerFormat is { } ContainerFormat)
+            {
+                SetProperty("PublishReadyToRunContainerFormat", ContainerFormat);
+            }
+        }
         // Trim only assemblies that opt in (the framework); UnrealSharp and user code rely on reflection.
         SetProperty("PublishTrimmed", "true");
         SetProperty("TrimMode", "partial");
