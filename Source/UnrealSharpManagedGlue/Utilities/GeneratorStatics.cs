@@ -5,6 +5,7 @@ using EpicGames.UHT.Types;
 using EpicGames.UHT.Utils;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
@@ -36,7 +37,21 @@ public static class GeneratorStatics
 		ManagedPath = "";
 		TargetType = default;
 		TargetConfiguration = default;
+		TargetPlatform = default;
 	}
+	public static UnrealTargetPlatform TargetPlatform { get; private set; }
+
+	// Capture at the call site so existing initialization order and mutable
+	// build settings retain their lifetime and behavior.
+	public static GlueTarget CreateGlueTarget() => new(TargetType.ToString(), TargetConfiguration.ToString(),
+		Factory.Session.ProjectDirectory, PluginDirectory)
+	{
+		Name = Factory.Session.Manifest!.TargetName,
+		Platform = TargetPlatform.ToString(),
+		Architecture = ScriptGeneratorUtilities.TryGetPluginStringDefine("TARGET_ARCHITECTURE"),
+		ProjectFile = Factory.Session.ProjectFile,
+		BuildAllModules = ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_BUILD_ALL_MODULES") != 0
+	};
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
@@ -47,6 +62,7 @@ public static class GeneratorStatics
 		
 		TargetType = (TargetType) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_TYPE");
 		TargetConfiguration = (UnrealTargetConfiguration) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_CONFIGURATION");
+		TargetPlatform = UnrealTargetPlatform.Parse(ScriptGeneratorUtilities.TryGetPluginStringDefine("TARGET_PLATFORM"));
 		
 		ManagedPath = Path.Combine(PluginDirectory, "Managed");
 		
