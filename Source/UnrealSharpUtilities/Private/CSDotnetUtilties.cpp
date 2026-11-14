@@ -211,7 +211,7 @@ bool UnrealSharp::DotNetUtilities::BuildUserSolution()
 		return true;
 	}
 
-	if (FCSUnrealSharpUtils::IsStandalonePIE() || FApp::IsUnattended())
+	if (FCSUnrealSharpUtils::IsStandalonePIE())
 	{
 		return true;
 	}
