@@ -8,10 +8,8 @@ entry point. Everything after that (calling the entry point, reporting managed e
 | Kind | Host | Runtime | Platforms | Typical use |
 |---|---|---|---|---|
 | `CoreClrHostFxr` | `FCSHostFxrRuntimeHost` | CoreCLR started through hostfxr (shared or self-contained .NET) | Win64, Mac | Editor, desktop JIT packages |
+| `CoreClrEmbedded` | `FCSEmbeddedCoreClrRuntimeHost` | CoreCLR started through `coreclr_initialize`, code from a ReadyToRun composite | Mac | Platforms without hostfxr; Mac exercises the host on the desktop |
 | `NativeAot` | `FCSNativeAotRuntimeHost` | A NativeAOT shared library; there is no separate runtime | Win64, Mac, iOS, Android | Shipping builds without a JIT |
-
-`CoreClrEmbedded` is reserved in `ECSRuntimeKind` and `RuntimeFlavor` for a host that starts CoreCLR through
-`coreclr_initialize`; no platform packages it and no build compiles that host yet.
 
 A .NET runtime can only be started once per process and cannot be restarted, so a host is initialized once and
 lives until the process exits. Hot reload happens inside the runtime through collectible `AssemblyLoadContext`s.
@@ -24,12 +22,12 @@ Code outside the hosts should ask what the active runtime can do instead of whic
 const FCSRuntimeCapabilities Capabilities = FUnrealSharpCoreModule::Get().GetRuntimeCapabilities();
 ```
 
-| Capability | CoreClrHostFxr | NativeAot |
-|---|---|---|
-| `bCanLoadAssembliesFromPath` | yes | no |
-| `bSupportsCollectibleLoadContexts` | yes | no |
-| `bSupportsHotReload` | Editor only | no |
-| `bAssembliesArePrelinked` | no | yes |
+| Capability | CoreClrHostFxr | CoreClrEmbedded | NativeAot |
+|---|---|---|---|
+| `bCanLoadAssembliesFromPath` | yes | yes | no |
+| `bSupportsCollectibleLoadContexts` | yes | no (ReadyToRun code is ignored in collectible contexts) | no |
+| `bSupportsHotReload` | Editor only | no | no |
+| `bAssembliesArePrelinked` | no | no | yes |
 
 `IsNativeAOT()` remains as a deprecated forwarder to `bAssembliesArePrelinked`.
 
@@ -43,7 +41,8 @@ const FCSRuntimeCapabilities Capabilities = FUnrealSharpCoreModule::Get().GetRun
 4. Without either, platforms that compile the hostfxr host fall back to it; other platforms fail with an error.
 
 Which hosts exist in a build is decided at compile time by `UnrealSharpCore.Build.cs`:
-`UNREALSHARP_WITH_HOSTFXR_HOST` (not iOS or Android) and `UNREALSHARP_WITH_NATIVEAOT_HOST` (all).
+`UNREALSHARP_WITH_HOSTFXR_HOST` (not iOS or Android), `UNREALSHARP_WITH_NATIVEAOT_HOST` (all),
+`UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST` (iOS and Mac; the ReadyToRun loader reads Mach-O images).
 
 ### The runtime manifest
 
@@ -52,8 +51,11 @@ Packaging writes the manifest; `FCSRuntimeManifest` reads it.
 ```json
 {
   "Version": 1,
-  "Kind": "NativeAot",
-  "Library": "libMyGame.framework/libMyGame"
+  "Kind": "CoreClrEmbedded",
+  "Library": "libcoreclr.dylib",
+  "Properties": { "RUNTIME_IDENTIFIER": "osx-arm64", "System.GC.Concurrent": "false" },
+  "NativeLibraries": { "libSystem.Native": "libSystem.Native.dylib" },
+  "ReadyToRunImages": { "MyGame.CoreCLR.r2r.dylib": "MyGame.CoreCLR.r2r.dylib" }
 }
 ```
 
@@ -72,9 +74,50 @@ The packaging scripts resolve a `RuntimeFlavor` (same names as the runtime kinds
 
 ```json
 {
-  "Runtime": { "Default": "CoreClrHostFxr", "IOS": "NativeAot" }
+  "Runtime": { "Default": "CoreClrHostFxr", "Mac": "CoreClrEmbedded" },
+  "CoreClrEmbeddedDotNetRoot": "/path/to/dotnet11"
 }
 ```
 
 Each platform lists the runtimes it can package (`PlatformUtilities.SupportedRuntimes`); asking for another fails
 before anything is built.
+
+## CoreClrEmbedded in detail
+
+`CoreClrEmbedded` starts CoreCLR without hostfxr, for platforms that do not ship it. Platforms decide
+(`PlatformUtilities`) whether they can publish the runtime, the RID, whether to build a ReadyToRun composite and in
+which container; Apple platforms use `macho` and require the composite.
+
+Packaging (`CoreClrEmbeddedUtilities`) is a second stage, like NativeAOT:
+
+1. The normal publish produces framework-dependent IL for the target RID.
+2. A generated `<Project>.CoreCLR.csproj` (net11.0) republishes it self-contained with the .NET 11 SDK
+   (`"CoreClrEmbeddedDotNetRoot"`, `UNREALSHARP_DOTNET11_ROOT`, or the default installation). It trims only the
+   framework (`TrimMode=partial`) and compiles the framework plus every UnrealSharp assembly into one ReadyToRun
+   composite with `PublishReadyToRunContainerFormat=macho`, which the SDK links into a dylib exporting `RTR_HEADER`.
+3. The platform arranges the result. Mac keeps the desktop layout: `libcoreclr`, the runtime's native libraries and
+   the composite stay next to the managed assemblies.
+
+At startup `FCSEmbeddedCoreClrRuntimeHost`:
+
+- loads `libcoreclr` and each ReadyToRun composite (recording its `RTR_HEADER` and Mach-O image extent);
+- passes every assembly in the managed directory as `TRUSTED_PLATFORM_ASSEMBLIES`, plus `APP_PATHS`,
+  `NATIVE_DLL_SEARCH_DIRECTORIES`, `SYSTEM_CORELIB_DIRECTORY` and the manifest's runtimeconfig properties;
+- installs a `host_runtime_contract` (`HOST_RUNTIME_CONTRACT`) that binds p/invokes such as `libSystem.Native` to the
+  packaged libraries and hands the runtime the native ReadyToRun code for component assemblies;
+- sets `UnrealSharp.UseAssemblyDependencyResolver=false`, because `AssemblyDependencyResolver` needs hostpolicy;
+  plugins then bind by name from the trusted platform assemblies;
+- resolves `UnrealSharp.Plugins.Main.InitializeUnrealSharp` with `coreclr_create_delegate`.
+
+The hosting headers (`coreclrhost.h`, `host_runtime_contract.h`) are private dotnet/runtime interfaces, vendored from
+the v11.0.0 tag in `Managed/DotNetRuntime/inc`. A newer runtime may need them refreshed.
+
+### Known limitations
+
+- Packaged size is large: the composite contains the whole (partially trimmed) framework and every UnrealSharp
+  assembly, about 350 MB for the test project. Trimming UnrealSharp assemblies or a partial composite would reduce it.
+- On Mac the process aborts when a thread exits during shutdown. The .NET 11 `libclrjit.dylib` keeps a private
+  `operator delete(void*)` but imports `operator new(size_t, nothrow_t)` from libc++. Unreal's executable replaces the
+  global `operator new`, and dyld binds the JIT's import to Unreal's allocator, so the JIT frees Unreal-allocated
+  memory with `free()`. The .NET 10 JIT imports both operators and is unaffected, and `libcoreclr` imports both as
+  well. The Mac flavor exists to exercise the host on the desktop; it is not intended for shipping.
