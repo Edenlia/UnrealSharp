@@ -12,8 +12,8 @@ using UnrealSharp.Shared;
 namespace UnrealSharp.Automation.BuildCommands;
 
 [Help("Packages the UnrealSharp managed code into an Unreal Engine packaged build.")]
-[Help("ArchiveDirectory=<Path>", "REQUIRED. The base directory containing the packaged game.")]
-[Help("UETargetName=<Name>", "Optional. Resolve ArchiveDirectory using this Unreal build target's receipt.")]
+[Help("ArchiveDirectory=<Path>", "REQUIRED. The project root under which Binaries/Managed will be published.")]
+[Help("TargetName=<Name>", "Optional. Select the Unreal build target for managed publishing.")]
 [Help("UETargetType=<TargetType>", "REQUIRED. The Unreal Engine target type (Editor, Game, Client, Server).")]
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
@@ -93,6 +93,11 @@ public class PackageProject : BuildCommand
 
     private PackagingOptions ParseOptionsFromCommandLine()
     {
+        if (ParseParam("UETargetName") || ParseOptionalStringParam("UETargetName") != null)
+        {
+            throw new AutomationException("PackageProject -UETargetName archive patching is no longer supported. Use Unreal's packaging pipeline to stage managed files (BuildCookRunUnrealSharp on engines without CustomStagingHandler). For direct managed publishing, use -TargetName and set -ArchiveDirectory to the project publish root.");
+        }
+
         string ArchiveDirectory = ParseRequiredStringParam("ArchiveDirectory");
         TargetType TargetType = ParseRequiredEnumParamEnum<TargetType>("UETargetType");
         UnrealTargetConfiguration TargetConfiguration = ParseRequiredEnumParamEnum<UnrealTargetConfiguration>("UEBuildConfig");
@@ -100,7 +105,7 @@ public class PackageProject : BuildCommand
         string? PlatformString = ParseOptionalStringParam("TargetPlatform");
         UnrealTargetPlatform TargetPlatform = string.IsNullOrEmpty(PlatformString) ? UnrealTargetPlatform.Win64 : UnrealTargetPlatform.Parse(PlatformString);
 
-        string? TargetName = ParseOptionalStringParam("UETargetName");
+        string? TargetName = ParseOptionalStringParam("TargetName");
 
         PlatformUtilities Platform = PlatformUtilities.For(TargetPlatform);
         string? ArchString = ParseOptionalStringParam("TargetArchitecture");
@@ -115,17 +120,12 @@ public class PackageProject : BuildCommand
         }
         UnrealArch TargetArchitecture = Architectures.SingleArchitecture;
 
-        string ProjectDirectory = string.IsNullOrEmpty(TargetName)
-            ? ArchiveDirectory
-            : PackageArchiveUtilities.GetProjectDirectory(ArchiveDirectory, this.GetUProjectFile(), TargetName,
-                TargetType, TargetPlatform, TargetConfiguration, TargetArchitecture);
-
         bool ReadyToRun = ParseParam("ReadyToRun");
         bool NativeAot = ParseParam("NativeAOT") || !ReadyToRun && (this.IsNativeAotEnabled() || Platform.RequiresNativeAOT);
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ProjectDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams, ReadyToRun);
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams, ReadyToRun);
     }
 
     private static void LogOptions(PackagingOptions options)
