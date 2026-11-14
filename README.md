@@ -29,17 +29,19 @@ Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/U
 
 ## Supported platforms
 
-| Platform | Status |
-|---|---|
-| Windows | Supported |
-| macOS | Supported |
-| Linux | Planned |
-| iOS | Supported |
-| Android | Supported |
+| Platform | Status | Packaged runtimes |
+|---|---|---|
+| Windows | Supported | CoreCLR (JIT), NativeAOT |
+| macOS | Supported | CoreCLR (JIT), NativeAOT |
+| Linux | Planned | |
+| iOS | Supported | NativeAOT, CoreCLR ReadyToRun + interpreter (.NET 11, experimental) |
+| Android | Supported | NativeAOT, CoreCLR JIT (.NET 11, experimental) |
+
+See [Runtime hosts](Docs/RuntimeHosts.md) for how each runtime is started and how to choose one.
 
 ## Prerequisites
 
-- Unreal Engine 5.6 – 5.8
+- Unreal Engine 5.6 – 5.8, or 5.9 Preview on Windows
 - .NET 10.0.5 or newer
 - A C++ project (strongly recommended, pure Blueprint projects work, but are harder to provide support for)
 

@@ -7,11 +7,24 @@ namespace UnrealSharp.Plugins;
 
 public class PluginLoadContext : AssemblyLoadContext
 {
-    private readonly AssemblyDependencyResolver _resolver;
+    /// <summary>
+    /// AppContext switch set to false by runtime hosts that do not start CoreCLR through hostfxr (for example the
+    /// embedded iOS host). AssemblyDependencyResolver needs hostpolicy, which those hosts do not ship; they put every
+    /// assembly on the trusted platform assembly list instead, so plain name binding finds them.
+    /// </summary>
+    public const string UseDependencyResolverSwitch = "UnrealSharp.UseAssemblyDependencyResolver";
 
-    public PluginLoadContext(string pluginName, AssemblyDependencyResolver resolver, bool isCollectible) : base(pluginName, isCollectible)
+    private readonly AssemblyDependencyResolver? _resolver;
+
+    public PluginLoadContext(string pluginName, AssemblyDependencyResolver? resolver, bool isCollectible) : base(pluginName, isCollectible)
     {
         _resolver = resolver;
+    }
+
+    public static AssemblyDependencyResolver? CreateDependencyResolver(string assemblyPath)
+    {
+        bool useResolver = !AppContext.TryGetSwitch(UseDependencyResolverSwitch, out bool isEnabled) || isEnabled;
+        return useResolver ? new AssemblyDependencyResolver(assemblyPath) : null;
     }
 
     protected override Assembly? Load(AssemblyName assemblyName)
@@ -27,7 +40,7 @@ public class PluginLoadContext : AssemblyLoadContext
             return loadedAssembly;
         }
         
-        string? assemblyPath = _resolver.ResolveAssemblyToPath(assemblyName);
+        string? assemblyPath = _resolver?.ResolveAssemblyToPath(assemblyName);
         
         Assembly? newAssembly;
         if (string.IsNullOrEmpty(assemblyPath))

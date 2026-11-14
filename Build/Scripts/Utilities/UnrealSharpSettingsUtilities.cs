@@ -33,6 +33,11 @@ public static class UnrealSharpSettingsUtilities
     {
         return Configs.GetValue(buildCommand, InitializeConfigFile)[elementName];
     }
+
+    public static bool TryGetElement(this BuildCommand buildCommand, string elementName, out JsonElement element)
+    {
+        return Configs.GetValue(buildCommand, InitializeConfigFile).TryGetValue(elementName, out element);
+    }
     
     static string GetConfigFile(string rootDirectory)
     {

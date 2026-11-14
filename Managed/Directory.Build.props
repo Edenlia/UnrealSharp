@@ -2,5 +2,7 @@
   <PropertyGroup>
     <OutputPath Condition="'$(UseDefaultOutputPath)' != 'true'">$(SolutionDir)..\..\Binaries\Managed\</OutputPath>
     <OutputPath Condition="'$(UnrealSharpBindingsRoot)' != '' and '$(UseDefaultOutputPath)' != 'true'">$(UnrealSharpBindingsRoot)/</OutputPath>
+    <!-- API documentation such as UnrealSharp.xml is for IDEs; packaged games never read it. -->
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
   </PropertyGroup>
 </Project>

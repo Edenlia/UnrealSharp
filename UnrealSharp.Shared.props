@@ -14,6 +14,8 @@
     <UnrealSharpBindingsDirectory Condition="'$(UnrealSharpBindingsDirectory)' == ''">$(UnrealSharpPluginDir)Binaries/Managed/$(TargetFramework)</UnrealSharpBindingsDirectory>
     <UnrealSharpAnalyzersDirectory Condition="'$(UnrealSharpBindingsRoot)' != ''">$(UnrealSharpBindingsRoot)/netstandard2.0</UnrealSharpAnalyzersDirectory>
     <UnrealSharpAnalyzersDirectory Condition="'$(UnrealSharpAnalyzersDirectory)' == ''">$(UnrealSharpPluginDir)Binaries/Managed/netstandard2.0</UnrealSharpAnalyzersDirectory>
+    <!-- Keep the API documentation of referenced assemblies, such as UnrealSharp.xml, out of packaged games. -->
+    <PublishDocumentationFiles Condition="'$(PublishDocumentationFiles)' == ''">false</PublishDocumentationFiles>
   </PropertyGroup>
   
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.AOT.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.AOT.props')" />

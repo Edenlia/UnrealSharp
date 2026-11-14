@@ -5,10 +5,27 @@
 #include "CSDotnetUtilties.h"
 #include "Properties/CSPropertyGeneratorManager.h"
 #include "Modules/ModuleManager.h"
+#include "Runtime/CSRuntimeHost.h"
+#include "Runtime/CSRuntimeHostFactory.h"
 
 #define LOCTEXT_NAMESPACE "FUnrealSharpCoreModule"
 
 DEFINE_LOG_CATEGORY(LogUnrealSharp);
+
+FUnrealSharpCoreModule::FUnrealSharpCoreModule() = default;
+FUnrealSharpCoreModule::~FUnrealSharpCoreModule() = default;
+
+ECSRuntimeKind FUnrealSharpCoreModule::GetRuntimeKind() const
+{
+	check(RuntimeHost);
+	return RuntimeHost->GetKind();
+}
+
+FCSRuntimeCapabilities FUnrealSharpCoreModule::GetRuntimeCapabilities() const
+{
+	check(RuntimeHost);
+	return RuntimeHost->GetCapabilities();
+}
 
 void FUnrealSharpCoreModule::StartupModule()
 {
@@ -41,7 +58,8 @@ void FUnrealSharpCoreModule::StartupModule()
 	}
 #endif
 	
-	if (!DotNetRuntimeHost.InitializeManagedRuntime())
+	RuntimeHost = UnrealSharp::RuntimeHostFactory::CreateRuntimeHost();
+	if (!RuntimeHost || !RuntimeHost->Initialize())
 	{
 		return;
 	}

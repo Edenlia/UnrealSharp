@@ -1,104 +1,34 @@
-#include "DotNet/CSDotNetRuntimeHost.h"
-#include "Misc/CommandLine.h"
+#include "Runtime/HostFxr/CSHostFxrRuntimeHost.h"
 
-#include "CSBindsRegistry.h"
+#if UNREALSHARP_WITH_HOSTFXR_HOST
+
 #include "UnrealSharpCore.h"
 #include "CSDotnetUtilties.h"
-#include "CSManagedPluginCallbacks.h"
 #include "CSPathsUtilities.h"
-#include "CSPlatformUtilities.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
 #include "Logging/StructuredLog.h"
-
 
 using namespace UnrealSharp;
 
 static_assert(sizeof(DotNetUtilities::FHostChar) == sizeof(char_t), "FHostChar does not match hostfxr's char_t.");
 
-FCSDotNetRuntimeHost::~FCSDotNetRuntimeHost()
+FCSHostFxrRuntimeHost::~FCSHostFxrRuntimeHost()
 {
-	ShutdownManagedRuntime();
+	ReleaseHostFxr();
 }
 
-bool FCSDotNetRuntimeHost::InitializeManagedRuntime()
+FCSRuntimeCapabilities FCSHostFxrRuntimeHost::GetCapabilities() const
 {
-	const FString UserWorkingDirectory = FPaths::ConvertRelativePathToFull(Paths::GetUserAssemblyDirectory());
-	FInitializeUnrealSharp InitializeUnrealSharp = nullptr;
-#if !WITH_EDITOR
-	const FString AotLibraryPath = PlatformUtilities::GetNativeAotLibraryPath(UserWorkingDirectory);
-	if (FPaths::FileExists(UserWorkingDirectory / TEXT("UnrealSharp.NativeAOT")))
-	{
-		NativeAotLibrary = PlatformUtilities::LoadNativeAotLibrary(AotLibraryPath);
-		if (!NativeAotLibrary)
-		{
-			const TOptional<FString> LoadError = PlatformUtilities::GetNativeAotLoadError();
-			if (LoadError.IsSet())
-			{
-				UE_LOGFMT(LogUnrealSharp, Error, "NativeAOT dlopen error: {0}", LoadError.GetValue());
-			}
-			UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to load NativeAOT library: {0}", AotLibraryPath);
-		}
-
-		InitializeUnrealSharp = reinterpret_cast<FInitializeUnrealSharp>(
-			PlatformUtilities::GetNativeAotEntryPoint(NativeAotLibrary));
-		if (!InitializeUnrealSharp)
-		{
-			UE_LOGFMT(LogUnrealSharp, Fatal, "NativeAOT library is missing InitializeAotRuntime: {0}", AotLibraryPath);
-		}
-		UE_LOGFMT(LogUnrealSharp, Display, "Using NativeAOT runtime: {0}", AotLibraryPath);
-	}
-#endif
-
-	if (!InitializeUnrealSharp)
-	{
-		InitializeUnrealSharp = ResolvePlatformEntryPoint(UserWorkingDirectory);
-	}
-
-	if (!InitializeUnrealSharp)
-	{
-		if constexpr (!PlatformUtilities::SupportsJit)
-		{
-			UE_LOGFMT(LogUnrealSharp, Fatal, "No supported managed runtime package could be loaded from {0}", UserWorkingDirectory);
-			return false;
-		}
-		else
-		{
-			InitializeUnrealSharp = ResolveJitEntryPoint();
-			if (!InitializeUnrealSharp)
-			{
-				return false;
-			}
-		}
-	}
-
-	const FTCHARToUTF8 WorkingDirectoryUtf8(*PlatformUtilities::GetManagedWorkingDirectory(UserWorkingDirectory));
-
-	FCSInitializationResult InitializationResult;
-
-	InitializeUnrealSharp(
-		(const UTF8CHAR*)WorkingDirectoryUtf8.Get(),
-		&GetManagedPluginCallbacks(),
-		(const void*)&FCSBindsRegistry::GetBoundFunction,
-		&GetManagedCallbacks(),
-		&InitializationResult);
-
-	if (!InitializationResult.bSuccess)
-	{
-		UE_LOGFMT(LogUnrealSharp, Fatal, "Failed to initialize UnrealSharp! Exception:\n{0}", FString(StringCast<TCHAR>(InitializationResult.Message)));
-	}
-
-#if !(UE_BUILD_SHIPPING)
-	if (FParse::Param(FCommandLine::Get(), TEXT("-waitformanageddebugger")))
-	{
-		while (!FPlatformMisc::IsDebuggerPresent());
-	}
-#endif
-
-	return true;
+	FCSRuntimeCapabilities Capabilities;
+	Capabilities.bCanLoadAssembliesFromPath = true;
+	Capabilities.bSupportsCollectibleLoadContexts = true;
+	Capabilities.bSupportsHotReload = WITH_EDITOR;
+	Capabilities.bAssembliesArePrelinked = false;
+	return Capabilities;
 }
 
-FInitializeUnrealSharp FCSDotNetRuntimeHost::ResolveJitEntryPoint()
+FInitializeUnrealSharp FCSHostFxrRuntimeHost::StartRuntime()
 {
 	load_assembly_and_get_function_pointer_fn LoadAssemblyAndGetFunctionPointer = InitializeHost();
 	if (!LoadAssemblyAndGetFunctionPointer)
@@ -131,14 +61,7 @@ FInitializeUnrealSharp FCSDotNetRuntimeHost::ResolveJitEntryPoint()
 	return InitializeUnrealSharp;
 }
 
-#if !PLATFORM_IOS
-FInitializeUnrealSharp FCSDotNetRuntimeHost::ResolvePlatformEntryPoint(const FString&)
-{
-	return nullptr;
-}
-#endif
-
-void FCSDotNetRuntimeHost::ShutdownManagedRuntime()
+void FCSHostFxrRuntimeHost::ReleaseHostFxr()
 {
 	if (RuntimeHost)
 	{
@@ -152,7 +75,7 @@ void FCSDotNetRuntimeHost::ShutdownManagedRuntime()
 	Hostfxr_Close = nullptr;
 }
 
-FCSDotNetLayout FCSDotNetRuntimeHost::ResolveDotNetLayout(const FString& PluginAssemblyPath)
+FCSDotNetLayout FCSHostFxrRuntimeHost::ResolveDotNetLayout(const FString& PluginAssemblyPath)
 {
 	const FString RuntimeDirectory = FPaths::GetPath(PluginAssemblyPath);
 
@@ -199,7 +122,7 @@ FCSDotNetLayout FCSDotNetRuntimeHost::ResolveDotNetLayout(const FString& PluginA
 	return Layout;
 }
 
-load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::InitializeHost()
+load_assembly_and_get_function_pointer_fn FCSHostFxrRuntimeHost::InitializeHost()
 {
 	const FString PluginAssemblyPath = FPaths::ConvertRelativePathToFull(Paths::GetUnrealSharpPluginsPath());
 
@@ -238,7 +161,7 @@ load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::InitializeHost()
 	return ConfigureRuntime(Layout);
 }
 
-load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::ConfigureRuntime(const FCSDotNetLayout& Layout) const
+load_assembly_and_get_function_pointer_fn FCSHostFxrRuntimeHost::ConfigureRuntime(const FCSDotNetLayout& Layout) const
 {
 	if (!FPaths::DirectoryExists(Layout.DotNetRoot))
 	{
@@ -301,3 +224,5 @@ load_assembly_and_get_function_pointer_fn FCSDotNetRuntimeHost::ConfigureRuntime
 
 	return reinterpret_cast<load_assembly_and_get_function_pointer_fn>(LoadAssemblyAndGetFunctionPointer);
 }
+
+#endif // UNREALSHARP_WITH_HOSTFXR_HOST

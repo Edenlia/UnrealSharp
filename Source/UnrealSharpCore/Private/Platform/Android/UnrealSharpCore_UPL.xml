@@ -1,9 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root xmlns:android="http://schemas.android.com/apk/res/android">
+    <init>
+        <setString result="ManagedDir" value="$S(ProjectDir)/Intermediate/UnrealSharp/Android/$S(Configuration)/arm64-v8a/Binaries/Managed/net10.0" />
+        <!-- CoreClrEmbedded packages carry the Java half of the .NET Android crypto library. -->
+        <setString result="CryptoJar" value="$S(ManagedDir)/Java/libSystem.Security.Cryptography.Native.Android.jar" />
+        <setBoolFileExists result="bHasDotNetCrypto" file="$S(CryptoJar)" />
+    </init>
     <resourceCopies>
         <isArch arch="arm64-v8a">
-            <copyDir src="$S(ProjectDir)/Intermediate/UnrealSharp/Android/$S(Configuration)/arm64-v8a/Binaries/Managed/net10.0/Native"
-                     dst="$S(BuildDir)/libs/arm64-v8a" />
+            <copyDir src="$S(ManagedDir)/Native" dst="$S(BuildDir)/libs/arm64-v8a" />
         </isArch>
+        <if condition="bHasDotNetCrypto">
+            <true>
+                <copyFile src="$S(CryptoJar)" dst="$S(BuildDir)/libs/libSystem.Security.Cryptography.Native.Android.jar" />
+            </true>
+        </if>
     </resourceCopies>
+    <soLoadLibrary>
+        <if condition="bHasDotNetCrypto">
+            <true>
+                <!-- System.loadLibrary runs its JNI_OnLoad, which the library needs before managed code uses it. -->
+                <loadLibrary name="System.Security.Cryptography.Native.Android" failmsg="UnrealSharp: failed to load System.Security.Cryptography.Native.Android" />
+            </true>
+        </if>
+    </soLoadLibrary>
 </root>

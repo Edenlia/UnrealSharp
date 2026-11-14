@@ -1,4 +1,5 @@
 {
   "ScriptDirectoryName": "SharpScript",
-  "NativeAOT": false
+  "NativeAOT": false,
+  "TrimFramework": false
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -37,23 +38,40 @@ internal abstract class PlatformUtilities
     public abstract string DotNetPlatformIdentifier { get; }
     public abstract string NativeLibraryExtension { get; }
     public abstract UnrealArch DefaultArchitecture { get; }
-    public abstract bool RequiresNativeAOT { get; }
+
+    /// <summary>Runtimes this platform can package, the default first.</summary>
+    public abstract IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; }
+    public RuntimeFlavor DefaultRuntime => SupportedRuntimes[0];
+
     public abstract bool SupportsNativeAOT(UnrealArch architecture);
 
-    public virtual void ValidatePackagingMode(bool nativeAot, bool readyToRun = false)
+    /// <summary>Whether this host can publish the CoreClrEmbedded runtime for the architecture.</summary>
+    public virtual bool SupportsCoreClrEmbedded(UnrealArch architecture)
     {
+        return false;
     }
 
-    public virtual bool UseReadyToRunForStaging() => false;
-
-    public virtual void ValidateReadyToRun(UnrealArch architecture)
+    /// <summary>The .NET platform part of the runtime identifier for a runtime; most platforms use one for all.</summary>
+    public virtual string GetDotNetPlatformIdentifier(RuntimeFlavor runtime)
     {
-        throw new NotSupportedException("ReadyToRun packaging is not implemented for this platform.");
+        return DotNetPlatformIdentifier;
     }
 
-    public virtual void PublishReadyToRun(string inputDirectory, string outputDirectory)
+    /// <summary>Whether the CoreClrEmbedded publish compiles the framework and UnrealSharp into a ReadyToRun composite.</summary>
+    public virtual bool CoreClrEmbeddedReadyToRun => true;
+
+    /// <summary>
+    /// The native container the ReadyToRun composite is emitted in, or null for a PE composite that the runtime
+    /// loads like any other assembly. A platform with a native container must produce at least one composite image.
+    /// </summary>
+    public virtual string? CoreClrEmbeddedReadyToRunContainerFormat => null;
+
+    public void ValidateRuntime(UnrealTargetPlatform platform, RuntimeFlavor runtime)
     {
-        throw new NotSupportedException("ReadyToRun packaging is not implemented for this platform.");
+        if (!SupportedRuntimes.Contains(runtime))
+        {
+            throw new NotSupportedException($"{platform} cannot package the {runtime} runtime. Supported runtimes: {string.Join(", ", SupportedRuntimes)}.");
+        }
     }
 
     public virtual void ConfigureNativeAOTProject(Action<string, string> setProperty)
@@ -65,9 +83,69 @@ internal abstract class PlatformUtilities
         return null;
     }
 
+    /// <summary>
+    /// Arranges the published NativeAOT library for this platform and returns the reference the native plugin
+    /// resolves at runtime (see PlatformUtilities::ResolveBundledLibraryPath in UnrealSharpUtilities).
+    /// </summary>
     public virtual string FinalizeNativeAOT(string outputDirectory, string nativeLibrary)
     {
         return nativeLibrary;
+    }
+
+    /// <summary>
+    /// Arranges a CoreClrEmbedded publish for this platform and reports what the host must load. The default keeps
+    /// the desktop layout: libcoreclr, the runtime's native libraries and the ReadyToRun composite stay next to the
+    /// managed assemblies, referenced by file name.
+    /// </summary>
+    public virtual CoreClrEmbeddedLayout FinalizeCoreClrEmbedded(string outputDirectory)
+    {
+        string CoreClr = "libcoreclr" + NativeLibraryExtension;
+        if (!File.Exists(Path.Combine(outputDirectory, CoreClr)))
+        {
+            throw new AutomationException($"CoreClrEmbedded publish did not produce '{CoreClr}' in '{outputDirectory}'.");
+        }
+
+        Dictionary<string, string> NativeLibraries = new(StringComparer.Ordinal);
+        Dictionary<string, string> ReadyToRunImages = new(StringComparer.Ordinal);
+        foreach (string Library in Directory.GetFiles(outputDirectory, "*" + NativeLibraryExtension))
+        {
+            string FileName = Path.GetFileName(Library);
+            if (IsHostingLibrary(FileName))
+            {
+                // Desktop self-contained publishes carry hostfxr; the embedded host never loads it.
+                File.Delete(Library);
+            }
+            else if (FileName.EndsWith(".r2r" + NativeLibraryExtension, StringComparison.Ordinal))
+            {
+                ReadyToRunImages[FileName] = FileName;
+            }
+            else if (!IsCoreClrPrivateLibrary(FileName))
+            {
+                NativeLibraries[Path.GetFileNameWithoutExtension(FileName)] = FileName;
+            }
+        }
+
+        // Static archives are only useful when linking the runtime into the executable.
+        foreach (string Archive in Directory.GetFiles(outputDirectory, "*.a"))
+        {
+            File.Delete(Archive);
+        }
+
+        return new CoreClrEmbeddedLayout(CoreClr, NativeLibraries, ReadyToRunImages);
+    }
+
+    /// <summary>Libraries CoreCLR loads itself (or that only debuggers need); p/invokes never bind to them.</summary>
+    protected static bool IsCoreClrPrivateLibrary(string fileName)
+    {
+        string Name = Path.GetFileNameWithoutExtension(fileName);
+        return Name is "libcoreclr" or "libclrjit" or "libmscordaccore" or "libmscordbi" or "libclrgc" or "libclrgcexp";
+    }
+
+    /// <summary>hostfxr and hostpolicy start CoreCLR for the hostfxr layout only.</summary>
+    private static bool IsHostingLibrary(string fileName)
+    {
+        string Name = Path.GetFileNameWithoutExtension(fileName);
+        return Name is "libhostfxr" or "libhostpolicy" or "hostfxr" or "hostpolicy";
     }
 
     public virtual string GetPublishRoot(BuildCommand command, TargetReceipt receipt)
@@ -77,4 +155,16 @@ internal abstract class PlatformUtilities
     }
 
     public abstract void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory);
+
+    /// <summary>
+    /// Stages files outside UFS, with symbols and .NET debugger components as debug files so -nodebuginfo leaves them
+    /// out.
+    /// </summary>
+    protected static void StageNonUFSFiles(DeploymentContext context, DirectoryReference publishDirectory,
+        IEnumerable<FileReference> files, StagedDirectoryReference stageDirectory)
+    {
+        ILookup<bool, FileReference> Files = files.ToLookup(UnrealSharpStaging.IsDebugFile);
+        context.StageFiles(StagedFileType.NonUFS, publishDirectory, Files[false], stageDirectory);
+        context.StageFiles(StagedFileType.DebugNonUFS, publishDirectory, Files[true], stageDirectory);
+    }
 }

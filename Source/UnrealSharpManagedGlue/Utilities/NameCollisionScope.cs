@@ -128,7 +128,7 @@ internal sealed class NameCollisionScope : IDisposable
         {
             foreach (UhtClass declaration in owner.GetInterfaces())
             {
-                if (declaration.AlternateObject is not UhtClass interfaceClass)
+                if (declaration.GetInterfaceAlternateClass() is not { } interfaceClass)
                 {
                     continue;
                 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildTool;
@@ -10,7 +11,7 @@ internal sealed class Win64Utilities : PlatformUtilities
     public override string DotNetPlatformIdentifier => "win";
     public override string NativeLibraryExtension => ".dll";
     public override UnrealArch DefaultArchitecture => UnrealArch.X64;
-    public override bool RequiresNativeAOT => false;
+    public override IReadOnlyList<RuntimeFlavor> SupportedRuntimes { get; } = [RuntimeFlavor.CoreClrHostFxr, RuntimeFlavor.NativeAot];
 
     public override bool SupportsNativeAOT(UnrealArch architecture)
     {
@@ -19,6 +20,7 @@ internal sealed class Win64Utilities : PlatformUtilities
 
     public override void StageManagedFiles(DeploymentContext context, DirectoryReference publishDirectory, StagedDirectoryReference stageDirectory)
     {
-        context.StageFiles(StagedFileType.NonUFS, publishDirectory, "*", StageFilesSearch.AllDirectories, stageDirectory);
+        StageNonUFSFiles(context, publishDirectory,
+            DirectoryReference.EnumerateFiles(publishDirectory, "*", System.IO.SearchOption.AllDirectories), stageDirectory);
     }
 }

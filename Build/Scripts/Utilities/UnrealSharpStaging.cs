@@ -76,15 +76,37 @@ internal static class UnrealSharpStaging
         Directory.CreateDirectory(PublishRoot);
 
         LoggerUtilities.LogUnrealSharpInfo($"Publishing managed code for staged target '{Receipt.TargetName}'.");
-        bool ReadyToRun = Platform.UseReadyToRunForStaging();
+        RuntimeFlavor Runtime = RuntimeFlavorUtilities.Resolve(Command, Receipt.Platform, Platform,
+            commandLineRuntime: null, commandLineNativeAot: false);
         Command.StartPackaging(new PackageProject.PackagingOptions(PublishRoot, Receipt.TargetType,
-            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture,
-            NativeAot: !ReadyToRun && (Command.IsNativeAotEnabled() || Platform.RequiresNativeAOT), ReadyToRun: ReadyToRun));
+            Receipt.Configuration, Receipt.Platform, Receipt.Architectures.SingleArchitecture, Runtime));
 
         DirectoryReference PublishDirectory = new(PathUtilities.BuildOutputPath(PublishRoot));
         StagedDirectoryReference StageDirectory = StagedDirectoryReference.Combine(SC.RelativeProjectRootForStage,
             "Binaries", "Managed", PublishDirectory.GetDirectoryName());
         Platform.StageManagedFiles(SC, PublishDirectory, StageDirectory);
+    }
+
+    private static readonly string[] DotNetDebugComponentPrefixes = ["mscordaccore", "mscordbi", "createdump"];
+
+    /// <summary>
+    /// Symbols and .NET debugger components are staged as debug files, so -nodebuginfo excludes them like native
+    /// symbols.
+    /// </summary>
+    internal static bool IsDebugFile(FileReference file)
+    {
+        if (file.HasExtension(".pdb"))
+        {
+            return true;
+        }
+
+        string FileName = file.GetFileName();
+        if (FileName.StartsWith("lib", StringComparison.Ordinal))
+        {
+            FileName = FileName.Substring(3);
+        }
+
+        return DotNetDebugComponentPrefixes.Any(prefix => FileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool UsesUnrealSharp(TargetReceipt receipt)

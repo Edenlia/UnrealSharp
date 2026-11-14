@@ -60,11 +60,6 @@ public static class PluginLoader
 		// module or GC-handle state. NativeAOT assemblies share the default context.
 		LogUnrealSharpPlugins.LogWarning($"NativeAOT plugin cannot be unloaded: {assemblyPath}");
 #else
-		if (AppContext.GetData("UnrealSharp.ReadyToRun") as string == "true")
-		{
-			LogUnrealSharpPlugins.LogWarning($"iOS ReadyToRun plugin cannot be unloaded: {assemblyPath}");
-			return;
-		}
 		TaskTracker.WaitForAllActiveTasks();
 
 		string assemblyName = Path.GetFileNameWithoutExtension(assemblyPath);

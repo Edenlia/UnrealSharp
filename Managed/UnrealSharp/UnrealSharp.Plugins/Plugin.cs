@@ -23,14 +23,6 @@ public class Plugin
         AssemblyName = assemblyName;
         
 #if !NATIVE_AOT
-        // The iOS CoreCLR host supplies the complete target TPA list. There is no
-        // hostpolicy/AssemblyDependencyResolver in this embedded runtime layout.
-        if (AppContext.GetData("UnrealSharp.ReadyToRun") as string == "true")
-        {
-            if (isCollectible) throw new PlatformNotSupportedException("iOS ReadyToRun plugins are process-lifetime assemblies.");
-            _loadContext = AssemblyLoadContext.Default;
-            return;
-        }
         Assembly? existingAssembly = AssemblyCache.GetUniqueAssembly(assemblyName.Name!);
         if (existingAssembly != null)
         {
@@ -50,7 +42,7 @@ public class Plugin
         }
         else
         {
-            _loadContext = new PluginLoadContext(assemblyName.Name!, new AssemblyDependencyResolver(assemblyPath), isCollectible);
+            _loadContext = new PluginLoadContext(assemblyName.Name!, PluginLoadContext.CreateDependencyResolver(assemblyPath), isCollectible);
         }
 #endif
     }
@@ -107,8 +99,6 @@ public class Plugin
 #if NATIVE_AOT
         throw new PlatformNotSupportedException("NativeAOT plugins remain loaded for the process lifetime.");
 #else
-        if (AppContext.GetData("UnrealSharp.ReadyToRun") as string == "true")
-            throw new PlatformNotSupportedException("iOS ReadyToRun plugins remain loaded for the process lifetime.");
         ShutdownModule();
         
         AssemblyCache.RemoveAssembly(AssemblyName.Name!);

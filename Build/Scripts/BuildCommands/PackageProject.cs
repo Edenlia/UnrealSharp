@@ -12,15 +12,16 @@ using UnrealSharp.Shared;
 namespace UnrealSharp.Automation.BuildCommands;
 
 [Help("Packages the UnrealSharp managed code into an Unreal Engine packaged build.")]
-[Help("ArchiveDirectory=<Path>", "REQUIRED. The base directory containing the packaged game.")]
-[Help("UETargetName=<Name>", "Optional. Resolve ArchiveDirectory using this Unreal build target's receipt.")]
+[Help("ArchiveDirectory=<Path>", "REQUIRED. The project root under which Binaries/Managed will be published.")]
+[Help("TargetName=<Name>", "Optional. Select the Unreal build target for managed publishing.")]
 [Help("UETargetType=<TargetType>", "REQUIRED. The Unreal Engine target type (Editor, Game, Client, Server).")]
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
 [Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to the platform architecture.")]
-[Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
-[Help("ReadyToRun", "Experimental iOS arm64 CoreCLR/composite R2R mode. Requires UNREALSHARP_R2R_DOTNET pointing to a .NET 11 SDK dotnet executable.")]
+[Help("Runtime=<Runtime>", "Optional. Managed runtime to publish for: CoreClrHostFxr, CoreClrEmbedded or NativeAot. Defaults to the UnrealSharp \"Runtime\" setting, then the platform default.")]
+[Help("NativeAOT", "Optional flag. Same as -Runtime=NativeAot.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
+[Help("TrimFramework", "Optional flag. Trims the bundled .NET framework. Also enabled by \"TrimFramework\" in UnrealSharp.Settings.json.")]
 public class PackageProject : BuildCommand
 {
     private const string ManagedFolderName = "Managed";
@@ -35,9 +36,18 @@ public class PackageProject : BuildCommand
         UnrealTargetConfiguration BuildConfiguration,
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
-        bool NativeAot,
+        RuntimeFlavor Runtime,
         string[]? UserParams = null,
-        bool ReadyToRun = false);
+        bool TrimFramework = false)
+    {
+        public bool NativeAot => Runtime == RuntimeFlavor.NativeAot;
+
+        /// <summary>
+        /// Runtimes other than CoreClrHostFxr publish framework-dependent IL first, then build the final runtime
+        /// image from it in a second stage.
+        /// </summary>
+        public bool UsesSecondStage => Runtime != RuntimeFlavor.CoreClrHostFxr;
+    }
 
     public override void ExecuteBuild()
     {
@@ -55,12 +65,13 @@ public class PackageProject : BuildCommand
         DotNetSdkUtilities.CopyGlobalJson(this);
 
         string OutputDirectory = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
-        string PublishFolder = options.NativeAot || options.ReadyToRun
-            ? Path.Combine(this.GetUnrealSharpIntermediateDirectory(), options.ReadyToRun ? "ReadyToRun" : "NativeAOT", _glueTarget.Name, options.TargetPlatform.ToString(), options.TargetArchitecture.ToString(), options.BuildConfiguration.ToString())
+        string StageFolder = options.NativeAot ? "NativeAOT" : options.Runtime.ToString();
+        string PublishFolder = options.UsesSecondStage
+            ? Path.Combine(this.GetUnrealSharpIntermediateDirectory(), StageFolder, _glueTarget.Name, options.TargetPlatform.ToString(), options.TargetArchitecture.ToString(), options.BuildConfiguration.ToString())
             : OutputDirectory;
         CleanBuildArtifacts(PublishFolder);
 
-        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
+        string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture, options.Runtime);
         IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
         foreach (string Argument in GlueTargetUtilities.BuildArguments(_glueTarget)) Arguments.Add(Argument);
 
@@ -71,21 +82,40 @@ public class PackageProject : BuildCommand
         Arguments.Add($"-p:UnrealSharpUserAssemblyDirectory={PublishFolder}");
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
-        
-        EmitInstalledFlagFile(PublishFolder);
 
-        if (options.ReadyToRun)
+        if (options.TrimFramework || this.GetTrimFramework())
         {
-            CleanBuildArtifacts(OutputDirectory);
-            PlatformUtilities.For(options.TargetPlatform).PublishReadyToRun(PublishFolder, OutputDirectory);
-            EmitInstalledFlagFile(OutputDirectory);
+            if (options.UsesSecondStage)
+            {
+                // The first stage is framework-dependent; the second stage publishes and trims its own framework.
+                LoggerUtilities.LogUnrealSharpInfo($"TrimFramework does not apply to {options.Runtime}; its second stage trims the framework itself.");
+            }
+            else
+            {
+                string TrimFolder = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), "FrameworkTrim");
+                FrameworkTrimmingUtilities.TrimFramework(PublishFolder, TrimFolder, RuntimeIdentifier, options.BuildConfiguration);
+            }
         }
 
-        if (options.NativeAot)
+
+        EmitInstalledFlagFile(PublishFolder);
+
+        if (options.UsesSecondStage)
         {
             CleanBuildArtifacts(OutputDirectory);
-            NativeAOTUtilities.RunAOT(this, options, PublishFolder, OutputDirectory);
+            if (options.NativeAot)
+            {
+                NativeAOTUtilities.RunAOT(this, options, PublishFolder, OutputDirectory);
+            }
+            else
+            {
+                CoreClrEmbeddedUtilities.Run(this, options, PublishFolder, OutputDirectory);
+            }
             EmitInstalledFlagFile(OutputDirectory);
+        }
+        else
+        {
+            RuntimeManifestWriter.Write(PublishFolder, options.Runtime);
         }
 
         LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
@@ -93,6 +123,11 @@ public class PackageProject : BuildCommand
 
     private PackagingOptions ParseOptionsFromCommandLine()
     {
+        if (ParseParam("UETargetName") || ParseOptionalStringParam("UETargetName") != null)
+        {
+            throw new AutomationException("PackageProject -UETargetName archive patching is no longer supported. Use Unreal's packaging pipeline to stage managed files (BuildCookRunUnrealSharp on engines without CustomStagingHandler). For direct managed publishing, use -TargetName and set -ArchiveDirectory to the project publish root.");
+        }
+
         string ArchiveDirectory = ParseRequiredStringParam("ArchiveDirectory");
         TargetType TargetType = ParseRequiredEnumParamEnum<TargetType>("UETargetType");
         UnrealTargetConfiguration TargetConfiguration = ParseRequiredEnumParamEnum<UnrealTargetConfiguration>("UEBuildConfig");
@@ -100,7 +135,7 @@ public class PackageProject : BuildCommand
         string? PlatformString = ParseOptionalStringParam("TargetPlatform");
         UnrealTargetPlatform TargetPlatform = string.IsNullOrEmpty(PlatformString) ? UnrealTargetPlatform.Win64 : UnrealTargetPlatform.Parse(PlatformString);
 
-        string? TargetName = ParseOptionalStringParam("UETargetName");
+        string? TargetName = ParseOptionalStringParam("TargetName");
 
         PlatformUtilities Platform = PlatformUtilities.For(TargetPlatform);
         string? ArchString = ParseOptionalStringParam("TargetArchitecture");
@@ -115,17 +150,14 @@ public class PackageProject : BuildCommand
         }
         UnrealArch TargetArchitecture = Architectures.SingleArchitecture;
 
-        string ProjectDirectory = string.IsNullOrEmpty(TargetName)
-            ? ArchiveDirectory
-            : PackageArchiveUtilities.GetProjectDirectory(ArchiveDirectory, this.GetUProjectFile(), TargetName,
-                TargetType, TargetPlatform, TargetConfiguration, TargetArchitecture);
-
-        bool ReadyToRun = ParseParam("ReadyToRun");
-        bool NativeAot = ParseParam("NativeAOT") || !ReadyToRun && (this.IsNativeAotEnabled() || Platform.RequiresNativeAOT);
+        RuntimeFlavor Runtime = RuntimeFlavorUtilities.Resolve(this, TargetPlatform, Platform,
+            ParseOptionalStringParam("Runtime"), ParseParam("NativeAOT"));
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ProjectDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams, ReadyToRun);
+        bool TrimFramework = ParseParam("TrimFramework");
+
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, Runtime, UserParams, TrimFramework);
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -136,8 +168,7 @@ public class PackageProject : BuildCommand
         LoggerUtilities.LogUnrealSharpInfo($"Target Architecture: {options.TargetArchitecture}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Build Configuration: {options.BuildConfiguration}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Target Type: {options.TargetType}");
-        LoggerUtilities.LogUnrealSharpInfo($"Native AOT: {options.NativeAot}");
-        LoggerUtilities.LogUnrealSharpInfo($"ReadyToRun: {options.ReadyToRun}");
+        LoggerUtilities.LogUnrealSharpInfo($"Runtime: {options.Runtime}");
 
         if (options.UserParams is { Length: > 0 })
         {
@@ -149,21 +180,19 @@ public class PackageProject : BuildCommand
     {
         ArgumentException.ThrowIfNullOrEmpty(options.ArchiveDirectory);
         PlatformUtilities Platform = PlatformUtilities.For(options.TargetPlatform);
-        if (options.ReadyToRun)
-        {
-            if (options.NativeAot || options.TargetType == TargetType.Editor)
-                throw new NotSupportedException("ReadyToRun requires a non-Editor target without NativeAOT.");
-            Platform.ValidateReadyToRun(options.TargetArchitecture);
-        }
         if (!Directory.Exists(options.ArchiveDirectory))
         {
             throw new DirectoryNotFoundException($"Archive directory does not exist: {options.ArchiveDirectory}");
         }
+        Platform.ValidateRuntime(options.TargetPlatform, options.Runtime);
         if (options.NativeAot && (options.TargetType == TargetType.Editor || !Platform.SupportsNativeAOT(options.TargetArchitecture)))
         {
             throw new NotSupportedException("NativeAOT requires a supported non-Editor target on a compatible host OS.");
         }
-        Platform.ValidatePackagingMode(options.NativeAot, options.ReadyToRun);
+        else if (options.Runtime == RuntimeFlavor.CoreClrEmbedded)
+        {
+            CoreClrEmbeddedUtilities.Validate(options);
+        }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
         if (!File.Exists(HostFxrPath))
@@ -209,8 +238,9 @@ public class PackageProject : BuildCommand
             "--runtime", runtimeIdentifier,
 
             "-p:UseDefaultOutputPath=true",
-            
-            $"-p:PublishSelfContained={(options.NativeAot || options.ReadyToRun ? "false" : "true")}",
+
+            // The second stage brings its own runtime; only the hostfxr layout ships the runtime from this publish.
+            $"-p:PublishSelfContained={(options.UsesSecondStage ? "false" : "true")}",
 
             $"-p:UETargetType={options.TargetType}",
             $"-p:UEBuildConfig={options.BuildConfiguration}",

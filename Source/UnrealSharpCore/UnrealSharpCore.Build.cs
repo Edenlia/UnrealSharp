@@ -19,30 +19,48 @@ public class UnrealSharpCore : ModuleRules
 			&& string.Equals(Path.GetFullPath(argument.Substring(8).Trim('"')), Path.Combine(PluginDirectory, "UnrealSharp.uplugin"), StringComparison.OrdinalIgnoreCase));
 		PublicDefinitions.Add("UNREALSHARP_DISTRIBUTION=" + (distribution ? "1" : "0"));
 
+		// Runtime hosts compiled into this target. Mobile platforms ship no hostfxr and do not allow a JIT.
+		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
+		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile ? "0" : "1"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
+		// coreclr_initialize hosting. Apple platforms load Mach-O ReadyToRun images; Android hands assemblies
+		// (and any PE ReadyToRun composite) to the runtime through external_assembly_probe.
+		bool bEmbeddedCoreClr = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac ||
+			Target.Platform == UnrealTargetPlatform.Android;
+		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bEmbeddedCoreClr ? "1" : "0"));
+
 		// AOT is published during staging, after the native target has been built.
 		// UAT regenerates its run-only Xcode project afterwards. Only that process
-		// receives this path; a first native build must not require an AOT output.
+		// receives the published Frameworks directory: the NativeAOT library, or libcoreclr,
+		// the runtime's native libraries and the ReadyToRun composite for CoreClrEmbedded.
 		// Xcode's framework discovery uses Development rules even for Shipping,
 		// so use the publishing receipt's path rather than Target.Configuration.
-		string iosFramework = Environment.GetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORK");
+		string iosFrameworks = Environment.GetEnvironmentVariable("UNREALSHARP_IOS_FRAMEWORKS");
 		if (Target.Platform == UnrealTargetPlatform.IOS && Target.ProjectFile != null &&
-			!string.IsNullOrEmpty(iosFramework))
+			!string.IsNullOrEmpty(iosFrameworks))
 		{
 			string publishRoot = Path.Combine(Target.ProjectFile.Directory.FullName,
 				"Intermediate", "UnrealSharp", "Publish", Target.Name, "IOS") + Path.DirectorySeparatorChar;
-			string frameworkPath = Path.GetFullPath(iosFramework);
-			if (frameworkPath.StartsWith(publishRoot, StringComparison.Ordinal))
+			string frameworksDirectory = Path.GetFullPath(iosFrameworks);
+			if (frameworksDirectory.StartsWith(publishRoot, StringComparison.Ordinal))
 			{
-				if (!Directory.Exists(frameworkPath))
+				if (!Directory.Exists(frameworksDirectory))
 				{
-					throw new BuildException("Missing published UnrealSharp iOS framework: {0}", frameworkPath);
+					throw new BuildException("Missing published UnrealSharp iOS frameworks: {0}", frameworksDirectory);
 				}
-				foreach (string path in Directory.GetDirectories(Path.GetDirectoryName(frameworkPath), "*.framework"))
+
+				string[] frameworkPaths = Directory.GetDirectories(frameworksDirectory, "*.framework");
+				Array.Sort(frameworkPaths, StringComparer.Ordinal);
+				foreach (string frameworkPath in frameworkPaths)
 				{
-					string name = Path.GetFileNameWithoutExtension(path);
-					if (!File.Exists(Path.Combine(path, name)) || !File.Exists(Path.Combine(path, "Info.plist")))
-						throw new BuildException("Incomplete UnrealSharp framework: {0}", path);
-					PublicAdditionalFrameworks.Add(new Framework(name, path, Framework.FrameworkMode.Copy));
+					string frameworkName = Path.GetFileNameWithoutExtension(frameworkPath);
+					if (!File.Exists(Path.Combine(frameworkPath, frameworkName)) ||
+						!File.Exists(Path.Combine(frameworkPath, "Info.plist")))
+					{
+						throw new BuildException("Incomplete published UnrealSharp iOS framework: {0}", frameworkPath);
+					}
+					// Embedded and signed with the app; the runtime host loads each one with dlopen.
+					PublicAdditionalFrameworks.Add(new Framework(frameworkName, frameworkPath, Framework.FrameworkMode.Copy));
 				}
 			}
 		}
