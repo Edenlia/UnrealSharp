@@ -1,6 +1,7 @@
 #include "CSDotnetUtilties.h"
 
 #include "CSBuildUtilties.h"
+#include "CSDialogUtilities.h"
 #include "CSInstallationUtilities.h"
 #include "CSPathsUtilities.h"
 #include "CSProjectUtilities.h"
