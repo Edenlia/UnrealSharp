@@ -16,6 +16,13 @@ public sealed class ModuleInfo
 	public string ModuleRoot { get; }
 	public string ScriptPath { get; }
 
+	// Native source ownership, independent of ForceAsEngineGlue and output redirection.
+	public bool IsEngineSource { get; }
+	public bool IsEnginePlugin { get; }
+	public bool IsProjectSource { get; }
+	public bool IsProjectPlugin { get; }
+	public string? PluginFile { get; }
+
 	public bool IsExtendingModule { get; }
 	public bool IsEngineModule { get; }
 	
@@ -42,11 +49,43 @@ public sealed class ModuleInfo
 		Module = package;
 		ModuleName = moduleName;
 		ModuleRoot = moduleRoot;
+		PluginFile = FindPluginFile(package.GetModule().BaseDirectory);
+		bool isEngine = package.Module.IsPartOfEngine;
+		bool isPlugin = PluginFile != null || package.Module.IsPlugin;
+		IsEngineSource = isEngine && !isPlugin;
+		IsEnginePlugin = isEngine && isPlugin;
+		IsProjectSource = !isEngine && !isPlugin;
+		IsProjectPlugin = !isEngine && isPlugin;
 		IsExtendingModule = package.GetPackageExtensions() != string.Empty;
 		IsEngineModule = package.IsPartOfEngine();
 		ScriptPath = Path.Combine(moduleRoot, CommonUnrealSharpSettings.ScriptDirectoryName, moduleName);
 	}
 	
+	private static string? FindPluginFile(string moduleDirectory)
+	{
+		string engineDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(GeneratorStatics.EngineDirectory));
+		StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+		for (DirectoryInfo? directory = new(moduleDirectory); directory != null && directory.Exists; directory = directory.Parent)
+		{
+			if (string.Equals(directory.FullName, engineDirectory, comparison))
+			{
+				break;
+			}
+
+			// Use the actual descriptor, including plugins outside a Plugins directory.
+			FileInfo? plugin = directory.EnumerateFiles("*.uplugin").SingleOrDefault();
+			if (plugin != null)
+			{
+				return plugin.FullName;
+			}
+			if (directory.EnumerateFiles("*.uproject").Any())
+			{
+				break;
+			}
+		}
+		return null;
+	}
+
 	internal void ResolveExtensions(IReadOnlyList<ModuleInfo>? extensions)
 	{
 		Extensions = extensions ?? [];
