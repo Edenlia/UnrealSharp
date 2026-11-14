@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
     <OutputPath Condition="'$(UseDefaultOutputPath)' != 'true'">$(SolutionDir)..\..\Binaries\Managed\</OutputPath>
+    <OutputPath Condition="'$(UnrealSharpBindingsRoot)' != '' and '$(UseDefaultOutputPath)' != 'true'">$(UnrealSharpBindingsRoot)/</OutputPath>
   </PropertyGroup>
 </Project>

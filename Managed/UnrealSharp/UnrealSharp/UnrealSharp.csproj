@@ -17,13 +17,15 @@
     <Import Project="..\..\..\UnrealSharp.Build.props" Condition="Exists('..\..\..\UnrealSharp.Build.props')" />
 
     <PropertyGroup>
-        <UHTGeneratedPath>..\..\..\Intermediate\UnrealSharp\UHT\$(UETargetType)</UHTGeneratedPath>
-        <UHTFullPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\$(UHTGeneratedPath)'))</UHTFullPath>
+        <UHTGeneratedPath>$(MSBuildThisFileDirectory)..\..\..\Intermediate\UnrealSharp\UHT\$(UETargetType)</UHTGeneratedPath>
+        <UHTGeneratedPath Condition="'$(UnrealSharpEngineGlue)' != ''">$(UnrealSharpEngineGlue)</UHTGeneratedPath>
+        <UHTFullPath Condition="'$(UHTGeneratedPath)' != ''">$([System.IO.Path]::GetFullPath('$(UHTGeneratedPath)'))</UHTFullPath>
     </PropertyGroup>
 
-    <ItemGroup>
-        <Compile Include="$(UHTGeneratedPath)\**\*.cs"/>
-    </ItemGroup>
+    <Import Project="$(UHTGeneratedPath)\UnrealSharp.EngineGlue.props" Condition="Exists('$(UHTGeneratedPath)\UnrealSharp.EngineGlue.props')" />
+    <Target Name="RequireUnrealSharpGlueTarget" BeforeTargets="CoreCompile">
+        <Error Condition="!Exists('$(UHTGeneratedPath)\UnrealSharp.EngineGlue.props')" Text="No UnrealSharp glue target selected. Build the native Target first and use its UnrealSharpTargetProps." />
+    </Target>
 
     <Import Project="$(UHTGeneratedPath)\UE5Rules.Defines.props" Condition="Exists('$(UHTGeneratedPath)\UE5Rules.Defines.props')" />
     

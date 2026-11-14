@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Xml.Linq;
 using UnrealBuildTool;
+using UnrealSharp.Shared;
 using UnrealSharpManagedGlue.SourceGeneration;
 using UnrealSharpManagedGlue.Utilities;
 
@@ -26,7 +27,7 @@ public static class PreprocessorExporter
         stringBuilder.UnIndent();
         stringBuilder.AppendLine("</Project>");
 
-        string propsPath = Path.Combine(GeneratorStatics.PluginModuleInfo.Module.GetUHTBaseDirectory(), "UE5Rules.Defines.props");
-        File.WriteAllText(propsPath, stringBuilder.ToString());
+        string propsPath = Path.Combine(GeneratorStatics.Target.EngineGlue, "UE5Rules.Defines.props");
+        GlueTarget.WriteIfChanged(propsPath, stringBuilder.ToString());
     }
 }

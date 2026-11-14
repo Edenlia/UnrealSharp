@@ -1,207 +1,92 @@
-using AutomationTool;
-using EpicGames.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Xml;
+using UnrealBuildTool;
 using UnrealSharp.Automation.BuildCommands;
 using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.Utilities;
 
-/// <summary>Existing glue build workflow, independent of the UAT command entry point.</summary>
+/// <summary>Builds framework and glue from the selected UHT target's exact project set.</summary>
 public static class GlueBuildUtilities
 {
-    public static void Build(BuildCommand command, GlueTarget target, string outputDirectory, bool addReferences, IList<string>? extraArguments = null)
+    public static string WriteSolution(string directory, IEnumerable<string> projects, string solutionName)
     {
-        string SolutionDirectory = target.GlueSolutionDirectory;
-        List<string> GlueProjectPaths = GetGlueProjectPaths(command, target);
-
-        if (GlueProjectPaths.Count == 0)
+        string inputs = string.Join("\n", projects.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(path => path, StringComparer.Ordinal));
+        string stamp = Path.Combine(directory, solutionName + ".sln.projects");
+        if (!File.Exists(Path.Combine(directory, solutionName + ".sln")) || !File.Exists(stamp) || File.ReadAllText(stamp) != inputs)
         {
-            LoggerUtilities.LogUnrealSharpInfo("No glue projects found. Skipping glue build.");
+            GenerateSolution.GenerateBuildSolution(directory, solutionName, inputs.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+            GlueTarget.WriteIfChanged(stamp, inputs);
+        }
+        // Retire only the previous generated format, so dotnet selects the .sln unambiguously.
+        File.Delete(Path.Combine(directory, "UnrealSharp.slnx"));
+        return directory;
+    }
+
+    public static void BuildFramework(GlueTarget target, bool publish = false, IList<string>? extraArguments = null)
+    {
+        string managed = Path.Combine(target.PluginDirectory, "Managed", "UnrealSharp");
+        List<string> projects = Directory.GetFiles(managed, "*.csproj", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(".Tests", StringComparison.OrdinalIgnoreCase) && (target.Type == "Editor" || !ProjectUtilities.IsEditorOnlyProject(path))).ToList();
+        string solution = WriteSolution(Path.Combine(target.Root, "Build", "Framework"), projects, "UnrealSharp");
+        List<string> arguments = GlueTargetUtilities.BuildArguments(target, framework: true);
+        if (extraArguments != null) arguments.AddRange(extraArguments);
+        BuildSolution.RunBuild(solution, Enum.Parse<UnrealTargetConfiguration>(target.Configuration), publish, arguments);
+    }
+
+    public static void BuildGlue(GlueTarget target, string? outputDirectory = null, IList<string>? extraArguments = null)
+    {
+        string output = outputDirectory ?? target.OutputDirectory;
+        if (target.Precompiled)
+        {
+            target.CopyBundle(output);
             return;
         }
-
-        CsProjectUtilities.UpdateUnrealSharpImports(command, GlueProjectPaths);
-        GenerateSolution(command, SolutionDirectory, GlueProjectPaths);
-        BuildSolution(command, SolutionDirectory, outputDirectory, target, GlueProjectPaths, extraArguments);
-        CreateSolutionStamp(SolutionDirectory, GlueProjectPaths);
-
-        if (addReferences)
-        {
-            AddUserProjectReferences(command);
-        }
+        BuildEnginePluginBindings(target, output, extraArguments);
+        BuildProjectBindings(target, output, extraArguments);
+        EmitGlueLoadOrder(target, output);
     }
 
-    private static void GenerateSolution(BuildCommand command, string solutionDirectory, List<string> glueProjectPaths)
+    public static void BuildEnginePluginBindings(GlueTarget target, string? outputDirectory = null, IList<string>? extraArguments = null)
     {
-        if (IsSolutionStampSame(solutionDirectory, glueProjectPaths))
+        BuildGlueProjects(target, target.Projects.Where(IsEnginePluginProject), "EnginePlugin", outputDirectory ?? target.OutputDirectory, extraArguments);
+    }
+
+    public static void BuildProjectBindings(GlueTarget target, string? outputDirectory = null, IList<string>? extraArguments = null)
+    {
+        BuildGlueProjects(target, target.Projects.Where(project => !IsEnginePluginProject(project)), "Project", outputDirectory ?? target.OutputDirectory, extraArguments);
+    }
+
+    private static bool IsEnginePluginProject(string project) =>
+        string.Equals(Path.GetFileNameWithoutExtension(project), GlueTarget.MergedAssemblyName, StringComparison.OrdinalIgnoreCase);
+
+    private static void BuildGlueProjects(GlueTarget target, IEnumerable<string> projectPaths, string buildFolder, string output, IList<string>? extraArguments)
+    {
+        string[] projects = projectPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (projects.Length == 0) return;
+        string solutionName = buildFolder == "EnginePlugin" ? GlueTarget.MergedAssemblyName : "UnrealSharpGlue";
+        string solution = WriteSolution(Path.Combine(target.Root, "Build", buildFolder), projects, solutionName);
+        List<string> arguments = GlueTargetUtilities.BuildArguments(target);
+        // Merged bindings can depend on independent glue projects outside this solution.
+        if (buildFolder == "EnginePlugin")
+            arguments.Add("-p:ShouldUnsetParentConfigurationAndPlatform=false");
+        if (extraArguments != null) arguments.AddRange(extraArguments);
+        arguments.Add($"-p:UnrealSharpUserAssemblyDirectory={output}");
+        arguments.Add($"-p:PublishDir={output}");
+        BuildSolution.RunBuild(solution, Enum.Parse<UnrealTargetConfiguration>(target.Configuration), publish: true, arguments);
+    }
+
+    public static void EmitGlueLoadOrder(GlueTarget target, string? outputDirectory = null)
+    {
+        string output = outputDirectory ?? target.OutputDirectory;
+        if (target.Projects.Count == 0)
         {
+            GlueTarget.WriteIfChanged(Path.Combine(output, "GlueCode.LoadOrder.json"), "{\"LoadOrder\":[],\"Collectible\":false,\"Priority\":100}");
             return;
         }
-
-        const string solutionName = "UnrealSharpGlue";
-
-        List<KeyValuePair<string, string>> CommandParams = new List<KeyValuePair<string, string>>
-        {
-            new("SolutionName", solutionName),
-            new("OutputFolder", solutionDirectory),
-        };
-
-        foreach (string GlueProjectPath in glueProjectPaths)
-        {
-            CommandParams.Add(new KeyValuePair<string, string>("ProjectPaths", GlueProjectPath));
-        }
-
-        LoggerUtilities.LogUnrealSharpInfo($"Generating UnrealSharp user solution at {solutionDirectory}...");
-        CommandUtilities.RunCommand(nameof(BuildCommands.GenerateSolution), command, CommandParams);
-    }
-
-    private static string GetStampPath(string solutionDirectory) => Path.Combine(solutionDirectory, "UnrealSharpSolutionStamp.json");
-
-    private static bool IsSolutionStampSame(string solutionDirectory, List<string> glueProjectPaths)
-    {
-        string SolutionStampPath = GetStampPath(solutionDirectory);
-
-        if (!File.Exists(SolutionStampPath))
-        {
-            return false;
-        }
-
-        string SolutionStampContent = File.ReadAllText(SolutionStampPath);
-        JsonArray? GlueProjectsArray = JsonSerializer.Deserialize<JsonArray>(SolutionStampContent);
-
-        if (GlueProjectsArray == null)
-        {
-            return false;
-        }
-
-        return glueProjectPaths.ToList().SequenceEqual(glueProjectPaths);
-    }
-
-    private static void CreateSolutionStamp(string solutionPath, List<string> glueProjectPaths)
-    {
-        JsonSerializerOptions Options = new JsonSerializerOptions
-        {
-            WriteIndented = false,
-        };
-
-        JsonArray GlueProjectArray = new JsonArray();
-        foreach (string GlueProjectPath in glueProjectPaths)
-        {
-            GlueProjectArray.Add(GlueProjectPath);
-        }
-
-        string JsonString = JsonSerializer.Serialize(GlueProjectArray, Options);
-        File.WriteAllText(GetStampPath(solutionPath), JsonString);
-
-        LoggerUtilities.LogUnrealSharpInfo("Creating Solution Stamp...");
-    }
-
-    private static void BuildSolution(BuildCommand buildCommand, string solutionOutputDirectory, string publishDirectory, GlueTarget target, List<string> glueProjectPaths, IList<string>? extraArguments)
-    {
-        string buildConfig = target.Configuration;
-        LoggerUtilities.LogUnrealSharpInfo($"Building UnrealSharp glue projects in {solutionOutputDirectory} with build configuration {buildConfig}...");
-
-        if (!Directory.Exists(publishDirectory))
-        {
-            Directory.CreateDirectory(publishDirectory);
-        }
-
-        List<KeyValuePair<string, string>> ActionArgs = new List<KeyValuePair<string, string>>
-        {
-            new("SolutionDirectory", solutionOutputDirectory),
-            new("TargetConfiguration", buildConfig.ToString()),
-            new("OutputPath", publishDirectory),
-            new("LoadOrderName", LoadOrderUtilities.GlueLoadOrderName),
-            new("IsCollectible", "false"),
-            new("Priority", LoadOrderUtilities.GlueLoadOrderPriority.ToString()),
-        };
-
-        foreach (string GlueProjectPath in glueProjectPaths)
-        {
-            ActionArgs.Add(new KeyValuePair<string, string>("Projects", GlueProjectPath));
-        }
-
-        if (extraArguments != null)
-        {
-            foreach (string ExtraArgument in extraArguments)
-            {
-                if (string.IsNullOrWhiteSpace(ExtraArgument))
-                {
-                    continue;
-                }
-
-                ActionArgs.Add(new KeyValuePair<string, string>("ExtraArguments", ExtraArgument));
-            }
-        }
-
-        CommandUtilities.RunCommand(nameof(BuildEmitLoadOrder), buildCommand, ActionArgs);
-    }
-
-    private static void AddUserProjectReferences(BuildCommand command)
-    {
-        string GlueFileName = AssemblyUtilities.MakeLoadOrderFileName(LoadOrderUtilities.GlueLoadOrderName);
-        string GlueSource = PathUtilities.BuildOutputPath(command.GetProjectRootFolder());
-        string GlueManifest = Path.Combine(GlueSource, GlueFileName);
-
-        if (!File.Exists(GlueManifest))
-        {
-            LoggerUtilities.LogUnrealSharpWarning($"Runtime glue manifest not found at {GlueManifest}.");
-            return;
-        }
-
-        IEnumerable<string> Dependencies = AssemblyUtilities.ReadLoadOrder(GlueManifest)
-            .Select(name => Path.Combine(GlueSource, name + ".dll"))
-            .Where(File.Exists);
-
-        IEnumerable<FileInfo> ManagedProjects = command.GetManagedProjectFiles()
-            .Where(file => !file.Name.Contains("RuntimeGlue", StringComparison.OrdinalIgnoreCase));
-
-        foreach (FileInfo Project in ManagedProjects)
-        {
-            DirectoryInfo? ProjectDirectory = Project.Directory;
-            if (ProjectDirectory is null)
-            {
-                LoggerUtilities.LogUnrealSharpWarning($"Skipping adding references for {Project.FullName}: parent directory is null.");
-                continue;
-            }
-
-            LoggerUtilities.LogUnrealSharpInfo($"Adding project references for {Project.Name}.");
-
-            XmlDocument CsprojDocument = new XmlDocument();
-            CsprojDocument.Load(Project.FullName);
-            CsprojDocument.EnsureProjectRoot();
-
-            XmlElement ItemGroup = CsProjectUtilities.GetOrCreateItemGroup(CsprojDocument);
-            CsProjectUtilities.AddProjectReferences(CsprojDocument, ItemGroup, ProjectDirectory.FullName, Dependencies);
-
-            CsprojDocument.Save(Project.FullName);
-        }
-    }
-
-    private static List<string> GetGlueProjectPaths(BuildCommand command, GlueTarget target)
-    {
-        IEnumerable<FileReference> GameProjects = command.GetGameModules();
-
-        List<string> GlueProjectPaths = new List<string>();
-
-        foreach (FileReference Project in GameProjects)
-        {
-            string UhtOutputFolder = target.GetGeneratedDirectory(Project.Directory.FullName);
-
-            if (!Directory.Exists(UhtOutputFolder))
-            {
-                continue;
-            }
-
-            GlueProjectPaths.AddRange(Directory.GetFiles(UhtOutputFolder, "*.csproj", SearchOption.AllDirectories));
-        }
-
-        return GlueProjectPaths;
+        LoadOrderUtilities.TryEmitLoadOrder(target.Projects, output, LoadOrderUtilities.GlueLoadOrderName,
+            new LoadOrderOptions { Collectible = false, Priority = LoadOrderUtilities.GlueLoadOrderPriority }, requireAllAssemblies: true);
     }
 }

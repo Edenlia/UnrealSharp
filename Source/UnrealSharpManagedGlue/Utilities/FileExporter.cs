@@ -65,7 +65,7 @@ public static class FileExporter
 			File.WriteAllText(absoluteFilePath, text);
 			package.GetModuleInfo().MarkDirty();
 
-			if (package.IsPartOfEngine())
+			if (package.GetModuleInfo().IsPartOfEngine)
 			{
 				HasModifiedEngineGlue = true;
 			}
@@ -104,7 +104,7 @@ public static class FileExporter
 
 		foreach (ModuleInfo plugin in ModuleUtilities.PackageToModuleInfo.Values)
 		{
-			CleanOldFilesInDirectories(plugin.GlueOutputDirectory);
+			CleanOldFilesInDirectories(plugin.GlueOutputDirectory, plugin);
 		}
 	}
 
@@ -129,7 +129,7 @@ public static class FileExporter
 		}
 	}
 
-	private static void CleanOldFilesInDirectories(string path)
+	private static void CleanOldFilesInDirectories(string path, ModuleInfo module)
 	{
 		if (!Directory.Exists(path))
 		{
@@ -143,7 +143,7 @@ public static class FileExporter
         
 		foreach (string directory in Directory.GetDirectories(path))
 		{
-			CleanOldFilesInDirectories(directory);
+			CleanOldFilesInDirectories(directory, module);
 		}
         
 		string[] files = Directory.GetFiles(path);
@@ -157,6 +157,8 @@ public static class FileExporter
 			try 
 			{
 				File.Delete(file);
+				module.MarkDirty();
+				if (module.IsPartOfEngine) HasModifiedEngineGlue = true;
 			}
 			catch (IOException exception) 
 			{

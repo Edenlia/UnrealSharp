@@ -1,5 +1,7 @@
 ﻿using System.IO;
 using UnrealBuildTool;
+using System;
+using System.Linq;
 
 public class UnrealSharpCore : ModuleRules
 {
@@ -13,6 +15,9 @@ public class UnrealSharpCore : ModuleRules
 		PublicDefinitions.Add("TARGET_PLATFORM=" + Target.Platform);
 		PublicDefinitions.Add("TARGET_ARCHITECTURE=" + Target.Architectures);
 		PublicDefinitions.Add("TARGET_BUILD_ALL_MODULES=" + (Target.bBuildAllModules ? "1" : "0"));
+		bool distribution = Environment.GetCommandLineArgs().Any(argument => argument.StartsWith("-plugin=", StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(Path.GetFullPath(argument.Substring(8).Trim('"')), Path.Combine(PluginDirectory, "UnrealSharp.uplugin"), StringComparison.OrdinalIgnoreCase));
+		PublicDefinitions.Add("UNREALSHARP_DISTRIBUTION=" + (distribution ? "1" : "0"));
 		
 		PublicDependencyModuleNames.AddRange(
 			new string[]

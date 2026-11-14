@@ -4,7 +4,6 @@ using AutomationTool;
 using EpicGames.Core;
 using UnrealBuildBase;
 using UnrealBuildTool;
-using UnrealSharp.Shared;
 
 namespace UnrealSharp.Automation.Utilities;
 
@@ -23,12 +22,12 @@ public static class PathUtilities
     
     public static string GetUnrealSharpIntermediateDirectory(this BuildCommand buildCommand)
     {
-        return GlueTarget.GetIntermediateDirectory(buildCommand.GetProjectRootFolder());
+        return Path.Combine(buildCommand.GetProjectRootFolder(), "Intermediate", "UnrealSharp");
     }
     
     public static string GetUhtGeneratedOutputPath(string root, TargetType targetType)
     {
-        return GlueTarget.GetGeneratedDirectory(root, targetType.ToString());
+        return Path.Combine(GetIntermediateOutputPath(root), "UHT", targetType.ToString());
     }
 
     public static string GetUhtGeneratedModuleOutputPath(string root, TargetType targetType, string moduleName)
@@ -38,7 +37,12 @@ public static class PathUtilities
     
     public static string GetIntermediateOutputPath(string root)
     {
-        return GlueTarget.GetIntermediateDirectory(root);
+        return Path.Combine(root, "Intermediate", "UnrealSharp");
+    }
+
+    public static string GetTargetIntermediateDirectory(string root, string targetType)
+    {
+        return Path.Combine(root, "Intermediate", "UnrealSharp", "UHT", targetType);
     }
     
     public static string GetUnrealSharpRootFolder(this BuildCommand buildCommand)
@@ -49,7 +53,7 @@ public static class PathUtilities
     
     public static string BuildOutputPath(string rootDirectory)
     {
-        return GlueTarget.GetManagedOutputDirectory(rootDirectory, DotNetUtilities.Version);
+        return Path.Combine(rootDirectory, "Binaries", "Managed", DotNetUtilities.Version);
     }
     
     public static string GetUnrealSharpSharedPropsPath(this BuildCommand buildCommand)

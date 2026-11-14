@@ -4,7 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using EpicGames.UHT.Types;
+using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
+using UnrealSharp.Shared;
 
 namespace UnrealSharpManagedGlue.Utilities;
 
@@ -16,15 +18,21 @@ public sealed class ModuleInfo
 	public string ModuleRoot { get; }
 	public string ScriptPath { get; }
 
-	// Native source ownership, independent of ForceAsEngineGlue and output redirection.
+	public bool IsExtendingModule { get; }
+	public bool IsEngineModule { get; }
+	// Native ownership is separate from ForceAsEngineGlue and output redirection.
 	public bool IsEngineSource { get; }
 	public bool IsEnginePlugin { get; }
 	public bool IsProjectSource { get; }
 	public bool IsProjectPlugin { get; }
+	// Platform extension modules use their resolved parent plugin descriptor.
 	public string? PluginFile { get; }
-
-	public bool IsExtendingModule { get; }
-	public bool IsEngineModule { get; }
+	public bool IsRequiredPlugin { get; }
+	public bool IsFixedGlue { get; private set; }
+	public bool IsMergedGlue => IsEngineModule && !IsFixedGlue && !IsExtendingModule;
+	public string AssemblyName => IsFixedGlue ? "UnrealSharp" : IsExtendingModule
+		? ModuleUtilities.GetModuleInfo(Module.GetPackageExtensions()).AssemblyName
+		: Path.GetFileNameWithoutExtension(CsProjPath);
 	
 	public bool IsDirty { get; private set; }
 
@@ -33,7 +41,7 @@ public sealed class ModuleInfo
 	
 	public bool EmitsToProjectDirectory { get; private set; }
 	
-	public bool IsPartOfEngine => IsEngineModule && !EmitsToProjectDirectory;
+	public bool IsPartOfEngine => IsFixedGlue && !EmitsToProjectDirectory;
 
 	public string GlueOutputDirectory { get; private set; } = string.Empty;
 	public string CsProjPath { get; private set; } = string.Empty;
@@ -46,44 +54,31 @@ public sealed class ModuleInfo
 
 	internal ModuleInfo(string moduleName, string moduleRoot, UhtPackage package)
 	{
+		if (string.Equals(moduleName, GlueTarget.MergedAssemblyName, StringComparison.OrdinalIgnoreCase))
+			throw new InvalidOperationException($"Module '{moduleName}' uses the reserved generated engine plugin assembly name '{GlueTarget.MergedAssemblyName}'. Rename the native module.");
 		Module = package;
 		ModuleName = moduleName;
 		ModuleRoot = moduleRoot;
-		PluginFile = FindPluginFile(package.GetModule().BaseDirectory);
-		bool isEngine = package.Module.IsPartOfEngine;
-		bool isPlugin = PluginFile != null || package.Module.IsPlugin;
-		IsEngineSource = isEngine && !isPlugin;
-		IsEnginePlugin = isEngine && isPlugin;
-		IsProjectSource = !isEngine && !isPlugin;
-		IsProjectPlugin = !isEngine && isPlugin;
 		IsExtendingModule = package.GetPackageExtensions() != string.Empty;
-		IsEngineModule = package.IsPartOfEngine();
+		PluginInfo? plugin = GeneratorStatics.PluginPolicy.GetOwner(package);
+		PluginFile = plugin?.File.FullName;
+		IsEnginePlugin = plugin?.LoadedFrom == PluginLoadedFrom.Engine;
+		IsProjectPlugin = plugin != null && !IsEnginePlugin;
+		IsEngineSource = plugin == null && IsNativeEngineSource(package);
+		IsProjectSource = plugin == null && !IsEngineSource;
+		IsRequiredPlugin = plugin != null && GeneratorStatics.PluginPolicy.IsRequired(plugin);
+		IsEngineModule = package.IsPartOfEngine() || IsEnginePlugin;
+		// ForceAsEngineGlue opts other modules into merged glue, not the fixed framework.
+		IsFixedGlue = IsRequiredPlugin || IsEngineSource;
 		ScriptPath = Path.Combine(moduleRoot, CommonUnrealSharpSettings.ScriptDirectoryName, moduleName);
 	}
 	
-	private static string? FindPluginFile(string moduleDirectory)
+	private static bool IsNativeEngineSource(UhtPackage package)
 	{
-		string engineDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(GeneratorStatics.EngineDirectory));
-		StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-		for (DirectoryInfo? directory = new(moduleDirectory); directory != null && directory.Exists; directory = directory.Parent)
-		{
-			if (string.Equals(directory.FullName, engineDirectory, comparison))
-			{
-				break;
-			}
-
-			// Record the physical descriptor; parent-plugin resolution is deferred.
-			FileInfo? plugin = directory.EnumerateFiles("*.uplugin").SingleOrDefault();
-			if (plugin != null)
-			{
-				return plugin.FullName;
-			}
-			if (directory.EnumerateFiles("*.uproject").Any())
-			{
-				break;
-			}
-		}
-		return null;
+		// Preserve support for Engine/Platforms and restricted source extensions.
+		if (package.Module.IsPartOfEngine && !package.Module.IsPlugin) return true;
+		string relative = Path.GetRelativePath(Path.Combine(GeneratorStatics.EngineDirectory, "Source"), package.GetModule().BaseDirectory);
+		return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 	}
 
 	internal void ResolveExtensions(IReadOnlyList<ModuleInfo>? extensions)
@@ -105,11 +100,19 @@ public sealed class ModuleInfo
 	
 	internal void ResolveOutputPaths()
 	{
-		string root = EmitsToProjectDirectory ? GeneratorStatics.Factory.Session.ProjectDirectory! : ModuleRoot;
-
-		GlueOutputDirectory = GeneratorStatics.CreateGlueTarget().GetModuleGeneratedDirectory(root, ModuleName);
-		CsProjPath = Path.Combine(GlueOutputDirectory, $"{ModuleName}.csproj");
+		GlueTarget target = GeneratorStatics.Target;
+		string generatedRoot = IsProjectPlugin
+			? PathUtilities.GetTargetIntermediateDirectory(ModuleRoot, target.Type)
+			: target.Root;
+		GlueOutputDirectory = IsPartOfEngine
+			? Path.Combine(target.EngineGlue, ModuleName)
+			: Path.Combine(generatedRoot, ModuleName);
+		CsProjPath = IsMergedGlue
+			? Path.Combine(target.Root, GlueTarget.MergedAssemblyName, GlueTarget.MergedAssemblyName + ".csproj")
+			: Path.Combine(GlueOutputDirectory, ModuleName + ".csproj");
 	}
+
+	internal void RequireFixedGlue() => IsFixedGlue = true;
 	
 	internal void MarkDirty()
 	{
@@ -163,11 +166,36 @@ public static class ModuleUtilities
 		}
 		
 		PropagateProjectRedirection();
+		CloseFixedGlueDependencies();
 		
 		foreach (ModuleInfo module in PackageToModuleInfo.Values)
 		{
 			module.DependencyModules.RemoveWhere(static dependency => dependency.IsPartOfEngine);
 			module.ResolveOutputPaths();
+		}
+	}
+
+	private static void CloseFixedGlueDependencies()
+	{
+		// A fixed glue type must never acquire a reference to the target's optional assembly.
+		Queue<ModuleInfo> pending = new(PackageToModuleInfo.Values.Where(module => module.IsFixedGlue));
+		HashSet<ModuleInfo> visited = new();
+		while (pending.TryDequeue(out ModuleInfo? module))
+		{
+			if (!visited.Add(module)) continue;
+			if (module.EmitsToProjectDirectory || module.IsExtendingModule)
+				throw new InvalidOperationException($"Fixed UnrealSharp glue module '{module.ModuleName}' cannot be redirected by ExtendModule. Move this extension to an optional module.");
+			foreach (ModuleInfo dependency in module.DependencyModules)
+			{
+				if (!dependency.IsFixedGlue)
+				{
+					if (!dependency.IsEngineModule)
+						throw new InvalidOperationException($"Fixed UnrealSharp glue '{module.ModuleName}' depends on project glue '{dependency.ModuleName}'.");
+					dependency.RequireFixedGlue();
+					ConsoleUtilities.Log($"Including {dependency.ModuleName} in UnrealSharp.dll: required by {module.ModuleName}.");
+				}
+				pending.Enqueue(dependency);
+			}
 		}
 	}
 
@@ -253,7 +281,8 @@ public static class ModuleUtilities
 		}
 
 		string moduleName = package.GetModuleShortName();
-		string moduleRoot = package.IsPartOfEngine() ? GeneratorStatics.PluginDirectory : package.GetBaseDirectoryForPackage();
+		string moduleRoot = GeneratorStatics.PluginPolicy.GetOwner(package)?.Directory.FullName ??
+			(package.IsPartOfEngine() ? GeneratorStatics.PluginDirectory : package.GetBaseDirectoryForPackage());
 
 		ModuleInfo moduleInfo = new(moduleName, moduleRoot, package);
 

@@ -64,13 +64,18 @@ public static class Program
         {
             ResetRunState();
             GeneratorStatics.Initialize(factory);
+            ModuleFactory.Initialize();
             PropertyTranslatorManager.Initialize();
             ExportBindings();
 
             FileExporter.CleanOldExportedFiles();
-            BuildUtilities.BuildBindings();
+            BuildUtilities.PrepareBindings();
+            BuildUtilities.BuildUnrealSharpBindings();
 
             ModuleFactory.SyncModuleProjects();
+            BuildUtilities.BuildEnginePluginBindings();
+            BuildUtilities.BuildProjectBindings();
+            BuildUtilities.PublishRuntimeContext();
             BuildUtilities.GenerateUserSolution();
         }
         finally
@@ -108,6 +113,7 @@ public static class Program
             
             GlueGenerator.GenerateBindings();
             TaskManager.WaitForTasks();
+            ExporterValidator.CompleteExport();
 
             stopwatch.Stop();
             

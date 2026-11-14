@@ -51,6 +51,16 @@ public class GenerateSolution : BuildCommand
         AddProjectsToSln(this.GetProjectRootFolder(), Projects, SolutionPath);
     }
 
+    internal static void GenerateBuildSolution(string outputFolder, string solutionName, IEnumerable<string> projectPaths)
+    {
+        Directory.CreateDirectory(outputFolder);
+        CreateEmptySolution(outputFolder, solutionName);
+        string solutionPath = Path.Combine(outputFolder, solutionName + "." + SolutionFormat);
+        foreach (IGrouping<string, string> projects in projectPaths
+            .Select(path => Path.GetRelativePath(outputFolder, path)).GroupBy(_ => string.Empty))
+            RunAddProjectsWithRetry(outputFolder, projects, solutionPath);
+    }
+
     private static void CreateEmptySolution(string outputFolder, string solutionName)
     {
         using DotnetProcess GenerateSlnProcess = new DotnetProcess();
@@ -106,6 +116,7 @@ public class GenerateSolution : BuildCommand
             {
                 using DotnetProcess AddProjectProcess = new DotnetProcess();
                 AddProjectProcess.StartInfo.ArgumentList.Add(SolutionFormat);
+                AddProjectProcess.StartInfo.ArgumentList.Add(solutionPath);
                 AddProjectProcess.StartInfo.ArgumentList.Add("add");
                 AddProjectProcess.StartInfo.ArgumentList.Add("--include-references");
                 AddProjectProcess.StartInfo.ArgumentList.Add("false");
