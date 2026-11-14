@@ -1,7 +1,9 @@
-﻿#include "UnrealSharpCore.h"
+#include "UnrealSharpCore.h"
 #include "CoreMinimal.h"
 #include "CSManager.h"
+#include "CSDialogUtilities.h"
 #include "CSDotnetUtilties.h"
+#include "Logging/StructuredLog.h"
 #include "Properties/CSPropertyGeneratorManager.h"
 #include "Modules/ModuleManager.h"
 #if WITH_EDITOR
@@ -29,10 +31,19 @@ void FUnrealSharpCoreModule::StartupModule()
 		UE_LOG(LogUnrealSharp, Error, TEXT("Failed to build the UnrealSharp managed runtime. Check the .NET SDK installation and build log."));
 		return;
 	}
-	if (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() || !UnrealSharp::DotNetUtilities::BuildUserSolution())
+	while (!UnrealSharp::DotNetUtilities::VerifyCSharpEnvironment() || !UnrealSharp::DotNetUtilities::BuildUserSolution())
 	{
-		StartupModule();
-		return;
+		if (UnrealSharp::Dialogs::IsHeadless())
+		{
+			UE_LOGFMT(LogUnrealSharp, Error, "UnrealSharp could not be initialized, see the errors above. Exiting.");
+			FPlatformMisc::RequestExitWithStatus(true, 1);
+			return;
+		}
+
+		if (IsEngineExitRequested())
+		{
+			return;
+		}
 	}
 #endif
 	

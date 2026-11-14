@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -6,11 +6,14 @@ using System.Runtime.Loader;
 using EpicGames.UHT.Tables;
 using EpicGames.UHT.Utils;
 using UnrealSharpManagedGlue;
+using UnrealSharpManagedGlue.PropertyTranslators;
 using UnrealSharpManagedGlue.Utilities;
 
 [UnrealHeaderTool]
 public static class Program
 {
+    private static readonly object ExporterLock = new();
+
     static Program()
     {
         AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
@@ -45,17 +48,55 @@ public static class Program
     [UhtExporter(Name = "UnrealSharpCore", Description = "Exports C++ to C# code", Options = UhtExporterOptions.Default, ModuleName = "UnrealSharpCore")]
     private static void Main(IUhtExportFactory factory)
     {
+        // UBT can run multiple UHT sessions concurrently in the same process for different target groups.
+        // Serialize exporter runs to protect shared static state and output files.
+        lock (ExporterLock)
+        {
+            RunExporter(factory);
+        }
+    }
+
+    private static void RunExporter(IUhtExportFactory factory)
+    {
         ConsoleUtilities.Log("Initializing UnrealSharp C# bindings generator...");
-        
-        GeneratorStatics.Initialize(factory);
-        BuildUtilities.StageAutomationModule();
-        ExportBindings();
-        
-        FileExporter.CleanOldExportedFiles();
-        BuildUtilities.BuildBindings();
-        
-        ModuleFactory.SyncModuleProjects();
-        BuildUtilities.GenerateUserSolution();
+
+        try
+        {
+            ResetRunState();
+            GeneratorStatics.Initialize(factory);
+            PropertyTranslatorManager.Initialize();
+            BuildUtilities.StageAutomationModule();
+            ExportBindings();
+
+            FileExporter.CleanOldExportedFiles();
+            BuildUtilities.BuildBindings();
+
+            ModuleFactory.SyncModuleProjects();
+            BuildUtilities.GenerateUserSolution();
+        }
+        finally
+        {
+            try
+            {
+                // Failed exports can still have workers using the current run's state.
+                TaskManager.WaitForTasks();
+            }
+            finally
+            {
+                ResetRunState();
+            }
+        }
+    }
+
+    private static void ResetRunState()
+    {
+        FileExporter.Reset();
+        PackageHeadersTracker.Reset();
+        ModuleUtilities.Reset();
+        PropertyTranslatorManager.Reset();
+        UnrealSharpSettingsUtilities.Reset();
+        UnrealSharp.Automation.Utilities.UnrealSharpSettingsUtilities.Reset();
+        GeneratorStatics.Reset();
     }
 
     private static void ExportBindings()
@@ -78,6 +119,7 @@ public static class Program
         {
             ConsoleUtilities.Log("Critical failure during export process:");
             ConsoleUtilities.Log(ex.ToString());
+            GeneratorStatics.Factory.Session.LogError("UnrealSharp C# bindings export failed.");
             throw;
         }
     }
