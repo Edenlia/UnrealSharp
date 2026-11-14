@@ -246,6 +246,18 @@ public static class NameMapper
                     // C# cannot distinguish overloads by return type alone.
                     // Compare parameters without the return type when checking for name collisions.
                     isConflicting = function.HasSameSignature(classFunction, includeReturnType: false);
+
+                    if (isConflicting && outerClass.EngineType == UhtEngineType.Class
+                        && function.SourceName == classFunction.SourceName)
+                    {
+                        // Matching native declarations implement the interface contract.
+                        // Reuse the parameter comparison and check only the return property.
+                        UhtProperty? interfaceReturn = function.ReturnProperty;
+                        UhtProperty? classReturn = classFunction.ReturnProperty;
+                        isConflicting = interfaceReturn == null
+                            ? classReturn != null
+                            : classReturn == null || !interfaceReturn.IsSameType(classReturn);
+                    }
                 }
                 else
                 {
