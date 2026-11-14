@@ -32,6 +32,18 @@ public static class GeneratorStatics
 	// build settings retain their lifetime and behavior.
 	public static GlueTarget CreateGlueTarget() => new(TargetType.ToString(), TargetConfiguration.ToString(),
 		Factory.Session.ProjectDirectory, PluginDirectory);
+
+	public static void Reset()
+	{
+		_factory = null;
+		PluginModuleInfo = null!;
+		BlueprintFunctionLibrary = null!;
+		PluginDirectory = "";
+		ManagedPath = "";
+		TargetType = default;
+		TargetConfiguration = default;
+
+	}
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
@@ -47,6 +59,7 @@ public static class GeneratorStatics
 		
 		BlueprintFunctionLibrary = (Factory.Session.FindType(null, UhtFindOptions.SourceName | UhtFindOptions.Class, "UBlueprintFunctionLibrary") as UhtClass)!;
 		
+		ModuleUtilities.Initialize();
 		PluginModuleInfo = ModuleUtilities.GetModuleInfo(factory.PluginModule!.Name);
 
 		PathUtilities.InitPaths(factory.Session.EngineDirectory!);
