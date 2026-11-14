@@ -8,6 +8,8 @@ namespace UnrealSharpManagedGlue.Utilities;
 public static class UnrealSharpSettingsUtilities
 {
     private static Dictionary<string, JsonElement>? _config;
+
+    public static void Reset() => _config = null;
     
     public static void InitializeConfigFile(string projectRoot, string unrealSharpRoot)
     {
@@ -41,6 +43,10 @@ public static class UnrealSharpSettingsUtilities
     static string GetConfigFile(string rootDirectory)
     {
         string configDirectory = Path.Combine(rootDirectory, "Config");
+        if (!Directory.Exists(configDirectory))
+        {
+            return string.Empty;
+        }
         
         EnumerationOptions enumerationOptions = new EnumerationOptions
         {

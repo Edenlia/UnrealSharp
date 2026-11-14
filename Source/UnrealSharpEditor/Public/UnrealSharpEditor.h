@@ -4,6 +4,7 @@
 #include "CSEditorCommands.h"
 #include "Modules/ModuleManager.h"
 #include "Containers/Ticker.h"
+#include "CSInteropTypeTraits.h"
 
 #ifdef __clang__
 #pragma clang diagnostic ignored "-Wignored-attributes"
@@ -24,14 +25,21 @@ struct FCSManagedEditorCallbacks
 {
     FCSManagedEditorCallbacks() = default;
     
-    // Borrow the FString data for the synchronous callback; do not pass a non-trivial TArray by value across the managed boundary.
-    using FRecompileDirtyProjects = bool(__stdcall*)(void*, const FString*, int32);
+    // Borrow the array for the synchronous callback; do not pass a non-trivial TArray by value across the managed boundary.
+    using FRecompileDirtyProjects = bool(__stdcall*)(void*, const TArray<FString>*);
     using FRecompileChangedFile = void(__stdcall*)(const TCHAR*, const TCHAR*, void*);
     using FRemoveSourceFile = void(__stdcall*)(const TCHAR*, const TCHAR*);
     
     using FForceManagedGC = void(__stdcall*)();
     using FOpenSolution = bool(__stdcall*)(const TCHAR*, void*);
     using FLoadSignature = void(__stdcall*)(const TCHAR*, void*);
+
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FRecompileDirtyProjects);
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FRecompileChangedFile);
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FRemoveSourceFile);
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FForceManagedGC);
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FOpenSolution);
+    CS_ASSERT_INTEROP_SAFE_FUNCTION(FLoadSignature);
 
     FRecompileDirtyProjects RecompileDirtyProjects = nullptr;
     FRecompileChangedFile RecompileChangedFile = nullptr;
@@ -43,6 +51,8 @@ struct FCSManagedEditorCallbacks
     FLoadSignature LoadSolutionAsync = nullptr;
     FLoadSignature LoadProject = nullptr;
 };
+
+CS_ASSERT_INTEROP_SAFE_TYPE(FCSManagedEditorCallbacks);
 
 DECLARE_LOG_CATEGORY_EXTERN(LogUnrealSharpEditor, Log, All);
 DECLARE_MULTICAST_DELEGATE_OneParam(FCSOnBuildingToolbar, FMenuBuilder&);

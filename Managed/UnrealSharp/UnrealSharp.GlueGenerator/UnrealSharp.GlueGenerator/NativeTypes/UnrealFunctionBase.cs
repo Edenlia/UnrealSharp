@@ -65,6 +65,9 @@ public abstract record UnrealFunctionBase : UnrealStruct
     protected bool HasParams => Properties.Count > 0;
     protected bool HasReturnValue => ReturnType is not VoidProperty;
 
+    protected bool NeedsNativeFunctionPtr =>
+        HasParamsOrReturnValue || NeedsImplementationFunction || (Outer is UnrealInterface && !IsEvent);
+
     public string SizeVariableName => $"{FieldName.SourceName}_Size";
     public string FunctionNativePtr => $"{FieldName.SourceName}Ptr";
 
@@ -232,7 +235,7 @@ public abstract record UnrealFunctionBase : UnrealStruct
 
     public override void ExportBackingVariables(GeneratorStringBuilder builder)
     {
-        if ((HasParamsOrReturnValue || NeedsImplementationFunction) && !FunctionFlags.HasFlag(EFunctionFlags.Delegate))
+        if (NeedsNativeFunctionPtr && !FunctionFlags.HasFlag(EFunctionFlags.Delegate))
         {
             builder.AppendNewBackingField($"static IntPtr {FunctionNativePtr};");
         }
@@ -252,7 +255,7 @@ public abstract record UnrealFunctionBase : UnrealStruct
 
     public override void ExportBackingVariablesToStaticConstructor(GeneratorStringBuilder builder, string nativeType)
     {
-        if ((HasParamsOrReturnValue || NeedsImplementationFunction) && !FunctionFlags.HasFlag(EFunctionFlags.Delegate))
+        if (NeedsNativeFunctionPtr && !FunctionFlags.HasFlag(EFunctionFlags.Delegate))
         {
             builder.AppendLine(
                 $"{FunctionNativePtr} = CallGetNativeFunctionFromClassAndName({nativeType}, \"{FieldName.SourceName}\");");
@@ -288,6 +291,11 @@ public abstract record UnrealFunctionBase : UnrealStruct
 
         foreach (UnrealProperty parameter in Properties)
         {
+            if (parameter.ReferenceKind == RefKind.Out)
+            {
+                builder.AppendLine($"{parameter.ManagedTypeWithNullability} {parameter.FieldName.SourceName};");
+                continue;
+            }
             parameter.ExportFromNative(builder, SourceGenUtilities.Buffer,
                 $"{parameter.ManagedTypeWithNullability} {parameter.FieldName.SourceName} = ");
         }
@@ -332,9 +340,16 @@ public abstract record UnrealFunctionBase : UnrealStruct
         builder.BeginUnsafeBlock();
 
         builder.AllocateParameterBuffer(SizeVariableName);
+        builder.AppendLine($"Bind_UFunction.CallInitializeFunctionParams({FunctionNativePtr}, {SourceGenUtilities.ParamsBuffer});");
+        builder.AppendLine("try");
+        builder.OpenBrace();
 
         foreach (UnrealProperty parameter in Properties)
         {
+            if (parameter.ReferenceKind == RefKind.Out)
+            {
+                continue;
+            }
             builder.AppendLine();
             parameter.ExportToNative(builder, SourceGenUtilities.ParamsBuffer, parameter.FieldName.SourceName);
         }
@@ -345,12 +360,24 @@ public abstract record UnrealFunctionBase : UnrealStruct
 
         nativeCall(SourceGenUtilities.ParamsBuffer, returnBuffer);
 
+        foreach (UnrealProperty parameter in Properties.Where(p => p.ReferenceKind is RefKind.Out or RefKind.Ref))
+        {
+            builder.AppendLine();
+            parameter.ExportFromNative(builder, SourceGenUtilities.ParamsBuffer, $"{parameter.FieldName.SourceName} = ");
+        }
+
         if (HasReturnValue)
         {
             string assignment = $"{ReturnType.ManagedTypeWithNullability} returnValue = ";
             ReturnType.ExportFromNative(builder, SourceGenUtilities.ParamsBuffer, assignment);
             builder.AppendLine("return returnValue;");
         }
+
+        builder.CloseBrace();
+        builder.AppendLine("finally");
+        builder.OpenBrace();
+        builder.AppendLine($"Bind_UFunction.CallDestroyFunctionParams({FunctionNativePtr}, {SourceGenUtilities.ParamsBuffer});");
+        builder.CloseBrace();
 
         builder.EndUnsafeBlock();
     }
