@@ -40,6 +40,19 @@ public static class GeneratorStatics
 		ProjectFile = Factory.Session.ProjectFile,
 		BuildAllModules = ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_BUILD_ALL_MODULES") != 0
 	};
+
+
+	public static void Reset()
+	{
+		_factory = null;
+		PluginModuleInfo = null!;
+		BlueprintFunctionLibrary = null!;
+		PluginDirectory = "";
+		ManagedPath = "";
+		TargetType = default;
+		TargetConfiguration = default;
+		TargetPlatform = default;
+	}
 	
 	public static void Initialize(IUhtExportFactory factory)
 	{
@@ -56,6 +69,7 @@ public static class GeneratorStatics
 		
 		BlueprintFunctionLibrary = (Factory.Session.FindType(null, UhtFindOptions.SourceName | UhtFindOptions.Class, "UBlueprintFunctionLibrary") as UhtClass)!;
 		
+		ModuleUtilities.Initialize();
 		PluginModuleInfo = ModuleUtilities.GetModuleInfo(factory.PluginModule!.Name);
 
 		PathUtilities.InitPaths(factory.Session.EngineDirectory!);
