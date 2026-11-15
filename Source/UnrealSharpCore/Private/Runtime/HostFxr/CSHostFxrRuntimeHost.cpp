@@ -180,10 +180,7 @@ load_assembly_and_get_function_pointer_fn FCSHostFxrRuntimeHost::ConfigureRuntim
 
 	const FString ExecutablePath = FPlatformProcess::ExecutablePath();
 
-	// CoreCLR requires native separators in the framework paths derived from dotnet_root.
-	FString DotNetRoot = Layout.DotNetRoot;
-	FPaths::MakePlatformFilename(DotNetRoot);
-	DotNetUtilities::FHostStringConversion DotNetRootConv = StringCast<DotNetUtilities::FHostChar>(*DotNetRoot);
+	DotNetUtilities::FHostStringConversion DotNetRootConv = StringCast<DotNetUtilities::FHostChar>(*Layout.DotNetRoot);
 	DotNetUtilities::FHostStringConversion HostPathConv = StringCast<DotNetUtilities::FHostChar>(*ExecutablePath);
 
 	hostfxr_initialize_parameters InitializeParameters;

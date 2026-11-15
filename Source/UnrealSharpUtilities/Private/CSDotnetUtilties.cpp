@@ -62,19 +62,14 @@ FString UnrealSharp::DotNetUtilities::GetDotNetDirectory()
 	PathVariable.ParseIntoArray(Paths, FPlatformMisc::GetPathVarDelimiter());
 
 #if defined(_WIN32)
-	const FString PathMarker = TEXT("Program Files/dotnet/");
+	const FString PathMarker = TEXT("Program Files\\dotnet\\");
 #else
 	const FString PathMarker = TEXT("dotnet");
 #endif
 
 	FString DotNetPathFromEnv;
-	for (FString Path : Paths)
+	for (const FString& Path : Paths)
 	{
-		// PATH entries need not have a trailing separator (for example after Conda activation).
-		// Normalize before matching and keep the directory form expected by callers.
-		FPaths::NormalizeDirectoryName(Path);
-		Path += TEXT("/");
-
 		if (!Path.Contains(PathMarker))
 		{
 			continue;
