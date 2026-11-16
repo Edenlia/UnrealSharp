@@ -9,8 +9,12 @@ using UnrealSharp.Automation.Utilities.Platform;
 
 namespace UnrealSharp.Automation.Utilities;
 
-internal static class UnrealSharpStaging
+internal static partial class UnrealSharpStaging
 {
+    internal static void VerifyPackage(ProjectParams parameters, DeploymentContext context) => VerifyWasmPackage(parameters, context);
+    static partial void VerifyWasmPackage(ProjectParams parameters, DeploymentContext context);
+    static partial void StageWasm(ProjectParams parameters, DeploymentContext context, TargetReceipt receipt, ref bool handled);
+
     internal static void Stage(ProjectParams Params, DeploymentContext SC)
     {
         if (Params.SkipStage) return;
@@ -51,6 +55,9 @@ internal static class UnrealSharpStaging
         {
             throw new AutomationException("The UnrealSharp receipt platform does not match the staging platform.");
         }
+        bool handled = false;
+        StageWasm(Params, SC, Receipt, ref handled);
+        if (handled) return;
         DotNetSdkUtilities.GetDotNetRuntimeIdentifier(Receipt.Platform, Receipt.Architectures.SingleArchitecture);
 
         PackageProject Command = new()
