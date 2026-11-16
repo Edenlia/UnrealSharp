@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems><DefineConstants>UNREALSHARP_WASM_DATA_ONLY</DefineConstants>
+    <AssemblyName>UnrealSharp.Wasm.BuildGuard</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="WindowsUbtInvocation.cs" />
+    <Compile Include="../../../../Source/ThirdParty/UnrealSharpWasmRuntime/UnrealSharpWasmRuntime.Build.cs" Link="WasmBuildData.cs" />
+  </ItemGroup>
+</Project>
