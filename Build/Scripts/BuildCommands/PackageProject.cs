@@ -16,7 +16,7 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("UETargetType=<TargetType>", "REQUIRED. The Unreal Engine target type (Editor, Game, Client, Server).")]
 [Help("UEBuildConfig=<Config>", "REQUIRED. The build configuration (Debug, Development, Shipping, Test).")]
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
-[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to Arm64 for IOS/Android, otherwise X64.")]
+[Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to Arm64 for IOS/Android, Wasm64 for Wasm, otherwise X64.")]
 [Help("Runtime=<Runtime>", "Optional. Managed runtime to publish for: CoreClrHostFxr, CoreClrEmbedded or NativeAot. Defaults to the UnrealSharp \"Runtime\" setting, then the platform default.")]
 [Help("NativeAOT", "Optional flag. Same as -Runtime=NativeAot.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
