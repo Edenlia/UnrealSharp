@@ -14,7 +14,11 @@
 #include "Runtime/NativeAot/CSNativeAotRuntimeHost.h"
 #endif
 #if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+#if PLATFORM_WASM
+#include "Runtime/Wasm/CSWasmCoreClrRuntimeHost.h"
+#else
 #include "Runtime/CoreClrEmbedded/CSEmbeddedCoreClrRuntimeHost.h"
+#endif
 #endif
 
 using namespace UnrealSharp;
@@ -50,7 +54,11 @@ namespace
 #endif
 		case ECSRuntimeKind::CoreClrEmbedded:
 #if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+#if PLATFORM_WASM
+			return MakeUnique<FCSWasmCoreClrRuntimeHost>(Manifest, ManagedDirectory);
+#else
 			return MakeUnique<FCSEmbeddedCoreClrRuntimeHost>(Manifest, ManagedDirectory);
+#endif
 #else
 			break;
 #endif
@@ -71,6 +79,13 @@ TUniquePtr<FCSRuntimeHost> RuntimeHostFactory::CreateRuntimeHost()
 	const TCHAR* Source = TEXT("Editor");
 #else
 	const TOptional<FCSRuntimeManifest> Manifest = FCSRuntimeManifest::Load(ManagedDirectory);
+#if PLATFORM_WASM
+	if (!Manifest.IsSet() || Manifest->Kind != ECSRuntimeKind::CoreClrEmbedded)
+	{
+		UE_LOGFMT(LogUnrealSharp, Fatal, "Wasm requires the verified static CoreClrEmbedded manifest in {0}", ManagedDirectory);
+		return nullptr;
+	}
+#endif
 	Host = Manifest.IsSet() ? CreateHostForManifest(Manifest.GetValue(), ManagedDirectory) : CreateHostFxrHost(ManagedDirectory);
 	const FString Source = Manifest.IsSet() ? Manifest->SourcePath : FString(TEXT("no runtime manifest"));
 #endif

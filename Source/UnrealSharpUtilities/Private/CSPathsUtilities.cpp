@@ -153,6 +153,9 @@ FString UnrealSharp::Paths::GetUnrealSharpDirectory()
 
 FString UnrealSharp::Paths::GetPluginAssembliesPath()
 {
+#if PLATFORM_WASM
+    return GetUserAssemblyDirectory();
+#else
     if (InstallationUtilities::IsUnrealSharpInstalled())
     {
         return GetUserAssemblyDirectory();
@@ -164,6 +167,7 @@ FString UnrealSharp::Paths::GetPluginAssembliesPath()
         return BindingsRoot / FPaths::GetCleanFilename(DotNetUtilities::GetManagedBinaries());
     }
     return FPaths::Combine(GetPluginDirectory(), DotNetUtilities::GetManagedBinaries());
+#endif
 }
 
 FString UnrealSharp::Paths::GetUnrealSharpPluginsPath()

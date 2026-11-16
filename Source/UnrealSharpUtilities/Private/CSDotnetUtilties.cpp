@@ -428,7 +428,11 @@ bool UnrealSharp::DotNetUtilities::BuildUserSolution()
 
 FString& UnrealSharp::DotNetUtilities::GetManagedBinaries()
 {
+#if PLATFORM_WASM
+	static FString ManagedBinaries = FPaths::Combine(TEXT("Managed"), TEXT("CoreCLR"));
+#else
 	static FString ManagedBinaries = FPaths::Combine(TEXT("Binaries"), TEXT("Managed"), TEXT(DOTNET_DISPLAY_NAME));
+#endif
 	return ManagedBinaries;
 }
 

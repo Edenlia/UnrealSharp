@@ -1,0 +1,15 @@
+// Candidate pre-js TEMPLATE, evaluated once in each Emscripten JS realm.
+// A future normal product link must substitute the actual emitted Browser/Utils
+// build gitHash; this unset template deliberately cannot become a running pack.
+var unrealSharpJsGitHash = "@UNREALSHARP_VERIFIED_JS_GIT_HASH@";
+if (!/^[0-9a-f]{40}$/i.test(unrealSharpJsGitHash)) {
+    throw new Error("UnrealSharp static host requires the verified Browser/Utils product build hash");
+}
+var dotnetInternals = [{
+    Module: Module,
+    INTERNAL: {},
+    runtimeBuildInfo: { gitHash: unrealSharpJsGitHash },
+    exit: function (code, error) {
+        throw error || new Error("UnrealSharp browser runtime exit " + code);
+    }
+}, []];
