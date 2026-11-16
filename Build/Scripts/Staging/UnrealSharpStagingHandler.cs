@@ -22,4 +22,9 @@ public class UnrealSharpStagingHandler : CustomStagingHandler
     {
         UnrealSharpStaging.Stage(Params, SC);
     }
+
+    public override void Package(ProjectParams Params, DeploymentContext SC, int WorkingCL)
+    {
+        UnrealSharpStaging.VerifyPackage(Params, SC);
+    }
 }

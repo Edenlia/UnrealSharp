@@ -9,8 +9,12 @@ using UnrealSharp.Automation.Utilities.Platform;
 
 namespace UnrealSharp.Automation.Utilities;
 
-internal static class UnrealSharpStaging
+internal static partial class UnrealSharpStaging
 {
+    internal static void VerifyPackage(ProjectParams parameters, DeploymentContext context) => VerifyWasmPackage(parameters, context);
+    static partial void VerifyWasmPackage(ProjectParams parameters, DeploymentContext context);
+    static partial void StageWasm(ProjectParams parameters, DeploymentContext context, TargetReceipt receipt, ref bool handled);
+
     internal static void Stage(ProjectParams Params, DeploymentContext SC)
     {
         TargetReceipt[] Receipts = SC.StageTargets
@@ -44,6 +48,10 @@ internal static class UnrealSharpStaging
         {
             throw new AutomationException($"The UnrealSharp target receipt belongs to a different project: {Receipt.ProjectFile}");
         }
+
+        bool handled = false;
+        StageWasm(Params, SC, Receipt, ref handled);
+        if (handled) return;
 
         PackageProject Command = new()
         {

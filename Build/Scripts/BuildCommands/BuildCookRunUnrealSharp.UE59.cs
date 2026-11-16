@@ -14,17 +14,18 @@ public class BuildCookRunUnrealSharp : global::BuildCookRun
             throw new AutomationException("BuildCookRunUnrealSharp requires an existing project. Create foreign sample projects with BuildCookRun first.");
         }
 
-        // SetupParams can discover/compile target rules. Reject an explicit Wasm
-        // request before entering that path while its native product is absent.
+        // SetupParams can discover/compile target rules. Validate the explicit
+        // runtime/tool inputs before entering that path for a Wasm request.
         WasmPrelink.RejectUnavailableExplicitRequest(this);
         ProjectParams parameters = SetupParams();
-        if (WasmPrelink.ContainsWasm(parameters))
-        {
-            WasmPrelink.Prepare(this, parameters);
-        }
+        using var wasmBuild = WasmPrelink.ContainsWasm(parameters) ? WasmPrelink.Prepare(this, parameters) : null;
 
         // Modern engines already use UnrealSharpStagingHandler. Do not also
         // register the pre-5.7 staging callback.
         DoBuildCookRun(parameters);
+        if (WasmPrelink.ContainsWasm(parameters))
+        {
+            WasmStagingProduct.RequireCompleted();
+        }
     }
 }

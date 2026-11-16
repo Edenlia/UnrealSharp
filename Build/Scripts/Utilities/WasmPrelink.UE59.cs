@@ -8,7 +8,7 @@ namespace UnrealSharp.Automation.Utilities;
 
 internal static class WasmPrelink
 {
-    internal const string MissingProductMessage = "UnrealSharp Wasm prelink is unavailable: a matching CoreCLR/browser-host native product and production preparation backend have not been integrated. Integrate those products before building or restaging UnrealSharp for Wasm.";
+    internal const string MissingProductMessage = "UnrealSharp Wasm prelink requires an explicit verified -UnrealSharpRuntimeProduct= Portable product and matching Wasm preparation tools. A desktop runtime publish or an old staging directory cannot supply the static browser runtime.";
 
     internal static bool IsWasm(UnrealTargetPlatform platform) =>
         platform.ToString().Equals("Wasm", StringComparison.OrdinalIgnoreCase);
@@ -44,41 +44,24 @@ internal static class WasmPrelink
     {
         if (RequestsWasm(command))
         {
-            throw new AutomationException(MissingProductMessage);
+            if (!command.Params.Any(argument => argument.StartsWith("UnrealSharpRuntimeProduct=", StringComparison.OrdinalIgnoreCase)))
+                throw new AutomationException(MissingProductMessage);
+            WasmPreparationSession.ValidateExplicitProducts(command);
         }
     }
 
-    internal static void Prepare(BuildCommand owner, ProjectParams parameters)
+    internal static IDisposable Prepare(BuildCommand owner, ProjectParams parameters)
     {
         WasmGameBuildRequest request = WasmGameBuildRequest.Freeze(parameters);
-        IWasmPrelinkBackend backend = ResolveProducts(request);
+        WasmPreparationSession session = WasmPreparationSession.Create(owner, request, parameters);
         var builder = new UnrealBuild(owner);
         UnrealBuild.BuildAgenda agenda = request.CreateAgenda(builder, parameters);
         builder.Build(agenda, InDeleteBuildProducts: request.Clean, InUpdateVersionFiles: false,
             InTargetToManifest: null, InSkipBuild: true);
-        backend.VerifyUhtProducer(request);
-        backend.BuildManagedClosureAndHelpers(request);
-        backend.ValidateNativeInputs(request);
+        session.PrepareManagedInputs();
         request.RequireUnchanged(parameters);
+        return session.AcquireBuildLease();
     }
-
-    private static IWasmPrelinkBackend ResolveProducts(WasmGameBuildRequest request)
-    {
-        // No descriptor/Ready schema, environment override or CLI bypass exists.
-        // This must be replaced by a real product consumer before the command
-        // can reach codegen, managed builds, helpers or the normal native build.
-        throw new AutomationException(MissingProductMessage);
-    }
-}
-
-// Behavior boundaries only. A real backend must reuse the producer protocol's
-// read-only validation before building managed/native inputs. There is currently
-// no executable implementation or externally selectable backend.
-internal interface IWasmPrelinkBackend
-{
-    void VerifyUhtProducer(WasmGameBuildRequest request);
-    void BuildManagedClosureAndHelpers(WasmGameBuildRequest request);
-    void ValidateNativeInputs(WasmGameBuildRequest request);
 }
 
 internal sealed record WasmGameBuildRequest(FileReference ProjectFile, string TargetName,
