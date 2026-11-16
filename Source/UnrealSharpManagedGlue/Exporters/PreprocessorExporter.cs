@@ -28,6 +28,11 @@ public static class PreprocessorExporter
         stringBuilder.AppendLine("</Project>");
 
         string propsPath = Path.Combine(GeneratorStatics.Target.EngineGlue, "UE5Rules.Defines.props");
-        GlueTarget.WriteIfChanged(propsPath, stringBuilder.ToString());
+        string contents = stringBuilder.ToString();
+        if (!File.Exists(propsPath) || File.ReadAllText(propsPath) != contents)
+        {
+            ExporterProducerContext.InvalidateCompletion();
+            ExporterProducerContext.WriteIfDifferent(propsPath, contents);
+        }
     }
 }

@@ -82,7 +82,8 @@ public static class ModuleFactory
         };
         foreach (string path in pluginDependencies.Where(path => Path.GetExtension(path).Equals(".csproj", StringComparison.OrdinalIgnoreCase)))
             arguments.Add(new("Dependencies", path));
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments);
+        if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments))
+            throw new InvalidOperationException("Failed to update UnrealSharp module dependencies.");
     }
 
     internal static void PrepareEnginePluginProject(IEnumerable<ModuleInfo> modules)

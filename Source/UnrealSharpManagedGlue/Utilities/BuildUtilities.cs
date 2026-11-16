@@ -201,6 +201,7 @@ public static class BuildUtilities
             new("TargetType", GeneratorStatics.TargetType.ToString()), new("TargetConfiguration", GeneratorStatics.TargetConfiguration.ToString()),
             new("TargetPlatform", GeneratorStatics.TargetPlatform.ToString()), new("UnrealSharpTargetManifest", GeneratorStatics.Target.ManifestPath)
         };
-        UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", arguments);
+        if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateUserSolution", arguments))
+            throw new InvalidOperationException("Failed to generate the UnrealSharp user solution.");
     }
 }

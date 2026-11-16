@@ -81,14 +81,19 @@ public static class ExporterValidator
 		bool layoutChanged = !File.Exists(layoutPath) || File.ReadAllText(layoutPath) != layout ||
 			!File.Exists(sharedLayoutPath) || File.ReadAllText(sharedLayoutPath) != sharedLayout;
 
-		if (!HasAssemblyRecentlyChanged() && !layoutChanged)
+		bool producerMatches = ExporterProducerContext.Initialize();
+		if (producerMatches && !HasAssemblyRecentlyChanged() && !layoutChanged)
 		{
+			ExporterProducerContext.PrepareIncrementalExport();
 			PackageHeadersTracker.DeserializeModuleHeaders();
 			return;
 		}
 
 		ConsoleUtilities.Log("Exporter or assembly membership changed. Re-exporting bindings for this target...");
-		CleanModules();
+		if (ExporterProducerContext.IsTracking)
+			ExporterProducerContext.CleanGeneratedOutputs();
+		else
+			CleanModules();
 		PendingLayout = layout;
 		PendingSharedLayout = sharedLayout;
 	}

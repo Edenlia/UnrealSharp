@@ -84,6 +84,18 @@ public static class Program
             BuildUtilities.BuildProjectBindings();
             BuildUtilities.PublishRuntimeContext();
             BuildUtilities.GenerateUserSolution();
+            TaskManager.WaitForTasks();
+            if (factory.Session.HasErrors)
+            {
+                throw new InvalidOperationException("UnrealSharp export did not complete successfully.");
+            }
+            ExporterValidator.CompleteExport();
+            if (ExporterProducerContext.IsTracking) ExporterProducerContext.Complete();
+        }
+        catch
+        {
+            ExporterProducerContext.InvalidateCompletion();
+            throw;
         }
         finally
         {
@@ -111,6 +123,7 @@ public static class Program
         UnrealSharpSettingsUtilities.Reset();
         UnrealSharp.Automation.Utilities.UnrealSharpSettingsUtilities.Reset();
         GeneratorStatics.Reset();
+        ExporterProducerContext.Reset();
     }
 
     private static void ExportBindings()
@@ -123,7 +136,6 @@ public static class Program
             
             GlueGenerator.GenerateBindings();
             TaskManager.WaitForTasks();
-            ExporterValidator.CompleteExport();
 
             stopwatch.Stop();
             
