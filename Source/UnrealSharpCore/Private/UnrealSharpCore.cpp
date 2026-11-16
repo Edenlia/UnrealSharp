@@ -59,6 +59,7 @@ void FUnrealSharpCoreModule::StartupModule()
 void FUnrealSharpCoreModule::ShutdownModule()
 {
 	FCSPropertyGeneratorManager::Shutdown();
+	if (RuntimeHost) RuntimeHost->Shutdown();
 }
 
 #undef LOCTEXT_NAMESPACE

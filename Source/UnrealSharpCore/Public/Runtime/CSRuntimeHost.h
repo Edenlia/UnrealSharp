@@ -21,6 +21,9 @@ public:
 	/** Starts the runtime, calls InitializeUnrealSharp and reports whether managed initialization succeeded. */
 	bool Initialize();
 
+	/** Module shutdown hook; other process-lifetime hosts retain their existing behavior. */
+	virtual void Shutdown() {}
+
 	bool IsInitialized() const { return bInitialized; }
 
 protected:
