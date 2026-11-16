@@ -52,5 +52,6 @@
     <Compile Include="..\..\Managed\Shared\*.cs" Link="..\..\Managed\Shared\*.cs" />
     <Compile Remove="Staging\*.cs" Condition="!$(UE5Rules_DefineConstants.Contains('UE_5_7_OR_LATER'))" />
     <Compile Remove="BuildCommands\BuildCookRunUnrealSharp.cs" Condition="$(UE5Rules_DefineConstants.Contains('UE_5_7_OR_LATER'))" />
+    <Compile Remove="**\*.UE59.cs" Condition="!$(UE5Rules_DefineConstants.Contains('UE_5_9_OR_LATER'))" />
   </ItemGroup>
 </Project>
