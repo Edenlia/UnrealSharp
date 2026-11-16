@@ -27,7 +27,6 @@ namespace
 		return MakeUnique<FCSHostFxrRuntimeHost>();
 #else
 		UE_LOGFMT(LogUnrealSharp, Fatal, "This platform cannot start CoreCLR through hostfxr. Package a runtime that supports it into {0}", ManagedDirectory);
-		return nullptr;
 #endif
 	}
 
@@ -58,7 +57,6 @@ namespace
 		}
 
 		UE_LOGFMT(LogUnrealSharp, Fatal, "Runtime kind {0} from {1} is not available in this build.", LexToString(Manifest.Kind), Manifest.SourcePath);
-		return nullptr;
 	}
 }
 

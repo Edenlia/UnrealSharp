@@ -1,5 +1,8 @@
 {
   "ScriptDirectoryName": "SharpScript",
   "NativeAOT": false,
-  "TrimFramework": false
+  "TrimFramework": false,
+  "ExcludedHeaderPaths": [
+    "Engine/Source/Editor/JsonUtilitiesEditor/Private/Tests/JsonSchemaGeneratorTests.h"
+  ]
 }

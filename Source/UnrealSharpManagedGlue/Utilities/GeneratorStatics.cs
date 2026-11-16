@@ -58,6 +58,10 @@ public static class GeneratorStatics
 		
 		PluginDirectory = ScriptGeneratorUtilities.TryGetPluginStringDefine("PLUGIN_PATH");
 		UnrealSharpSettingsUtilities.InitializeConfigFile(Factory.Session.ProjectDirectory ?? PluginDirectory, PluginDirectory);
+		foreach (string configPath in UnrealSharpSettingsUtilities.ConfigPaths)
+		{
+			factory.AddExternalDependency(configPath);
+		}
 		
 		TargetType = (TargetType) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_TYPE");
 		TargetConfiguration = (UnrealTargetConfiguration) ScriptGeneratorUtilities.TryGetPluginIntDefine("TARGET_CONFIGURATION");

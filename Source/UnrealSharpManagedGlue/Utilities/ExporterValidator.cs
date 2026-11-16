@@ -48,6 +48,8 @@ public static class ExporterValidator
 		string sharedLayoutPath = Path.Combine(GeneratorStatics.Target.EngineGlue, "UnrealSharp.GlueLayout.json");
 		string layout = JsonSerializer.Serialize(new
 		{
+			// Exclusions affect both target bindings and the shared engine bindings.
+			UnrealSharpSettingsUtilities.ExcludedHeaderPaths,
 			GeneratorStatics.Target.IntermediateDirectory,
 			// Targets with the same type reuse this directory.
 			GeneratorStatics.Target.Name,
@@ -61,6 +63,7 @@ public static class ExporterValidator
 		// optional plugin membership belong only to the per-target layout above.
 		string sharedLayout = JsonSerializer.Serialize(new
 		{
+			UnrealSharpSettingsUtilities.ExcludedHeaderPaths,
 			GeneratorStatics.Target.Type,
 			GeneratorStatics.Target.Configuration,
 			GeneratorStatics.Target.Platform,
