@@ -14,6 +14,7 @@
     <RootNamespace>UnrealSharp.Automation</RootNamespace>
     <AssemblyName>UnrealSharp.Automation</AssemblyName>
     <Configurations>Debug;Release;Development</Configurations>
+    <DefineConstants Condition="$(UE5Rules_DefineConstants.Contains('UE_5_9_OR_LATER'))">$(DefineConstants);UNREALSHARP_WASM_DATA_ONLY</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,6 +51,8 @@
     </Reference>
 
     <Compile Include="..\..\Managed\Shared\*.cs" Link="..\..\Managed\Shared\*.cs" />
+    <Compile Include="..\..\Source\ThirdParty\UnrealSharpWasmRuntime\UnrealSharpWasmRuntime.Build.cs" Link="Utilities\WasmBuildData.cs"
+             Condition="$(UE5Rules_DefineConstants.Contains('UE_5_9_OR_LATER'))" />
     <Compile Remove="Staging\*.cs" Condition="!$(UE5Rules_DefineConstants.Contains('UE_5_7_OR_LATER'))" />
     <Compile Remove="BuildCommands\BuildCookRunUnrealSharp.cs" Condition="$(UE5Rules_DefineConstants.Contains('UE_5_7_OR_LATER'))" />
     <Compile Remove="**\*.UE59.cs" Condition="!$(UE5Rules_DefineConstants.Contains('UE_5_9_OR_LATER'))" />

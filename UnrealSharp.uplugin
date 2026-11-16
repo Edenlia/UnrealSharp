@@ -13,6 +13,11 @@
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": false,
 	"Installed": false,
+	"PreBuildSteps": {
+		"Win64": [
+			"powershell.exe -NoProfile -NonInteractive -File \"$(PluginDir)/Build/Runtime/Wasm/InvokeBuildGuard.ps1\" -EngineDirectory \"$(EngineDir)\" -PluginDirectory \"$(PluginDir)\" -ProjectDirectory \"$(ProjectDir)\" -TargetName \"$(TargetName)\" -Platform \"$(TargetPlatform)\" -Configuration \"$(TargetConfiguration)\" -TargetType \"$(TargetType)\""
+		]
+	},
 	"Modules": [
 		{
 			"Name": "UnrealSharpUtilities",

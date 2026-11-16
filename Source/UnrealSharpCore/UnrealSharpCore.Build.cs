@@ -84,11 +84,16 @@ public class UnrealSharpCore : ModuleRules
 
 		// Runtime hosts compiled into this target. Mobile platforms ship no hostfxr and do not allow a JIT.
 		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
-		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile ? "0" : "1"));
-		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
+		bool bWasm = Target.Platform.ToString() == "Wasm";
+		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile || bWasm ? "0" : "1"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=" + (bWasm ? "0" : "1"));
 		// coreclr_initialize hosting needs a platform loader for ReadyToRun images; only Mach-O is implemented.
 		bool bApple = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac;
-		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple ? "1" : "0"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple || bWasm ? "1" : "0"));
+		if (bWasm)
+		{
+			PrivateDependencyModuleNames.Add("UnrealSharpWasmRuntime");
+		}
 
 		// The first native build precedes managed publication. Only the later run-only Xcode generation
 		// receives the published Frameworks directory: the NativeAOT library, or libcoreclr, the runtime's
@@ -154,7 +159,10 @@ public class UnrealSharpCore : ModuleRules
 
         PublicIncludePaths.AddRange(new string[] { ModuleDirectory });
         PublicDefinitions.Add("ForceAsEngineGlue=1");
-        PublicSystemIncludePaths.Add(Path.Combine(PluginDirectory, "Managed", "DotNetRuntime", "inc"));
+        if (!bWasm)
+        {
+            PublicSystemIncludePaths.Add(Path.Combine(PluginDirectory, "Managed", "DotNetRuntime", "inc"));
+        }
 
 		if (Target.Platform == UnrealTargetPlatform.Android)
 		{
