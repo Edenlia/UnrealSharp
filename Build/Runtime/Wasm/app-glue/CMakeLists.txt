@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.31)
+project(UnrealSharpWasmApplication LANGUAGES CXX)
+if(NOT EMSCRIPTEN OR NOT EXISTS "${UNREALSHARP_APP_INPUTS}")
+    message(FATAL_ERROR "A verified Emscripten product and application input file are required.")
+endif()
+include("${UNREALSHARP_APP_INPUTS}")
+list(LENGTH UNREALSHARP_HELPER_SOURCES helper_count)
+if(NOT helper_count EQUAL 3)
+    message(FATAL_ERROR "The complete three-file application helper set is required.")
+endif()
+add_library(UnrealSharpWasmApplication STATIC ${UNREALSHARP_HELPER_SOURCES})
+target_compile_features(UnrealSharpWasmApplication PRIVATE cxx_std_17)
+target_include_directories(UnrealSharpWasmApplication PRIVATE ${UNREALSHARP_HELPER_INCLUDES})
+target_compile_definitions(UnrealSharpWasmApplication PRIVATE ${UNREALSHARP_HELPER_DEFINITIONS})
+target_compile_options(UnrealSharpWasmApplication PRIVATE ${UNREALSHARP_HELPER_OPTIONS}
+    "-include" "${UNREALSHARP_HELPER_FORCE_INCLUDE}")
+set_target_properties(UnrealSharpWasmApplication PROPERTIES PREFIX "" SUFFIX ".a"
+    OUTPUT_NAME "UnrealSharp.Wasm" ARCHIVE_OUTPUT_DIRECTORY "${UNREALSHARP_ARCHIVE_DIRECTORY}")

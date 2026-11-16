@@ -1,0 +1,26 @@
+<Project>
+  <!-- GetFileHash runs before the compiler consumes these items. In-memory
+       generator output is covered by its analyzer/tool inputs, not invented files. -->
+  <Target Name="CaptureUnrealSharpWasmCompilerInputs" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_UnrealSharpWasmInput Include="$(MSBuildAllProjects);$(MSBuildProjectFullPath);@(Compile);@(ReferencePath);@(ReferencePathWithRefAssemblies);@(Analyzer);@(AdditionalFiles);@(EditorConfigFiles);@(GlobalAnalyzerConfigFiles);@(EmbeddedResource);@(LinkResource);@(_CoreCompileResourceInputs)" />
+      <_UnrealSharpWasmInput Remove="@(_UnrealSharpWasmInput)" Condition="!Exists('%(Identity)')" />
+    </ItemGroup>
+    <RemoveDuplicates Inputs="@(_UnrealSharpWasmInput)">
+      <Output TaskParameter="Filtered" ItemName="_UnrealSharpWasmUniqueInput" />
+    </RemoveDuplicates>
+    <GetFileHash Files="@(_UnrealSharpWasmUniqueInput->'%(FullPath)')" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_UnrealSharpWasmHashedInput" />
+    </GetFileHash>
+    <GetFileHash Files="$(MSBuildProjectFullPath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_UnrealSharpWasmProjectHash" />
+    </GetFileHash>
+    <PropertyGroup>
+      <_UnrealSharpWasmProjectFileHash>@(_UnrealSharpWasmProjectHash->'%(FileHash)')</_UnrealSharpWasmProjectFileHash>
+    </PropertyGroup>
+    <MakeDir Directories="$(UnrealSharpWasmInputRecords)" />
+    <WriteLinesToFile File="$(UnrealSharpWasmInputRecords)/$(_UnrealSharpWasmProjectFileHash).$(MSBuildProjectName).$(TargetFramework).inputs"
+      Lines="PROJECT|$(MSBuildProjectFullPath);PROFILE|$(UETargetType)|$(UEBuildConfig)|$(TargetPlatform)|$(TargetArchitecture)|$(RuntimeIdentifier)|$(PublishAot)|$(PublishReadyToRun);@(_UnrealSharpWasmHashedInput->'%(FullPath)|%(FileHash)')"
+      Overwrite="true" Encoding="UTF-8" />
+  </Target>
+</Project>
