@@ -5,7 +5,6 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using EpicGames.Core;
 using UnrealSharp.Automation.Utilities;
@@ -40,41 +39,12 @@ public static class ExporterProducerContext
     private static string _sidecarPath = "";
     private static byte[] _sidecarBytes = [];
 
-    public sealed class ProducerStamp
-    {
-        public int Version { get; set; } = 1;
-        public string Context { get; set; } = "";
-        public string Inputs { get; set; } = "";
-        public string Transaction { get; set; } = "";
-        public string CommitPath { get; set; } = "";
-        public string ProjectDirectory { get; set; } = "";
-        public SortedDictionary<string, string> Target { get; set; } = new(StringComparer.Ordinal);
-        public string ManifestHash { get; set; } = "";
-        public SortedDictionary<string, string> ResolvedPaths { get; set; } = new(StringComparer.Ordinal);
-        public SortedDictionary<string, ProducerLink> AncestorLinks { get; set; } = new(StringComparer.Ordinal);
-        public SortedDictionary<string, string> Files { get; set; } = new(StringComparer.Ordinal);
-    }
-
-    public sealed class ProducerLink
-    {
-        public string RawTarget { get; set; } = "";
-        public string Target { get; set; } = "";
-        public string PhysicalTarget { get; set; } = "";
-    }
-
-    public sealed class ProducerCommit
-    {
-        public int Version { get; set; } = 1;
-        public string Transaction { get; set; } = "";
-        public SortedDictionary<string, string> Stamps { get; set; } = new(StringComparer.Ordinal);
-    }
-
-    public sealed class ProducerRoots
-    {
-        public int Version { get; set; } = 1;
-        public string ProjectDirectory { get; set; } = "";
-        public string[] Roots { get; set; } = [];
-    }
+    // Keep the existing public nested types, including their closed link-map
+    // type, while sharing the same V1 properties and wire operations with UAT.
+    public sealed class ProducerStamp : UhtProducerStamp<ProducerLink> { }
+    public sealed class ProducerLink : UhtProducerLink { }
+    public sealed class ProducerCommit : UhtProducerCommit { }
+    public sealed class ProducerRoots : UhtProducerRoots { }
 
     public static void Reset()
     {
@@ -161,10 +131,8 @@ public static class ExporterProducerContext
             settings[Path.GetFullPath(path)] = File.Exists(path) ? HashFile(path) : "";
         _target = new SortedDictionary<string, string>(target, StringComparer.Ordinal);
         _manifestHash = GetManifestHash(manifest);
-        _context = HashText(JsonSerializer.Serialize(new {
-            Target = _target, Manifest = _manifestHash, Settings = settings,
-            Exporter = HashFile(Assembly.GetExecutingAssembly().Location), Paths = ResolvedPaths, Links = AncestorLinks
-        }));
+        _context = UhtProducerProtocol.ComputeContext(_target, _manifestHash, settings,
+            GetExporterIdentity(GeneratorStatics.Factory.AddExternalDependency), ResolvedPaths, AncestorLinks);
         _inputs = HashText(JsonSerializer.Serialize(ModuleUtilities.PackageToModuleInfo.Values
             .SelectMany(module => module.Module.Children.Select(child => child.HeaderFile.FilePath))
             .Distinct(PathComparer).OrderBy(path => path, StringComparer.Ordinal)
@@ -198,6 +166,25 @@ public static class ExporterProducerContext
             }
         }
         return Roots.All(root => Previous.TryGetValue(root, out ProducerStamp? stamp) && stamp.Context == _context);
+    }
+
+    private static string GetExporterIdentity(Action<string> addExternalDependency)
+    {
+        // The protocol implementation is a tool input even when changing its
+        // internals leaves the referencing UHT assembly byte-identical.
+        var uhtAssembly = Program.GetAssemblySource(Assembly.GetExecutingAssembly());
+        var automationAssembly = Program.GetAssemblySource(typeof(UhtProducerProtocol).Assembly);
+        addExternalDependency(uhtAssembly.Path);
+        addExternalDependency(automationAssembly.Path);
+        return UhtProducerProtocol.ComputeExporterIdentity(GetAssemblyHash(uhtAssembly), GetAssemblyHash(automationAssembly));
+    }
+
+    private static string GetAssemblyHash((string Path, string? LoadedHash) source)
+    {
+        string hash = HashFile(source.Path);
+        if (source.LoadedHash != null && source.LoadedHash != hash)
+            throw new InvalidDataException($"Producer assembly changed after loading: '{source.Path}'. Retry with a new UHT process.");
+        return hash;
     }
 
     public static void InvalidateCompletion()
@@ -322,7 +309,7 @@ public static class ExporterProducerContext
             }
             inventories.Add(root, files);
         }
-        string transaction = HashText(JsonSerializer.Serialize(new { Context = _context, Inputs = _inputs, Files = inventories }));
+        string transaction = UhtProducerProtocol.ComputeTransaction(_context, _inputs, inventories);
         WriteRootIndexes();
         var commit = new ProducerCommit { Transaction = transaction };
         // A failed publication can leave new root stamps after a prior full
@@ -348,34 +335,11 @@ public static class ExporterProducerContext
 
     private static void ValidateSidecarHash(UHTManifest.Module module, byte[] bytes)
     {
-        string actual = Convert.ToHexString(SHA256.HashData(bytes));
-        if (!module.TryGetDefine("UNREALSHARP_UHT_CONTEXT_SHA256", out string? expected) || expected?.Trim('"') != actual)
+        if (!UhtProducerProtocol.MatchesSidecarHash(module, bytes))
             throw new InvalidDataException("UnrealSharp UHT manifest/context hash mismatch. Different profiles sharing native UHT output require separate invocations.");
     }
 
-    private static string GetManifestHash(UHTManifest manifest)
-    {
-        // UBT appends these buckets from ParallelQueue workers. Their order is
-        // incidental; membership, multiplicity and bucket identity are inputs.
-        // Project only the hash. Never reorder the live UHT manifest or any
-        // other array (include paths, defines, modules, dependencies, etc.).
-        JsonNode projection = JsonSerializer.SerializeToNode(manifest)
-            ?? throw new InvalidDataException("Missing UnrealSharp UHT manifest projection.");
-        string[] buckets = ["ClassesHeaders", "PublicHeaders", "InternalHeaders", "PrivateHeaders"];
-        foreach (JsonNode? module in projection[nameof(UHTManifest.Modules)]!.AsArray())
-        {
-            foreach (string bucket in buckets)
-            {
-                if (module?[bucket] is JsonArray headers)
-                {
-                    module[bucket] = new JsonArray(headers.Select(header => header!.GetValue<string>())
-                        .OrderBy(header => header, StringComparer.Ordinal)
-                        .Select(header => (JsonNode?)JsonValue.Create(header)).ToArray());
-                }
-            }
-        }
-        return HashText(projection.ToJsonString());
-    }
+    private static string GetManifestHash(UHTManifest manifest) => UhtProducerProtocol.ComputeManifestHash(manifest);
 
     private static void WriteRootIndexes()
     {
@@ -390,13 +354,14 @@ public static class ExporterProducerContext
     {
         EnsureSafePath(stamp.CommitPath);
         ProducerCommit commit = ReadCommit(stamp.CommitPath);
-        if (commit.Version != 1 || commit.Transaction != stamp.Transaction ||
-            !commit.Stamps.TryGetValue(stampPath, out string? stampHash) || HashFile(stampPath) != stampHash)
+        if (!UhtProducerProtocol.MatchesCommitMetadata(stampPath, stamp, commit) ||
+            !UhtProducerProtocol.MatchesMemberHash(commit.Stamps[stampPath], HashFile(stampPath)))
             throw new InvalidDataException("Incomplete UnrealSharp producer transaction.");
         foreach (var entry in commit.Stamps)
         {
             ValidateRoot(Path.GetDirectoryName(entry.Key)!);
-            if (Path.GetFileName(entry.Key) != StampName || !File.Exists(entry.Key) || HashFile(entry.Key) != entry.Value)
+            if (Path.GetFileName(entry.Key) != StampName || !File.Exists(entry.Key) ||
+                !UhtProducerProtocol.MatchesMemberHash(entry.Value, HashFile(entry.Key)))
                 throw new InvalidDataException("Incomplete UnrealSharp producer transaction: " + entry.Key);
         }
     }
@@ -423,7 +388,7 @@ public static class ExporterProducerContext
     private static void ValidateFiles(string root, SortedDictionary<string, string> expected)
     {
         SortedDictionary<string, string> actual = Inventory(root);
-        if (!actual.SequenceEqual(expected))
+        if (!UhtProducerProtocol.MatchesInventory(actual, expected))
             throw new InvalidDataException("UnrealSharp generated output differs from its successful producer: " + root);
     }
 
@@ -616,5 +581,5 @@ public static class ExporterProducerContext
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
-    private static string HashText(string value) => Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
+    private static string HashText(string value) => UhtProducerProtocol.HashText(value);
 }
