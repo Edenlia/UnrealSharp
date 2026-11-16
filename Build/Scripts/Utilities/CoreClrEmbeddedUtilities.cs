@@ -58,10 +58,7 @@ public static class CoreClrEmbeddedUtilities
         {
             throw new NotSupportedException("CoreClrEmbedded is a packaged-game runtime. The Editor always uses CoreClrHostFxr.");
         }
-        if (!PlatformUtilities.For(options.TargetPlatform).SupportsCoreClrEmbedded(options.TargetArchitecture))
-        {
-            throw new NotSupportedException("CoreClrEmbedded packaging supports arm64 Apple targets built on macOS and arm64 Android targets.");
-        }
+        PlatformUtilities.For(options.TargetPlatform).ValidateCoreClrEmbedded(options.TargetArchitecture);
     }
 
     public static void Run(BuildCommand command, PackageProject.PackagingOptions options, string publishDirectory, string outputDirectory)

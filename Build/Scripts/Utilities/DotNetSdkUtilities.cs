@@ -38,7 +38,18 @@ public static class DotNetSdkUtilities
             return "arm64";
         }
 
-        throw new NotSupportedException($"Unsupported target architecture for .NET publish: '{architecture}'. " + $"Supported architectures: X64, Arm64.");
+        // UE names the 32-bit architecture wasm32; .NET's browser RID names it wasm.
+        if (architecture.ToString().Equals("wasm32", StringComparison.OrdinalIgnoreCase))
+        {
+            return "wasm";
+        }
+
+        if (architecture.ToString().Equals("wasm64", StringComparison.OrdinalIgnoreCase))
+        {
+            return "wasm64";
+        }
+
+        throw new NotSupportedException($"Unsupported target architecture for .NET publish: '{architecture}'. Supported architectures: X64, Arm64, Wasm32, Wasm64.");
     }
     
     public static string GetTargetArchitecture(this UnrealArch architecture)

@@ -8,6 +8,7 @@ using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities.Platform.Android;
 using UnrealSharp.Automation.Utilities.Platform.IOS;
 using UnrealSharp.Automation.Utilities.Platform.Mac;
+using UnrealSharp.Automation.Utilities.Platform.Wasm;
 using UnrealSharp.Automation.Utilities.Platform.Win64;
 
 namespace UnrealSharp.Automation.Utilities.Platform;
@@ -32,7 +33,12 @@ internal abstract class PlatformUtilities
         {
             return new AndroidUtilities();
         }
-        throw new NotSupportedException($"UnrealSharp packaging does not support platform '{platform}'. Supported platforms: Win64, Mac, IOS, Android.");
+        // Wasm is registered by the UE 5.9 platform extension; keep older UBT assemblies usable.
+        if (platform.ToString().Equals("Wasm", StringComparison.OrdinalIgnoreCase))
+        {
+            return new WasmUtilities();
+        }
+        throw new NotSupportedException($"UnrealSharp packaging does not support platform '{platform}'. Supported platforms: Win64, Mac, IOS, Android, Wasm.");
     }
 
     public abstract string DotNetPlatformIdentifier { get; }
@@ -49,6 +55,14 @@ internal abstract class PlatformUtilities
     public virtual bool SupportsCoreClrEmbedded(UnrealArch architecture)
     {
         return false;
+    }
+
+    public virtual void ValidateCoreClrEmbedded(UnrealArch architecture)
+    {
+        if (!SupportsCoreClrEmbedded(architecture))
+        {
+            throw new NotSupportedException("CoreClrEmbedded packaging currently supports arm64 Apple targets built on macOS.");
+        }
     }
 
     /// <summary>The .NET platform part of the runtime identifier for a runtime; most platforms use one for all.</summary>
