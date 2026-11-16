@@ -72,6 +72,17 @@ public static class Program
 
             ModuleFactory.SyncModuleProjects();
             BuildUtilities.GenerateUserSolution();
+            TaskManager.WaitForTasks();
+            if (factory.Session.HasErrors)
+            {
+                throw new InvalidOperationException("UnrealSharp export did not complete successfully.");
+            }
+            ExporterValidator.CompleteExport();
+        }
+        catch
+        {
+            ExporterProducerContext.InvalidateCompletion();
+            throw;
         }
         finally
         {
@@ -96,6 +107,7 @@ public static class Program
         UnrealSharpSettingsUtilities.Reset();
         UnrealSharp.Automation.Utilities.UnrealSharpSettingsUtilities.Reset();
         GeneratorStatics.Reset();
+        ExporterProducerContext.Reset();
     }
 
     private static void ExportBindings()

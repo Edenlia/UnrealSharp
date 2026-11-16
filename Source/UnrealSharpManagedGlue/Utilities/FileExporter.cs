@@ -22,6 +22,8 @@ public static class FileExporter
 		HasModifiedEngineGlue = false;
 	}
 
+	internal static string[] GetAffectedFiles() => AffectedFiles.ToArray();
+
 	public static void SaveGlueToDisk(UhtType type, GeneratorStringBuilder stringBuilder)
 	{
 		string directory = type.Package.GetModuleInfo().GlueOutputDirectory;
@@ -30,7 +32,7 @@ public static class FileExporter
 
 	public static string GetFilePath(string typeName, string directory)
 	{
-		return Path.Combine(directory, $"{typeName}.generated.cs");
+		return Path.GetFullPath(Path.Combine(directory, $"{typeName}.generated.cs"));
 	}
 
 	public static void SaveGlueToDisk(UhtPackage package, string directory, string typeName, string text)
@@ -40,6 +42,7 @@ public static class FileExporter
 
 		if (File.Exists(absoluteFilePath))
 		{
+			ExporterProducerContext.EnsureSafePath(absoluteFilePath);
 			FileInfo fileInfo = new(absoluteFilePath);
 			if (fileInfo.Length == text.Length && File.ReadAllText(absoluteFilePath) == text)
 			{
@@ -57,11 +60,14 @@ public static class FileExporter
 				return;
 			}
 
+			ExporterProducerContext.InvalidateCompletion();
 			if (!Directory.Exists(directory))
 			{
+				ExporterProducerContext.EnsureSafePath(absoluteFilePath);
 				Directory.CreateDirectory(directory);
 			}
 
+			ExporterProducerContext.EnsureSafePath(absoluteFilePath);
 			File.WriteAllText(absoluteFilePath, text);
 			package.GetModuleInfo().MarkDirty();
 
@@ -131,6 +137,7 @@ public static class FileExporter
 
 	private static void CleanOldFilesInDirectories(string path)
 	{
+		ExporterProducerContext.EnsureSafePath(path);
 		if (!Directory.Exists(path))
 		{
 			return;
@@ -149,13 +156,15 @@ public static class FileExporter
 		string[] files = Directory.GetFiles(path);
 		foreach (string file in files)
 		{
-			if (Path.GetExtension(file) != ".cs" || AffectedFiles.Contains(file))
+			if (!file.EndsWith(".generated.cs", StringComparison.Ordinal) || AffectedFiles.Contains(Path.GetFullPath(file)))
 			{
 				continue;
 			}
             
 			try 
 			{
+				ExporterProducerContext.InvalidateCompletion();
+				ExporterProducerContext.EnsureSafePath(file);
 				File.Delete(file);
 			}
 			catch (IOException exception) 
@@ -171,6 +180,7 @@ public static class FileExporter
         
 		try 
 		{
+			ExporterProducerContext.EnsureSafePath(path);
 			Directory.Delete(path, false);
 		}
 		catch (IOException exception)

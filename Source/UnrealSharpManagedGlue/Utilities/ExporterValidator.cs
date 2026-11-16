@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -37,17 +36,23 @@ public static class ExporterValidator
 
 		string exclusions = JsonSerializer.Serialize(UnrealSharpSettingsUtilities.ExcludedHeaderPaths);
 		bool exclusionsChanged = !File.Exists(HeaderExclusionsFile) || File.ReadAllText(HeaderExclusionsFile) != exclusions;
-		if (!HasAssemblyRecentlyChanged() && !exclusionsChanged)
+		bool producerMatches = ExporterProducerContext.Initialize();
+		if (!HasAssemblyRecentlyChanged() && !exclusionsChanged && producerMatches)
 		{
 			PackageHeadersTracker.DeserializeModuleHeaders();
+			ExporterProducerContext.PrepareIncrementalExport();
 			return;
 		}
 
 		ConsoleUtilities.Log("Exporter is stale. Re-exporting all bindings...");
-		CleanModules();
+		ExporterProducerContext.CleanGeneratedOutputs();
+	}
+
+	public static void CompleteExport()
+	{
 		CreateTimestamp();
-		// Changing an exclusion must also regenerate headers that were previously skipped.
-		File.WriteAllText(HeaderExclusionsFile, exclusions);
+		ExporterProducerContext.WriteIfDifferent(HeaderExclusionsFile, JsonSerializer.Serialize(UnrealSharpSettingsUtilities.ExcludedHeaderPaths));
+		ExporterProducerContext.Complete();
 	}
 
 	private static void CreateTimestamp()
@@ -58,26 +63,10 @@ public static class ExporterValidator
 		string? directory = Path.GetDirectoryName(AssemblyModificationTimeFile);
 		if (!string.IsNullOrEmpty(directory))
 		{
+			ExporterProducerContext.EnsureSafePath(directory);
 			Directory.CreateDirectory(directory);
 		}
 
-		File.WriteAllText(AssemblyModificationTimeFile, executingAssemblyLastWriteTime.ToString("o"));
-	}
-
-	private static void CleanModules()
-	{
-		IEnumerable<ModuleInfo> modules = ModuleUtilities.PackageToModuleInfo.Values;
-
-		foreach (ModuleInfo module in modules)
-		{
-			FileExporter.CleanGeneratedFolder(module.Module.GetPackageOutputDirectory());
-
-			if (module.IsPartOfEngine || !File.Exists(module.CsProjPath))
-			{
-				continue;
-			}
-
-			File.Delete(module.CsProjPath);
-		}
+		ExporterProducerContext.WriteIfDifferent(AssemblyModificationTimeFile, executingAssemblyLastWriteTime.ToString("o"));
 	}
 }

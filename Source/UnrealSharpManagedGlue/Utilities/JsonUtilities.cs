@@ -8,6 +8,7 @@ public static class JsonUtilities
     public static void SerializeObjectToJson(object objectToSerialize, string fileName)
     {
         string outputPath = GetJsonOutputPath(fileName);
+        ExporterProducerContext.EnsureSafePath(outputPath);
         
         using FileStream filestream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
         JsonSerializer.Serialize(filestream, objectToSerialize);
@@ -17,6 +18,7 @@ public static class JsonUtilities
     public static T? DeserializeObjectFromJson<T>(string fileName)
     {
         string inputPath = GetJsonOutputPath(fileName);
+        ExporterProducerContext.EnsureSafePath(inputPath);
         
         if (!File.Exists(inputPath))
         {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using System.IO;
 using System.Linq;
 using UnrealBuildTool;
@@ -77,12 +78,17 @@ public static class ModuleFactory
 			new("AddReferences", "true")
 		};
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildUserGlue", commandArgs);
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("BuildUserGlue", commandArgs))
+		{
+			throw new InvalidOperationException("UnrealSharp BuildUserGlue failed.");
+		}
 		return true;
 	}
 
 	private static void GenerateModuleProject(ModuleInfo moduleInfo)
 	{
+		ExporterProducerContext.InvalidateCompletion();
+		ExporterProducerContext.EnsureSafePath(moduleInfo.CsProjPath);
 		List<KeyValuePair<string, string>> arguments = new List<KeyValuePair<string, string>>
 		{
 			new("ProjectName", moduleInfo.ModuleName),
@@ -99,7 +105,10 @@ public static class ModuleFactory
 			arguments.Add(new KeyValuePair<string, string>("EditorOnly", "true"));
 		}
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateProject", arguments);
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("GenerateProject", arguments))
+		{
+			throw new InvalidOperationException("UnrealSharp GenerateProject failed: " + moduleInfo.CsProjPath);
+		}
 	}
 
 	private static void AppendExtensionIncludeFolders(ModuleInfo moduleInfo, List<KeyValuePair<string, string>> arguments)
@@ -121,6 +130,8 @@ public static class ModuleFactory
 
 	private static void UpdateModuleDependencies(ModuleInfo moduleInfo, List<string>? pluginDependencies)
 	{
+		ExporterProducerContext.InvalidateCompletion();
+		ExporterProducerContext.EnsureSafePath(moduleInfo.CsProjPath);
 		List<KeyValuePair<string, string>> arguments = new()
 		{
 			new KeyValuePair<string, string>("ProjectPath", moduleInfo.CsProjPath),
@@ -134,6 +145,9 @@ public static class ModuleFactory
 			}
 		}
 
-		UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments);
+		if (!UnrealSharpAutomationUtilities.InvokeUnrealSharpAutomation("UpdateProjectDependencies", arguments))
+		{
+			throw new InvalidOperationException("UnrealSharp UpdateProjectDependencies failed: " + moduleInfo.CsProjPath);
+		}
 	}
 }
