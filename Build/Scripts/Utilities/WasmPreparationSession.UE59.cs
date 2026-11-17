@@ -25,7 +25,7 @@ internal sealed class WasmPreparationSession
 
     internal static void ValidateExplicitProducts(BuildCommand command)
     {
-        WasmRuntimeProduct.OpenPortable(RequiredFile(command, "UnrealSharpRuntimeProduct"));
+        WasmRuntimeProduct.OpenPortable(RequiredFile(command, "UnrealSharpRuntimeProduct")).RequireUeExceptionAbi();
         ReadTools(command);
     }
 
@@ -36,6 +36,7 @@ internal sealed class WasmPreparationSession
             throw new AutomationException("UnrealSharp Wasm preparation currently requires a Windows-hosted, single wasm64 Game build/cook/stage/package invocation.");
         WasmPreparationTools tools = ReadTools(command);
         WasmRuntimeProduct product = WasmRuntimeProduct.OpenPortable(RequiredFile(command, "UnrealSharpRuntimeProduct"));
+        product.RequireUeExceptionAbi();
         FileReference plugin = command.GetUnrealSharpUPlugin();
         var profile = new WasmBuildProfile(request.ProjectFile.FullName, plugin.Directory.FullName, Unreal.EngineDirectory.FullName,
             request.TargetName, "Game", "Wasm", request.Configuration.ToString(), "wasm64", LowerMemory64: true, Simd128: true);
