@@ -1,13 +1,33 @@
-<Project>
+<Project InitialTargets="ValidateUnrealSharpEngineVersion">
     <PropertyGroup>
-        <UE5RulesProjPath>$(EngineDir)\Intermediate\Build\BuildRulesProjects\UE5Rules\UE5Rules.csproj</UE5RulesProjPath>
+        <UnrealSharpEngineVersionPath>$(EngineDir)\Build\Build.version</UnrealSharpEngineVersionPath>
+        <UE5Rules_DefineConstants></UE5Rules_DefineConstants>
     </PropertyGroup>
 
-    <PropertyGroup Condition="Exists('$(UE5RulesProjPath)')">
-        <UE5RulesContent>$([System.IO.File]::ReadAllText('$(UE5RulesProjPath)'))</UE5RulesContent>
-        <UE5Rules_DefineConstants>$([System.Text.RegularExpressions.Regex]::Match($(UE5RulesContent), '&lt;DefineConstants&gt;(?&lt;content&gt;.*?)&lt;/DefineConstants&gt;').Groups['content'].Value)</UE5Rules_DefineConstants>
-        <UE5Rules_DefineConstants>$([System.Text.RegularExpressions.Regex]::Replace($(UE5Rules_DefineConstants), '\s+', ''))</UE5Rules_DefineConstants>
+    <!-- IDE-generated rules projects can be absent or stale after an engine update. -->
+    <PropertyGroup Condition="Exists('$(UnrealSharpEngineVersionPath)')">
+        <UnrealSharpEngineVersionContent>$([System.IO.File]::ReadAllText('$(UnrealSharpEngineVersionPath)'))</UnrealSharpEngineVersionContent>
+        <UnrealSharpEngineMajor>$([System.Text.RegularExpressions.Regex]::Match($(UnrealSharpEngineVersionContent), '&quot;MajorVersion&quot;\s*:\s*(\d+)\s*[,}]').Groups[1].Value)</UnrealSharpEngineMajor>
+        <UnrealSharpEngineMinor>$([System.Text.RegularExpressions.Regex]::Match($(UnrealSharpEngineVersionContent), '&quot;MinorVersion&quot;\s*:\s*(\d+)\s*[,}]').Groups[1].Value)</UnrealSharpEngineMinor>
     </PropertyGroup>
+
+    <PropertyGroup Condition="'$(UnrealSharpEngineMajor)' != '' And '$(UnrealSharpEngineMinor)' != ''">
+        <UnrealSharpEngineVersion>$(UnrealSharpEngineMajor).$(UnrealSharpEngineMinor)</UnrealSharpEngineVersion>
+        <!-- Keep the existing property consumed by the two plugin csprojs. -->
+        <UE5Rules_DefineConstants Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(UnrealSharpEngineVersion)', '5.7'))">$(UE5Rules_DefineConstants);UE_5_7_OR_LATER</UE5Rules_DefineConstants>
+        <UE5Rules_DefineConstants Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(UnrealSharpEngineVersion)', '5.8'))">$(UE5Rules_DefineConstants);UE_5_8_OR_LATER</UE5Rules_DefineConstants>
+        <UE5Rules_DefineConstants Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(UnrealSharpEngineVersion)', '5.9'))">$(UE5Rules_DefineConstants);UE_5_9_OR_LATER</UE5Rules_DefineConstants>
+    </PropertyGroup>
+
+    <!-- Both UAT script records and the normal dependency Scan track Content. -->
+    <ItemGroup Condition="Exists('$(UnrealSharpEngineVersionPath)')">
+        <Content Include="$(UnrealSharpEngineVersionPath)" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Visible="false" />
+    </ItemGroup>
+
+    <Target Name="ValidateUnrealSharpEngineVersion">
+        <Error Condition="!Exists('$(UnrealSharpEngineVersionPath)')" Text="UnrealSharp requires the selected Engine's Build/Build.version: $(UnrealSharpEngineVersionPath)" />
+        <Error Condition="'$(UnrealSharpEngineVersion)' == ''" Text="UnrealSharp requires numeric MajorVersion and MinorVersion fields in $(UnrealSharpEngineVersionPath)." />
+    </Target>
 
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
