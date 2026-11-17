@@ -25,7 +25,7 @@ internal sealed record WasmPreparationTools(string DotnetHost, string SdkRoot, s
     string EmCache, string LlvmRoot, string CMake, string Ninja);
 
 internal sealed record WasmManagedPreparationResult(string ManagedDirectory, string HelperDirectory,
-    IReadOnlyList<string> Files, JsonElement Manifest);
+    IReadOnlyList<string> Files, JsonElement Manifest, WasmToolchainPaths ToolchainPaths);
 
 // Preparation only: the coordinator owns Ready publication and releases the
 // producer's read lease before invoking the final native UBT/UHT writer.
@@ -48,6 +48,7 @@ internal static class WasmManagedPreparation
         private readonly HashSet<string> _evaluatedProjects = new(UhtProducerReadPaths.Comparer);
         private readonly Dictionary<string, string> _projectOutputs = new(UhtProducerReadPaths.Comparer);
         private readonly Dictionary<string, string> _environment = new(StringComparer.OrdinalIgnoreCase);
+        private readonly WasmFrozenPaths _sourcePaths = WasmFrozenPaths.CreateToolchain();
         private string _dotnetSdk = "";
 
         internal Preparation(WasmBuildInput input, UhtProducerSnapshot producer, WasmPreparationTools tools)
@@ -136,7 +137,7 @@ internal static class WasmManagedPreparation
             Write(receipt, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
             CheckUnchanged();
             string[] files = _before.Keys.Concat(_outputs).Append(receipt).Distinct(UhtProducerReadPaths.Comparer).OrderBy(path => path, StringComparer.Ordinal).ToArray();
-            return new(_managed, _helpers, Array.AsReadOnly(files), manifest.Clone());
+            return new(_managed, _helpers, Array.AsReadOnly(files), manifest.Clone(), _sourcePaths.SnapshotToolchain());
         }
 
         private void Validate()
@@ -158,6 +159,13 @@ internal static class WasmManagedPreparation
                 .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal).LastOrDefault() ?? throw new InvalidDataException("The explicit dotnet host has no .NET12 SDK.");
             _environment["EM_CONFIG"] = _tools.EmConfig; _environment["EM_CACHE"] = _tools.EmCache;
             _environment["EM_LLVM_ROOT"] = _tools.LlvmRoot;
+            // The SDK's Unix launchers select Python through EMSDK_PYTHON,
+            // not a PYTHON setting in .emscripten. Freeze the selected executables
+            // explicitly so CMake's child tools cannot silently fall back to PATH.
+            string config = File.ReadAllText(_tools.EmConfig);
+            _environment["EMSDK_PYTHON"] = ReadHostTool(config, "PYTHON", "EMSDK_PYTHON", _tools.EmConfig);
+            _environment["EM_NODE_JS"] = ReadHostTool(config, "NODE_JS", "EM_NODE_JS", _tools.EmConfig);
+            foreach (string name in new[] { "EMSDK_PYTHON", "EM_NODE_JS" }) ReadSafe(_environment[name]);
             _environment["MSBuildExtensionsPath"] = _dotnetSdk; _environment["MSBUILD_EXE_PATH"] = Path.Combine(_dotnetSdk, "MSBuild.dll");
             _environment["MSBuildSDKsPath"] = Path.Combine(_dotnetSdk, "Sdks"); _environment["DOTNET_ROLL_FORWARD"] = "LatestMinor";
         }
@@ -169,24 +177,35 @@ internal static class WasmManagedPreparation
             foreach (WasmProductAsset asset in _input.RuntimeProduct.Assets) Observe(_input.RuntimeProduct.RequireAsset(asset.Path), "runtime-asset");
             foreach (string path in new[] { _tools.DotnetHost, _tools.EmConfig, _tools.CMake, _tools.Ninja,
                 Path.Combine(_dotnetSdk, "dotnet.dll"), Path.Combine(_dotnetSdk, "MSBuild.dll"), typeof(WasmManagedPreparation).Assembly.Location }) Observe(path, "tool");
-            foreach (string name in new[] { "clang.exe", "clang++.exe", "llvm-ar.exe", "llvm-ranlib.exe", "llvm-nm.exe" }) Observe(Path.Combine(_tools.LlvmRoot, name), "ue-llvm-tool");
+            foreach (string name in new[] { "clang", "clang++", "llvm-ar", "llvm-ranlib", "llvm-nm", "wasm-ld" }) Observe(HostTool(_tools.LlvmRoot, name), "ue-llvm-tool");
             foreach (string path in Directory.EnumerateFiles(Path.Combine(_dotnetSdk, "Roslyn", "bincore"), "*.dll")) Observe(path, "compiler-tool");
             string emscripten = Path.Combine(_tools.SdkRoot, "upstream", "emscripten");
-            foreach (string name in new[] { "emscripten-version.txt", "emcc.exe", "em++.exe", "emar.exe", "emranlib.exe", "embuilder.exe", "emcc.py", "emar.py", "embuilder.py", "tools/config.py", "tools/shared.py", "tools/system_libs.py", "cmake/Modules/Platform/Emscripten.cmake" }) Observe(Path.Combine(emscripten, name), "emscripten-toolchain");
+            foreach (string name in new[] { "emcc", "em++", "emar", "emranlib", "embuilder", "em-config", "emnm" }) Observe(HostTool(emscripten, name), "emscripten-launcher");
+            foreach (string name in new[] { "emscripten-version.txt", "emcc.py", "em++.py", "emar.py", "emranlib.py", "embuilder.py", "em-config.py", "tools/emnm.py", "tools/config.py", "tools/shared.py", "tools/system_libs.py", "cmake/Modules/Platform/Emscripten.cmake" }) Observe(Path.Combine(emscripten, name), "emscripten-toolchain");
             CaptureTree(Path.Combine(emscripten, "system", "include"), "sdk-source-header");
-            string config = File.ReadAllText(_tools.EmConfig);
-            foreach (string name in new[] { "PYTHON", "NODE_JS" })
-            {
-                Match match = Regex.Match(config, @"(?m)^" + name + "\\s*=\\s*['\"]([^'\"]+)['\"]\\s*$");
-                Require(match.Success, "The selected Emscripten config must name an explicit " + name + " executable.");
-                Observe(Path.GetFullPath(match.Groups[1].Value.Replace("$CFGDIR", Path.GetDirectoryName(_tools.EmConfig)!)), "emscripten-host-tool");
-            }
+            foreach (string name in new[] { "EMSDK_PYTHON", "EM_NODE_JS" }) Observe(_environment[name], "emscripten-host-tool");
             foreach (string version in Directory.EnumerateDirectories(Path.Combine(_tools.SdkRoot, "upstream", "lib", "clang"))) CaptureTree(Path.Combine(version, "include"), "compiler-header");
             CaptureSourceTree(Path.Combine(_input.Profile.PluginDirectory, "Managed"));
             CaptureSourceTree(Path.Combine(_input.Profile.PluginDirectory, "Build", "Scripts"));
             foreach (string path in Directory.EnumerateFiles(_input.Profile.PluginDirectory, "*.props")) Observe(path, "plugin-build-input");
             Observe(Path.Combine(_input.Profile.PluginDirectory, "Source", "ThirdParty", "UnrealSharpWasmRuntime", "UnrealSharpWasmRuntime.Build.cs"), "shared-prelink-contract");
             CaptureTree(_templates, "preparation-template");
+        }
+
+        private static string HostTool(string directory, string name) =>
+            Path.Combine(directory, name + (OperatingSystem.IsWindows() ? ".exe" : ""));
+
+        private static string ReadHostTool(string config, string setting, string environmentName, string configFile)
+        {
+            string? path = Environment.GetEnvironmentVariable(environmentName);
+            if (string.IsNullOrEmpty(path))
+            {
+                MatchCollection matches = Regex.Matches(config, "(?m)^" + setting + "\\s*=\\s*(['\"])([^'\"\\r\\n]+)\\1[ \\t]*\\r?$");
+                Require(matches.Count == 1, "The selected Emscripten SDK requires one explicit " + environmentName + " executable or one literal " + setting + " config setting.");
+                path = matches[0].Groups[2].Value.Replace("$CFGDIR", Path.GetDirectoryName(configFile)!, StringComparison.Ordinal);
+            }
+            Require(Path.IsPathFullyQualified(path) && File.Exists(path), "Missing explicit Emscripten host executable: " + environmentName);
+            return Path.GetFullPath(path);
         }
 
         private string CompileProject(string project, string? packageDirectory)
@@ -332,7 +351,7 @@ internal static class WasmManagedPreparation
                 Set("UNREALSHARP_ARCHIVE_DIRECTORY", [Path.GetDirectoryName(_input.AppArchive)!]));
             Observe(data, "cmake-input");
             string build = Path.Combine(_directory, "Native");
-            Run(Path.Combine(_tools.SdkRoot, "upstream", "emscripten", "embuilder.exe"), ["build", "sysroot"], "emscripten-sysroot");
+            Run(HostTool(Path.Combine(_tools.SdkRoot, "upstream", "emscripten"), "embuilder"), ["build", "sysroot"], "emscripten-sysroot");
             string sysroot = Path.Combine(_tools.EmCache, "sysroot", "include");
             Require(Directory.Exists(sysroot), "Selected EM_CACHE has no initialized sysroot headers.");
             CaptureTree(sysroot, "actual-em-cache-header");
@@ -342,7 +361,7 @@ internal static class WasmManagedPreparation
             CheckUnchanged();
             Run(_tools.CMake, ["--build", build, "--target", "UnrealSharpWasmApplication", "--parallel", "2"], "cmake-build");
             Require(File.Exists(_input.AppArchive), "Normal CMake graph did not produce the application archive.");
-            string symbols = Run(Path.Combine(_tools.LlvmRoot, "llvm-nm.exe"), ["--defined-only", "--demangle", _input.AppArchive], "archive-symbols");
+            string symbols = Run(HostTool(_tools.LlvmRoot, "llvm-nm"), ["--defined-only", "--demangle", _input.AppArchive], "archive-symbols");
             foreach (string name in new[] { "callhelpers_pinvoke_override", "ResolveRuntimeHelperEntrypoint", "g_ReverseThunks", "g_portableCallHelperThunks" })
                 Require(Regex.IsMatch(symbols, @"(?m)^.*\b" + Regex.Escape(name) + @"(?:\(|\s|$)"), "Application archive is missing generated symbol: " + name);
             _outputs.AddRange([_input.AppArchive, Path.Combine(build, "CMakeCache.txt"), Path.Combine(build, "compile_commands.json"), data]);
@@ -393,7 +412,7 @@ internal static class WasmManagedPreparation
 
         private void Observe(string path, string role, string? expected = null)
         {
-            Safe(path); ObservedFile file = Describe(path, role);
+            ReadSafe(path); ObservedFile file = Describe(path, role); _sourcePaths.EnsureRead(_input, Path.GetFullPath(path));
             Require(expected == null || file.Sha256.Equals(expected, StringComparison.OrdinalIgnoreCase), "Compiler input changed after its pre-build capture: " + path);
             if (_before.TryGetValue(file.Path, out ObservedFile? previous)) Require(previous.Bytes == file.Bytes && previous.Sha256 == file.Sha256, "Preparation input changed: " + path);
             else _before.Add(file.Path, file);
@@ -403,18 +422,42 @@ internal static class WasmManagedPreparation
         private void CheckUnchanged()
         {
             _input.RequireUnchanged(); _producer.RequireUnchanged();
-            foreach (ObservedFile file in _before.Values) { Safe(file.Path); Require(File.Exists(file.Path) && new FileInfo(file.Path).Length == file.Bytes && Hash(file.Path) == file.Sha256, "Preparation input changed: " + file.Path); }
+            _sourcePaths.Verify();
+            foreach (ObservedFile file in _before.Values) { _sourcePaths.EnsureRead(_input, file.Path); Require(File.Exists(file.Path) && new FileInfo(file.Path).Length == file.Bytes && Hash(file.Path) == file.Sha256, "Preparation input changed: " + file.Path); _sourcePaths.EnsureRead(_input, file.Path); }
+            _sourcePaths.Verify();
         }
         private void CaptureSourceTree(string directory) => CaptureTree(directory, "source", sourceOnly: true);
-        private void CaptureTree(string directory, string role, bool sourceOnly = false)
+        private void CaptureTree(string directory, string role, bool sourceOnly = false, HashSet<string>? active = null)
         {
-            Safe(directory); if (!Directory.Exists(directory)) return;
-            foreach (string path in Directory.EnumerateFileSystemEntries(directory))
+            if (!Directory.Exists(directory)) { Safe(directory); return; }
+            string physical = ReadSafe(directory); active ??= new HashSet<string>(WasmData.Paths);
+            Require(active.Add(physical), "Cyclic toolchain source directory: " + directory);
+            try
             {
-                Safe(path);
-                if (Directory.Exists(path)) { if (Path.GetFileName(path) is not ("bin" or "obj" or ".git")) CaptureTree(path, role, sourceOnly); }
-                else if (!sourceOnly || new[] { ".cs", ".csproj", ".props", ".targets", ".json", ".config", ".resx" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) Observe(path, role);
+                foreach (string path in Directory.EnumerateFileSystemEntries(directory))
+                {
+                    ReadSafe(path);
+                    if (Directory.Exists(path)) { if (Path.GetFileName(path) is not ("bin" or "obj" or ".git")) CaptureTree(path, role, sourceOnly, active); }
+                    else if (!sourceOnly || new[] { ".cs", ".csproj", ".props", ".targets", ".json", ".config", ".resx" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) Observe(path, role);
+                }
             }
+            finally { active.Remove(physical); }
+        }
+        private string ReadSafe(string path)
+        {
+            path = Path.GetFullPath(path);
+            // This view is for explicitly selected toolchain sources only.
+            // Writes and Portable runtime members retain the strict input view.
+            bool toolchain = !WasmData.Under(path, _input.Profile.BuildDirectory) && !WasmData.Under(path, _input.RuntimeProduct.RootDirectory) &&
+                (new[] { _tools.SdkRoot, _tools.EmCache, Path.GetDirectoryName(_tools.DotnetHost)! }.Any(root => WasmData.Under(path, root)) ||
+                new[] { _tools.CMake, _tools.Ninja }.Concat(_environment.Where(entry => entry.Key is "EMSDK_PYTHON" or "EM_NODE_JS").Select(entry => entry.Value)).Any(tool => WasmData.Paths.Equals(path, tool)));
+            if (toolchain)
+            {
+                string physical = _sourcePaths.CaptureSource(path);
+                Require(!WasmData.Under(physical, _input.PhysicalBuildDirectory) && !WasmData.Under(physical, _input.RuntimeProduct.RootDirectory), "Toolchain source link targets a prepared output or Portable runtime member: " + path);
+                return physical;
+            }
+            Safe(path); return path;
         }
         private void Safe(string path) => _input.RequireSafePath(Path.GetFullPath(path));
         private void MakeDirectory(string path) { Safe(path); Directory.CreateDirectory(path); Safe(path); }

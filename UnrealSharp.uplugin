@@ -16,6 +16,9 @@
 	"PreBuildSteps": {
 		"Win64": [
 			"powershell.exe -NoProfile -NonInteractive -File \"$(PluginDir)/Build/Runtime/Wasm/InvokeBuildGuard.ps1\" -EngineDirectory \"$(EngineDir)\" -PluginDirectory \"$(PluginDir)\" -ProjectDirectory \"$(ProjectDir)\" -TargetName \"$(TargetName)\" -Platform \"$(TargetPlatform)\" -Configuration \"$(TargetConfiguration)\" -TargetType \"$(TargetType)\""
+		],
+		"Mac": [
+			"\"$(EngineDir)/Binaries/ThirdParty/Python3/Mac/bin/python3\" \"$(PluginDir)/Build/Runtime/Wasm/InvokeBuildGuard.py\" --engine \"$(EngineDir)\" --plugin \"$(PluginDir)\" --project \"$(ProjectDir)\" --target \"$(TargetName)\" --platform \"$(TargetPlatform)\" --configuration \"$(TargetConfiguration)\" --type \"$(TargetType)\""
 		]
 	},
 	"Modules": [

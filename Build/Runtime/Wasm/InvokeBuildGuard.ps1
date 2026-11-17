@@ -57,6 +57,7 @@ public static class UnrealSharpGuardPath {
     if (!(Test-Path -LiteralPath $dotnet -PathType Leaf)) { throw 'The selected UE 5.9 Windows x64 bundled .NET host is missing.' }
     $sources = @($PSCommandPath, (Join-Path $PSScriptRoot 'BuildGuard/UnrealSharp.Wasm.BuildGuard.csproj'),
         (Join-Path $PSScriptRoot 'BuildGuard/Program.cs'), (Join-Path $PSScriptRoot 'BuildGuard/WindowsUbtInvocation.cs'),
+        (Join-Path $PSScriptRoot 'BuildGuard/UbtInvocation.cs'), (Join-Path $PSScriptRoot 'BuildGuard/MacUbtInvocation.cs'),
         (Join-Path $plugin 'Source/ThirdParty/UnrealSharpWasmRuntime/UnrealSharpWasmRuntime.Build.cs'), $dotnet)
     function File-Hash([string]$path) {
         $stream = [IO.File]::OpenRead($path); $sha = [Security.Cryptography.SHA256]::Create()
@@ -76,7 +77,7 @@ public static class UnrealSharpGuardPath {
         $tool = Join-Path $base $key; Assert-ToolPath $tool
         if (!(Test-Path -LiteralPath $tool)) {
             $temporary = Join-Path $base ($key + '.tmp.' + [Guid]::NewGuid().ToString('N')); Assert-ToolPath $temporary
-            & $dotnet build (Join-Path $PSScriptRoot 'BuildGuard/UnrealSharp.Wasm.BuildGuard.csproj') --configuration Release --artifacts-path $temporary --verbosity quiet
+            & $dotnet build (Join-Path $PSScriptRoot 'BuildGuard/UnrealSharp.Wasm.BuildGuard.csproj') --configuration Release --artifacts-path $temporary --verbosity quiet -p:ImportDirectoryBuildProps=false -p:ImportDirectoryBuildTargets=false -p:ImportDirectoryPackagesProps=false
             if ($LASTEXITCODE -ne 0) { throw 'The normal managed guard build failed; its output is preserved.' }
             if ((Source-Key) -ne $key) { throw 'Guard source changed during its managed build.' }
             Assert-ToolPath $temporary

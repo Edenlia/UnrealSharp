@@ -13,10 +13,10 @@ try
     if (options.Count != 7) throw new InvalidDataException("Unexpected guard options.");
     string platform = Read("--platform");
     if (platform != "Wasm") return 0;
-    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("The static CoreCLR prebuild guard currently supports Windows hosts.");
+    if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException("The static CoreCLR prebuild guard supports Windows and Mac hosts.");
     var profile = new WasmBuildProfile(WasmData.Full(Read("--project")), WasmData.Full(Read("--plugin")), WasmData.Full(Read("--engine")),
         Read("--target"), Read("--type"), platform, Read("--configuration"), "wasm64", true, true);
-    bool codegenOnly = WindowsUbtInvocation.Validate(profile);
+    bool codegenOnly = OperatingSystem.IsWindows() ? WindowsUbtInvocation.Validate(profile) : MacUbtInvocation.Validate(profile);
     WasmBuildInput input = WasmBuildInput.Load(profile.InputFile, profile);
     input.RuntimeProduct.RequireUeExceptionAbi();
     using IDisposable lease = input.AcquireBuildLease();

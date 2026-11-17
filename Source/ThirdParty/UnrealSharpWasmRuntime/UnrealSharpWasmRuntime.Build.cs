@@ -16,8 +16,8 @@ public class UnrealSharpWasmRuntime : ModuleRules
         Type = ModuleType.External;
         if (!target.Platform.ToString().Equals("Wasm", StringComparison.Ordinal)) return;
 #if UE_5_9_OR_LATER
-        if (!OperatingSystem.IsWindows() || target.ProjectFile == null)
-            throw new BuildException("UnrealSharp static Wasm hosting currently requires a Windows-hosted UE 5.9 code project.");
+        if ((!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) || target.ProjectFile == null)
+            throw new BuildException("UnrealSharp static Wasm hosting requires a Windows- or Mac-hosted UE 5.9 code project.");
         string[] architectures = target.Architectures.Architectures.Select(architecture => architecture.ToString()).ToArray();
         if (architectures.Length != 1 || architectures[0] != "wasm64" || !target.WasmPlatform.bWasm64)
             throw new BuildException("UnrealSharp static hosting requires the actual single wasm64 native target.");
@@ -40,9 +40,12 @@ public class UnrealSharpWasmRuntime : ModuleRules
         PublicSystemLibraries.Add("--js-library=" + Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "unrealsharp-wasm-library.js").Replace('\\', '/'));
         foreach (string path in new[] { input.InputFile, input.RuntimeProductFile, input.LinkResponse, input.BootstrapFile, input.PreparedReadyFile,
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "InvokeBuildGuard.ps1"),
+            Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "InvokeBuildGuard.py"),
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "unrealsharp-wasm-library.js"),
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "BuildGuard", "Program.cs"),
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "BuildGuard", "WindowsUbtInvocation.cs"),
+            Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "BuildGuard", "MacUbtInvocation.cs"),
+            Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "BuildGuard", "UbtInvocation.cs"),
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "BuildGuard", "UnrealSharp.Wasm.BuildGuard.csproj") }) ExternalDependencies.Add(path);
         foreach (UnrealSharp.Wasm.WasmProductAsset asset in input.RuntimeProduct.Assets) ExternalDependencies.Add(input.RuntimeProduct.RequireAsset(asset.Path));
 #else
@@ -86,8 +89,9 @@ namespace UnrealSharp.Wasm
     public sealed record WasmPreparedFile(string Path, long Bytes, string Sha256);
     public sealed record WasmUhtIdentity(string ManifestFile, string ManifestHash, string Context, string Inputs, string Transaction);
     public sealed record WasmPreparedPayload(WasmBuildProfile Profile, string NativeProductKey, string RuntimeProductSha256,
-        WasmUhtIdentity Uht, string ManagedDirectory, string RuntimeManifestFile, IReadOnlyList<WasmPreparedFile> Files);
+        WasmUhtIdentity Uht, string ManagedDirectory, string RuntimeManifestFile, WasmToolchainPaths ToolchainPaths, IReadOnlyList<WasmPreparedFile> Files);
     public sealed record WasmPathLink(string RawTarget, string Target, string PhysicalTarget);
+    public sealed record WasmToolchainPaths(IReadOnlyDictionary<string, string> Roots, IReadOnlyDictionary<string, WasmPathLink> Links);
 
     // This file is compiled by RulesCompiler as a real External module and is
     // Compile-linked into Automation and the guard. No Rules/Automation assembly cycle.
@@ -301,6 +305,7 @@ namespace UnrealSharp.Wasm
         public string PreparedReadyFile => Path.Combine(ProductDirectory, "AppReady.json");
         public string PreparationLockFile => Path.Combine(Profile.BuildDirectory, "UnrealSharp.Preparation.lock");
         internal bool HasPreparationLease { get; private set; }
+        internal string PhysicalBuildDirectory => _paths.Roots[Profile.BuildDirectory];
         private WasmFrozenPaths _paths = null!;
 
         public static WasmBuildInput Create(WasmBuildProfile profile, WasmRuntimeProduct product)
@@ -369,9 +374,9 @@ namespace UnrealSharp.Wasm
             input.RequireUnchanged(); input.RequireSafePath(input.PreparedReadyFile);
             byte[] raw = File.ReadAllBytes(input.PreparedReadyFile); using JsonDocument document = WasmData.Parse(raw); JsonElement root = document.RootElement;
             WasmData.Fields(root, "Schema", "SchemaVersion", "ReadyKey", "Payload");
-            WasmData.Require(WasmData.String(root, "Schema") == "UnrealSharp.WasmPreparedApp" && root.GetProperty("SchemaVersion").GetInt32() == 1, "Unsupported prepared app.");
+            WasmData.Require(WasmData.String(root, "Schema") == "UnrealSharp.WasmPreparedApp" && root.GetProperty("SchemaVersion").GetInt32() == 2, "Unsupported prepared app.");
             JsonElement value = root.GetProperty("Payload");
-            WasmData.Fields(value, "Profile", "NativeProductKey", "RuntimeProductSha256", "Uht", "ManagedDirectory", "RuntimeManifestFile", "Files");
+            WasmData.Fields(value, "Profile", "NativeProductKey", "RuntimeProductSha256", "Uht", "ManagedDirectory", "RuntimeManifestFile", "ToolchainPaths", "Files");
             JsonElement uht = value.GetProperty("Uht"); WasmData.Fields(uht, "ManifestFile", "ManifestHash", "Context", "Inputs", "Transaction");
             var files = new List<WasmPreparedFile>();
             foreach (JsonElement item in value.GetProperty("Files").EnumerateArray())
@@ -380,7 +385,7 @@ namespace UnrealSharp.Wasm
             }
             var payload = new WasmPreparedPayload(WasmBuildProfile.Parse(value.GetProperty("Profile")), WasmData.String(value, "NativeProductKey"), WasmData.String(value, "RuntimeProductSha256"),
                 new(WasmData.String(uht, "ManifestFile"), WasmData.String(uht, "ManifestHash"), WasmData.String(uht, "Context"), WasmData.String(uht, "Inputs"), WasmData.String(uht, "Transaction")),
-                WasmData.String(value, "ManagedDirectory"), WasmData.String(value, "RuntimeManifestFile"), files.AsReadOnly());
+                WasmData.String(value, "ManagedDirectory"), WasmData.String(value, "RuntimeManifestFile"), WasmFrozenPaths.ReadToolchain(value.GetProperty("ToolchainPaths")), files.AsReadOnly());
             var result = new WasmPreparedApp { Input = input, Payload = payload, ReadyKey = WasmData.String(root, "ReadyKey"), ReadySha256 = WasmData.Hash(raw) };
             WasmData.Require(WasmData.IsHash(result.ReadyKey) && result.ReadyKey == WasmData.Hash(WasmData.CanonicalBytes(value)), "Prepared app key mismatch.");
             result.RequireUnchanged(); return result;
@@ -390,7 +395,7 @@ namespace UnrealSharp.Wasm
             using IDisposable? lease = input.HasPreparationLease ? null : input.AcquirePreparationLock();
             Validate(input, payload); input.RequireUnchanged();
             string key = WasmData.CanonicalHash(payload);
-            byte[] raw = WasmData.CanonicalBytes(JsonSerializer.SerializeToElement(new { Schema = "UnrealSharp.WasmPreparedApp", SchemaVersion = 1, ReadyKey = key, Payload = payload }));
+            byte[] raw = WasmData.CanonicalBytes(JsonSerializer.SerializeToElement(new { Schema = "UnrealSharp.WasmPreparedApp", SchemaVersion = 2, ReadyKey = key, Payload = payload }));
             input.WriteFileAtomic(input.PreparedReadyFile, raw); return Load(input);
         }
         private static void Validate(WasmBuildInput input, WasmPreparedPayload payload)
@@ -401,11 +406,15 @@ namespace UnrealSharp.Wasm
             WasmData.Require(WasmData.Paths.Equals(WasmData.Full(payload.Uht.ManifestFile), manifest), "Unexpected prepared UHT manifest.");
             string managed = WasmData.Full(payload.ManagedDirectory);
             WasmData.Require(WasmData.Under(managed, input.ProductDirectory) && WasmData.Paths.Equals(WasmData.Full(payload.RuntimeManifestFile), Path.Combine(managed, "UnrealSharp.Runtime.json")), "Prepared managed directory/manifest is outside this product.");
+            WasmFrozenPaths sources = WasmFrozenPaths.FromToolchain(payload.ToolchainPaths);
+            foreach (var source in sources.Roots)
+                foreach (string path in new[] { source.Key, source.Value })
+                    WasmData.Require(!WasmData.Under(path, input.Profile.BuildDirectory) && !WasmData.Under(path, input.PhysicalBuildDirectory) && !WasmData.Under(path, input.RuntimeProduct.RootDirectory), "Toolchain source paths cannot authorize prepared outputs or Portable runtime files.");
             var seen = new HashSet<string>(WasmData.Paths);
             foreach (WasmPreparedFile file in payload.Files)
             {
                 string path = WasmData.Full(file.Path); WasmData.Require(seen.Add(path) && !WasmData.Paths.Equals(path, input.PreparedReadyFile), "Duplicate/self-hashed Ready input.");
-                input.RequireSafePath(path); WasmData.VerifyFile(path, file.Bytes, file.Sha256);
+                sources.EnsureRead(input, path); WasmData.VerifyFile(path, file.Bytes, file.Sha256); sources.EnsureRead(input, path);
             }
             foreach (string required in new[] { input.InputFile, input.AppArchive, input.LinkResponse, input.BootstrapFile, payload.Uht.ManifestFile, payload.RuntimeManifestFile })
                 WasmData.Require(seen.Contains(required), "Prepared closure omits required input: " + required);
@@ -414,6 +423,7 @@ namespace UnrealSharp.Wasm
             string[] actualManaged = Directory.EnumerateFiles(managed, "*.dll", SearchOption.TopDirectoryOnly).Select(WasmData.Full).ToArray();
             WasmData.Require(actualManaged.Length > 0 && actualManaged.All(seen.Contains) && actualManaged.Any(path => Path.GetFileName(path) == "System.Private.CoreLib.dll") &&
                 actualManaged.Any(path => Path.GetFileName(path) == "UnrealSharp.Plugins.dll"), "Prepared loose PE closure is incomplete.");
+            sources.Verify();
         }
         public void RequireUnchanged()
         {
@@ -433,8 +443,56 @@ namespace UnrealSharp.Wasm
     internal sealed class WasmFrozenPaths
     {
         private string BuildDirectory { get; init; } = "";
+        private bool ToolchainSources { get; init; }
         public SortedDictionary<string, string> Roots { get; } = new(StringComparer.Ordinal);
         public SortedDictionary<string, WasmPathLink> Links { get; } = new(WasmData.Paths);
+        // Source snapshots never own a write directory. Each observed logical
+        // path binds all its ancestor and final links, including chained targets.
+        internal static WasmFrozenPaths CreateToolchain() => new() { ToolchainSources = true };
+        internal string CaptureSource(string path)
+        {
+            path = WasmData.Full(path);
+            string physical = Resolve(path, capture: true, allowFinal: true);
+            WasmData.Require(File.Exists(physical) || Directory.Exists(physical), "Missing/dangling toolchain source: " + path);
+            WasmData.Require(!Roots.TryGetValue(path, out string? previous) || WasmData.Paths.Equals(previous, physical), "Toolchain source identity changed: " + path);
+            Roots[path] = physical; return physical;
+        }
+        internal WasmToolchainPaths SnapshotToolchain()
+        {
+            Verify();
+            return new(new SortedDictionary<string, string>(Roots, StringComparer.Ordinal), new SortedDictionary<string, WasmPathLink>(Links, WasmData.Paths));
+        }
+        internal static WasmFrozenPaths FromToolchain(WasmToolchainPaths snapshot)
+        {
+            var result = CreateToolchain();
+            foreach (var root in snapshot.Roots) result.Roots.Add(WasmData.Full(root.Key), WasmData.Full(root.Value));
+            foreach (var link in snapshot.Links)
+            {
+                WasmData.Require(!string.IsNullOrEmpty(link.Value.RawTarget), "Empty toolchain link target.");
+                result.Links.Add(WasmData.Full(link.Key), new(link.Value.RawTarget, WasmData.Full(link.Value.Target), WasmData.Full(link.Value.PhysicalTarget)));
+            }
+            result.Verify(); return result;
+        }
+        internal static WasmToolchainPaths ReadToolchain(JsonElement value)
+        {
+            WasmData.Fields(value, "Roots", "Links");
+            var roots = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            foreach (JsonProperty root in value.GetProperty("Roots").EnumerateObject()) roots.Add(root.Name, root.Value.GetString() ?? throw new InvalidDataException("Null toolchain source root."));
+            var links = new SortedDictionary<string, WasmPathLink>(WasmData.Paths);
+            foreach (JsonProperty link in value.GetProperty("Links").EnumerateObject())
+            {
+                WasmData.Fields(link.Value, "RawTarget", "Target", "PhysicalTarget");
+                links.Add(link.Name, new(WasmData.String(link.Value, "RawTarget"), WasmData.String(link.Value, "Target"), WasmData.String(link.Value, "PhysicalTarget")));
+            }
+            return new(roots, links);
+        }
+        internal void EnsureRead(WasmBuildInput input, string path)
+        {
+            path = WasmData.Full(path);
+            if (Roots.TryGetValue(path, out string? physical))
+                WasmData.Require(WasmData.Paths.Equals(Resolve(path), physical) && (File.Exists(physical) || Directory.Exists(physical)), "Toolchain source identity changed: " + path);
+            else input.RequireSafePath(path);
+        }
         internal static WasmFrozenPaths Capture(WasmBuildProfile profile)
         {
             var result = new WasmFrozenPaths { BuildDirectory = profile.BuildDirectory };
@@ -462,10 +520,19 @@ namespace UnrealSharp.Wasm
             foreach (var root in Roots.Where(root => WasmData.Under(path, root.Key)))
                 WasmData.Require(prefixes.TryGetValue(root.Key, out string? physical) && WasmData.Paths.Equals(physical, root.Value), "Wasm input physical root changed: " + root.Key);
         }
-        internal void Verify() { foreach (var root in Roots) WasmData.Require(WasmData.Paths.Equals(Resolve(root.Key), root.Value), "Wasm root identity changed."); }
+        internal void Verify()
+        {
+            foreach (var root in Roots) WasmData.Require(WasmData.Paths.Equals(Resolve(root.Key), root.Value) &&
+                (!ToolchainSources || File.Exists(root.Value) || Directory.Exists(root.Value)), "Wasm root identity changed.");
+            foreach (var link in Links)
+            {
+                var info = new FileInfo(link.Key);
+                WasmData.Require(info.LinkTarget == link.Value.RawTarget && WasmData.Paths.Equals(Resolve(link.Key), link.Value.PhysicalTarget), "Frozen Wasm path link changed: " + link.Key);
+            }
+        }
         internal void WriteAtomic(string file, byte[] raw)
         {
-            WasmData.Require(WasmData.Under(WasmData.Full(file), BuildDirectory), "Wasm write is outside the current native-build root.");
+            WasmData.Require(BuildDirectory.Length > 0 && WasmData.Under(WasmData.Full(file), BuildDirectory), "Wasm write is outside the current native-build root.");
             Verify(); Ensure(file); Directory.CreateDirectory(Path.GetDirectoryName(file)!); Ensure(file);
             if (File.Exists(file) && File.ReadAllBytes(file).SequenceEqual(raw)) return;
             string temporary = file + ".tmp." + Guid.NewGuid().ToString("N");
@@ -485,6 +552,15 @@ namespace UnrealSharp.Wasm
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
                     var info = new DirectoryInfo(current); string raw = info.LinkTarget ?? throw new InvalidDataException("Unsupported Wasm path link.");
+                    // ResolveLinkTarget(...).FullName folds '..' lexically. A
+                    // preceding directory could itself be a link, so that fold
+                    // would omit part of the actual filesystem traversal.
+                    bool enteredTarget = false;
+                    foreach (string part in raw.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (part == "..") WasmData.Require(!enteredTarget, "Non-prefix parent traversal in Wasm link target: " + current);
+                        else if (part != ".") enteredTarget = true;
+                    }
                     string target = info.ResolveLinkTarget(false)?.FullName ?? throw new InvalidDataException("Unresolved Wasm path link.");
                     bool mayCapture = capture && (allowFinal || index < parts.Length - 1); Links.TryGetValue(current, out WasmPathLink? expected);
                     WasmData.Require(mayCapture || expected != null, "Unverified link in Wasm input: " + current); WasmData.Require(chain.Add(current), "Cyclic Wasm path link.");

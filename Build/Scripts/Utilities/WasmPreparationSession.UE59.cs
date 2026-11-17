@@ -31,9 +31,9 @@ internal sealed class WasmPreparationSession
 
     internal static WasmPreparationSession Create(BuildCommand command, WasmGameBuildRequest request, ProjectParams parameters)
     {
-        if (!OperatingSystem.IsWindows() || !parameters.Cook || !parameters.Stage || !parameters.Package || parameters.SkipStage || parameters.SkipPackage ||
+        if ((!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) || !parameters.Cook || !parameters.Stage || !parameters.Package || parameters.SkipStage || parameters.SkipPackage ||
             (request.RequestedArchitectures != null && request.RequestedArchitectures != "wasm64"))
-            throw new AutomationException("UnrealSharp Wasm preparation currently requires a Windows-hosted, single wasm64 Game build/cook/stage/package invocation.");
+            throw new AutomationException("UnrealSharp Wasm preparation requires a Windows- or Mac-hosted, single wasm64 Game build/cook/stage/package invocation.");
         WasmPreparationTools tools = ReadTools(command);
         WasmRuntimeProduct product = WasmRuntimeProduct.OpenPortable(RequiredFile(command, "UnrealSharpRuntimeProduct"));
         product.RequireUeExceptionAbi();
@@ -84,13 +84,16 @@ internal sealed class WasmPreparationSession
         using (UhtProducerSnapshot producer = UhtProducerReader.Read(request))
         {
             var observed = new Dictionary<string, WasmPreparedFile>(WasmData.Paths);
+            WasmFrozenPaths? toolchainPaths = null;
             void Observe(string path)
             {
-                path = Path.GetFullPath(path); _input.RequireSafePath(path);
+                path = Path.GetFullPath(path);
+                if (toolchainPaths == null) _input.RequireSafePath(path); else toolchainPaths.EnsureRead(_input, path);
                 if (Path.GetExtension(path).Equals(".uasset", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(path).Equals(".umap", StringComparison.OrdinalIgnoreCase))
                     throw new AutomationException("Unreal assets are not Wasm prelink inputs: {0}", path);
                 using FileStream stream = File.OpenRead(path);
                 var file = new WasmPreparedFile(path, stream.Length, Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant());
+                if (toolchainPaths == null) _input.RequireSafePath(path); else toolchainPaths.EnsureRead(_input, path);
                 if (observed.TryGetValue(path, out WasmPreparedFile? previous) && previous != file)
                     throw new AutomationException("Wasm preparation input changed: {0}", path);
                 observed[path] = file;
@@ -109,6 +112,7 @@ internal sealed class WasmPreparationSession
                 Path.Combine(profile.PluginDirectory, "Build", "Runtime", "Wasm", "unrealsharp-wasm-library.js") }) Observe(path);
 
             WasmManagedPreparationResult result = WasmManagedPreparation.Build(_input, producer, _tools);
+            toolchainPaths = WasmFrozenPaths.FromToolchain(result.ToolchainPaths);
             string runtimeManifest = Path.Combine(result.ManagedDirectory, "UnrealSharp.Runtime.json");
             _input.WriteFileAtomic(runtimeManifest, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
                 Version = 1, Kind = "CoreClrEmbedded", Library = "", Properties = new Dictionary<string, string>(),
@@ -121,7 +125,7 @@ internal sealed class WasmPreparationSession
             foreach (string path in observed.Keys.ToArray()) Observe(path);
             var payload = new WasmPreparedPayload(profile, _input.NativeProductKey, _input.RuntimeProductSha256,
                 new WasmUhtIdentity(manifestFile, producer.ManifestHash, producer.Context, producer.Inputs, producer.Transaction),
-                result.ManagedDirectory, runtimeManifest, observed.Values.OrderBy(file => file.Path, StringComparer.Ordinal).ToArray());
+                result.ManagedDirectory, runtimeManifest, result.ToolchainPaths, observed.Values.OrderBy(file => file.Path, StringComparer.Ordinal).ToArray());
             prepared = WasmPreparedApp.WriteAtomic(_input, payload);
         }
         prepared.RequireUnchanged();
