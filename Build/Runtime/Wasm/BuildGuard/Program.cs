@@ -18,6 +18,7 @@ try
         Read("--target"), Read("--type"), platform, Read("--configuration"), "wasm64", true, true);
     bool codegenOnly = WindowsUbtInvocation.Validate(profile);
     WasmBuildInput input = WasmBuildInput.Load(profile.InputFile, profile);
+    input.RuntimeProduct.RequireUeExceptionAbi();
     using IDisposable lease = input.AcquireBuildLease();
     if (codegenOnly)
     {

@@ -25,13 +25,15 @@ public class UnrealSharpWasmRuntime : ModuleRules
             target.Name, target.Type.ToString(), target.Platform.ToString(), target.Configuration.ToString(), architectures[0],
             target.WasmPlatform.bLowerMemory64, target.WasmPlatform.bSimd128);
         UnrealSharp.Wasm.WasmBuildInput input = UnrealSharp.Wasm.WasmBuildInput.Load(profile.InputFile, profile);
+        input.RuntimeProduct.RequireUeExceptionAbi();
         foreach (string include in input.RuntimeProduct.HostIncludeDirectories) PublicSystemIncludePaths.Add(include);
         PublicPreBuildLibraries.Add(input.AppArchive);
         // Preserve the consumer-authored archive order and repetitions: ordinary
         // UBT library collections deduplicate. SDK C++ libraries remain SDK-owned.
         PublicSystemLibraries.Add("-Wl,@" + input.LinkResponse.Replace('\\', '/'));
-        PublicSystemLibraries.Add("-fwasm-exceptions");
-        PublicSystemLibraries.Add("-sWASM_LEGACY_EXCEPTIONS=0");
+        PublicSystemLibraries.Add("-fexceptions");
+        PublicSystemLibraries.Add("-sDISABLE_EXCEPTION_CATCHING=0");
+        PublicSystemLibraries.Add("-sSUPPORT_LONGJMP=emscripten");
         foreach (string library in input.RuntimeProduct.JavaScriptLibraries)
             PublicSystemLibraries.Add("--js-library=" + library.Replace('\\', '/'));
         PublicSystemLibraries.Add("--pre-js=" + input.BootstrapFile.Replace('\\', '/'));
@@ -95,6 +97,7 @@ namespace UnrealSharp.Wasm
         public string DescriptorSha256 { get; private init; } = "";
         public string RootDirectory => Path.GetDirectoryName(DescriptorFile)!;
         public string NativeProductKey { get; private init; } = "";
+        public string ExceptionModel { get; private init; } = "";
         public JsonElement Product { get; private init; }
         public IReadOnlyList<WasmProductAsset> Assets { get; private init; } = [];
         public IReadOnlyList<string> HostIncludeDirectories { get; private init; } = [];
@@ -125,10 +128,17 @@ namespace UnrealSharp.Wasm
             WasmData.Require(WasmData.String(product, "RuntimeFlavor") == "CoreCLR" && WasmData.String(product, "TargetOS") == "browser" &&
                 WasmData.String(product, "Architecture") == "wasm64" && WasmData.IsHash(WasmData.String(product, "SourceRevision"), 40), "Unexpected runtime product target.");
             JsonElement abi = product.GetProperty("Abi");
-            WasmData.Fields(abi, "PointerSize", "NativePthreads", "ManagedThreads", "Interpreter", "ExceptionModel", "WasmLegacyExceptions");
+            string exceptionModel = WasmData.String(abi, "ExceptionModel");
+            bool javaScriptExceptions = exceptionModel == "emscripten";
+            if (javaScriptExceptions)
+                WasmData.Fields(abi, "PointerSize", "NativePthreads", "ManagedThreads", "Interpreter", "ExceptionModel", "WasmLegacyExceptions", "ReadyToRun");
+            else
+                WasmData.Fields(abi, "PointerSize", "NativePthreads", "ManagedThreads", "Interpreter", "ExceptionModel", "WasmLegacyExceptions");
             WasmData.Require(abi.GetProperty("PointerSize").GetInt32() == 8 && abi.GetProperty("NativePthreads").GetBoolean() &&
                 !abi.GetProperty("ManagedThreads").GetBoolean() && abi.GetProperty("Interpreter").GetBoolean() &&
-                WasmData.String(abi, "ExceptionModel") == "wasm" && abi.GetProperty("WasmLegacyExceptions").GetInt32() == 0, "Unsupported runtime ABI.");
+                (javaScriptExceptions
+                    ? abi.GetProperty("WasmLegacyExceptions").ValueKind == JsonValueKind.Null && !abi.GetProperty("ReadyToRun").GetBoolean()
+                    : exceptionModel == "wasm" && abi.GetProperty("WasmLegacyExceptions").GetInt32() == 0), "Unsupported runtime ABI.");
             string key = WasmData.String(root, "NativeProductKey");
             WasmData.Require(WasmData.IsHash(key) && key == WasmData.CanonicalHash(new { Schema = "UnrealSharp.RuntimeProduct", SchemaVersion = 1, Product = product }), "RuntimeProduct key mismatch.");
             string directory = Path.GetDirectoryName(file)!;
@@ -174,7 +184,10 @@ namespace UnrealSharp.Wasm
                 sequence.Where(item => item.Kind == "Archive").Select(item => item.Value).Distinct(StringComparer.Ordinal).Count() == 16 &&
                 sequence.Where(item => item.Kind == "SystemLibrary").Select(item => item.Value).SequenceEqual(new[] { "stdc++", "m" }), "Incomplete ordered native link interface.");
             string[] compileOptions = WasmData.Strings(native.GetProperty("CompileOptions"));
-            WasmData.Require(compileOptions.SequenceEqual(new[] { "-m64", "-pthread", "-fwasm-exceptions", "-sWASM_LEGACY_EXCEPTIONS=0", "-msimd128" }), "Unexpected runtime ABI compile requirements.");
+            string[] expectedOptions = javaScriptExceptions
+                ? ["-m64", "-pthread", "-fexceptions", "-msimd128"]
+                : ["-m64", "-pthread", "-fwasm-exceptions", "-sWASM_LEGACY_EXCEPTIONS=0", "-msimd128"];
+            WasmData.Require(compileOptions.SequenceEqual(expectedOptions), "Unexpected runtime ABI compile requirements.");
             WasmData.Require(WasmData.Strings(native.GetProperty("HelperDefinitions")).SequenceEqual(new[] { "GEN_PINVOKE=1", "TARGET_WASM", "TARGET_WASM64", "TARGET_64BIT", "TARGET_POINTER_SIZE=8" }), "Unexpected helper definitions.");
             JsonElement includes = product.GetProperty("Includes"); WasmData.Fields(includes, "Host", "Helper", "ForceInclude", "Inventory");
             foreach (string include in WasmData.Strings(includes.GetProperty("Inventory"))) Asset(include);
@@ -211,13 +224,28 @@ namespace UnrealSharp.Wasm
                 WasmData.VerifyFile(path, entry.Bytes, entry.Sha256, noLinks: true); evidence.Add(entry);
             }
             WasmData.Require(evidence.Count > 0, "Missing runtime product evidence.");
+            if (javaScriptExceptions)
+            {
+                const string capabilitiesFile = "evidence/runtime-capabilities.json";
+                WasmData.Require(root.GetProperty("Evidence").EnumerateArray().Any(item =>
+                    WasmData.String(item, "Path") == capabilitiesFile && WasmData.String(item, "Kind") == "Metadata" &&
+                    item.GetProperty("ExitCode").ValueKind == JsonValueKind.Null), "Missing emitted JS-EH runtime capabilities.");
+                using JsonDocument capabilities = WasmData.Parse(File.ReadAllBytes(Path.Combine(directory, capabilitiesFile)));
+                WasmData.Fields(capabilities.RootElement, "Properties");
+                JsonElement properties = capabilities.RootElement.GetProperty("Properties");
+                var expected = new Dictionary<string, string> { ["RuntimeWasmNativePthreads"] = "true", ["RuntimeCoreClrBrowserJsEh"] = "true",
+                    ["RuntimeWasmExceptionModel"] = "emscripten", ["RuntimeWasmAssemblyFormat"] = "raw-pe", ["RuntimeWasmInterpreterOnly"] = "true",
+                    ["RuntimeWasmReadyToRun"] = "false", ["RuntimeWasmWebcil"] = "false" };
+                WasmData.Fields(properties, expected.Keys.ToArray());
+                WasmData.Require(expected.All(entry => WasmData.String(properties, entry.Key) == entry.Value), "Emitted JS-EH runtime capabilities do not match the selected ABI.");
+            }
             foreach (JsonElement item in root.GetProperty("ExternalTools").EnumerateArray())
             {
                 WasmData.Fields(item, "Role", "Path", "Sha256", "Version");
                 WasmData.Require(WasmData.IsHash(WasmData.String(item, "Sha256")), "Invalid external tool provenance.");
             }
             var result = new WasmRuntimeProduct { DescriptorFile = file, DescriptorSha256 = WasmData.Hash(raw), NativeProductKey = key, Product = product.Clone(), Assets = assets.AsReadOnly(),
-                Archives = archives.Values.ToArray(), LinkSequence = sequence.AsReadOnly(), CompileOptions = compileOptions,
+                ExceptionModel = exceptionModel, Archives = archives.Values.ToArray(), LinkSequence = sequence.AsReadOnly(), CompileOptions = compileOptions,
                 HostIncludeDirectories = WasmData.Strings(includes.GetProperty("Host")).Select(Include).ToArray(), HelperIncludeDirectories = WasmData.Strings(includes.GetProperty("Helper")).Select(Include).ToArray(),
                 HelperForceInclude = Asset(WasmData.String(includes, "ForceInclude")), JavaScriptLibraries = libraries, EmittedGitHash = WasmData.String(js, "EmittedGitHash"),
                 CoreLib = coreLib, ManagedFiles = framework.AsReadOnly(), HelperToolEntry = Asset(WasmData.String(tool, "Entry")),
@@ -226,6 +254,11 @@ namespace UnrealSharp.Wasm
         }
 
         public string RequireAsset(string relative) { relative = WasmData.Relative(relative); WasmData.Require(Assets.Any(asset => asset.Path == relative), "Undeclared product asset."); return Path.GetFullPath(Path.Combine(RootDirectory, relative)); }
+        public void RequireUeExceptionAbi()
+        {
+            WasmData.Require(ExceptionModel == "emscripten",
+                "UE's precompiled Wasm objects use Emscripten JavaScript SjLj. This native-Wasm-EH runtime product cannot be linked with them. Select a verified CoreClrBrowserJsEh interpreter-only runtime product; link-only exception flags cannot convert the precompiled objects.");
+        }
         public void RequireUnchanged()
         {
             WasmData.NoLinks(DescriptorFile); WasmData.Require(WasmData.HashFile(DescriptorFile) == DescriptorSha256, "RuntimeProduct descriptor changed.");
