@@ -592,7 +592,12 @@ namespace UnrealSharp.Wasm
         public static void VerifyFile(string path, long size, string hash, bool noLinks = false)
         {
             if (noLinks) NoLinks(path);
-            Require(size >= 0 && IsHash(hash) && new FileInfo(Full(path)).Length == size && HashFile(path) == hash, "Changed or missing Wasm input: " + path);
+            Require(size >= 0 && IsHash(hash), "Changed or missing Wasm input: " + path);
+            // Source links bind their targets separately. Measure the same
+            // opened bytes that are hashed, rather than a Unix link's length.
+            using FileStream stream = File.OpenRead(Full(path));
+            Require(stream.Length == size && Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant() == hash,
+                "Changed or missing Wasm input: " + path);
         }
         public static void NoLinks(string path)
         {
