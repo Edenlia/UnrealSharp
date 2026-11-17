@@ -111,7 +111,12 @@ internal sealed class UhtProducerReader
         UHTManifest.Module[] core = manifest.Modules.Where(module => module.Name == "UnrealSharpCore").ToArray();
         Require(core.Length == 1 && Paths.Equals(Full(core[0].BaseDirectory), Path.Combine(_request.PluginDirectory, "Source", "UnrealSharpCore")), "Manifest has no unique current UnrealSharpCore.");
         string native = Full(core[0].OutputDirectory);
-        Require(UhtProducerReadPaths.IsUnder(native, Path.Combine(_request.PluginDirectory, "Intermediate", "Build")), "Core UHT output is outside the current plugin.");
+        // A unique native build places plugin UHT output in the project's
+        // intermediate tree. Module ownership and the bound producer profile
+        // still identify the same current plugin below.
+        Require(UhtProducerReadPaths.IsUnder(native, Path.Combine(_request.PluginDirectory, "Intermediate", "Build")) ||
+            UhtProducerReadPaths.IsUnder(native, Path.Combine(_project, "Intermediate", "Build")),
+            "Core UHT output is outside the current plugin/project build intermediates.");
         foreach (string anchor in anchors) _currentRoots.Add(anchor);
         foreach (UHTManifest.Module module in manifest.Modules)
         {
