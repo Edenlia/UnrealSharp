@@ -39,6 +39,8 @@ internal sealed class WasmStagingProduct(string projectFile, string pluginFile, 
     private static WasmStagingProduct? _current;
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private readonly Dictionary<string, string> _nativeHashes = new(Paths);
+    private Dictionary<string, string>? _nativeStageFiles;
+    private string? _nativeStageDirectory;
     private Dictionary<string, string>? _managedHashes;
     private string? _stageRoot;
     private bool _packageVerified;
@@ -97,6 +99,35 @@ internal sealed class WasmStagingProduct(string projectFile, string pluginFile, 
         product.RequirePrepared();
     }
 
+    internal static void ObserveStageCopy(ProjectParams parameters, DeploymentContext context)
+    {
+        TargetReceipt[] receipts = context.StageTargets.Select(target => target.Receipt).Where(UnrealSharpStaging.UsesUnrealSharp).ToArray();
+        if (receipts.Length != 1) throw new AutomationException("UnrealSharp Wasm stage copy needs one prepared native receipt.");
+        WasmStagingProduct product = RequireCurrent(parameters, context, receipts[0]);
+        product.RequirePrepared();
+        if (product._managedHashes == null || product._stageRoot == null || product._nativeHashes.Count == 0)
+            throw new AutomationException("UnrealSharp Wasm stage copy did not follow this invocation's staging hook.");
+
+        string stage = context.StageDirectory.FullName;
+        var mappings = context.FilesToStage.NonUFSFiles.Concat(context.FilesToStage.NonUFSSystemFiles).ToArray();
+        var files = new Dictionary<string, string>(Paths);
+        foreach (var native in product._nativeHashes.Where(file => Path.GetExtension(file.Key) is ".js" or ".wasm"))
+        {
+            string[] locations = mappings.Where(entry => Paths.Equals(entry.Value.FullName, native.Key))
+                .Select(entry => entry.Key.ToString()).Distinct(StringComparer.Ordinal).ToArray();
+            if (locations.Length != 1) throw new AutomationException("The copied stage has no unique native product mapping: {0}", native.Key);
+            if (Hash(native.Key) != native.Value || Hash(Path.Combine(stage, locations[0])) != native.Value)
+                throw new AutomationException("The native staging copy differs from the successful link: {0}", native.Key);
+            files.Add(native.Key, locations[0]);
+        }
+        if (product._nativeStageFiles != null && (!Paths.Equals(stage, product._nativeStageDirectory) ||
+            product._nativeStageFiles.Count != files.Count || files.Any(file =>
+                !product._nativeStageFiles.TryGetValue(file.Key, out string? previous) || previous != file.Value)))
+            throw new AutomationException("The native stage directory or product mapping changed between copy callbacks.");
+        product._nativeStageFiles = files;
+        product._nativeStageDirectory = stage;
+    }
+
     internal static void VerifyPackage(ProjectParams parameters, DeploymentContext context)
     {
         TargetReceipt[] receipts = context.StageTargets.Select(target => target.Receipt).Where(UnrealSharpStaging.UsesUnrealSharp).ToArray();
@@ -109,13 +140,15 @@ internal sealed class WasmStagingProduct(string projectFile, string pluginFile, 
             if (Hash(native.Key) != native.Value) throw new AutomationException("Native product changed after staging: {0}", native.Key);
 
         string stage = context.StageDirectory.FullName;
-        var nativeMappings = context.FilesToStage.NonUFSFiles.Concat(context.FilesToStage.NonUFSSystemFiles).ToArray();
+        // Package constructs a fresh DeploymentContext. Use only the final
+        // mappings captured by this invocation's actual post-copy callback.
+        if (product._nativeStageFiles == null || !Paths.Equals(stage, product._nativeStageDirectory))
+            throw new AutomationException("UnrealSharp Wasm package has no matching observed staging copy.");
         foreach (var native in product._nativeHashes.Where(file => Path.GetExtension(file.Key) is ".js" or ".wasm"))
         {
-            string[] locations = nativeMappings.Where(entry => Paths.Equals(entry.Value.FullName, native.Key))
-                .Select(entry => entry.Key.ToString()).Distinct(StringComparer.Ordinal).ToArray();
-            if (locations.Length != 1) throw new AutomationException("The final stage has no unique native product mapping: {0}", native.Key);
-            string stagedNative = Path.Combine(stage, locations[0]);
+            if (!product._nativeStageFiles.TryGetValue(native.Key, out string? location))
+                throw new AutomationException("The final stage has no captured native product mapping: {0}", native.Key);
+            string stagedNative = Path.Combine(stage, location);
             if (Hash(stagedNative) != native.Value) throw new AutomationException("The staged native executable differs from the successful link: {0}", stagedNative);
             if (File.Exists(stagedNative + ".br"))
             {

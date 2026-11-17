@@ -4,7 +4,7 @@ using UnrealSharp.Automation.Utilities;
 
 namespace UnrealSharp.Automation.Staging;
 
-public class UnrealSharpStagingHandler : CustomStagingHandler
+public partial class UnrealSharpStagingHandler : CustomStagingHandler
 {
     protected override bool TryInitialize(ProjectParams Params, DeploymentContext SC)
     {
