@@ -32,15 +32,16 @@ namespace
 			return true;
 		}
 
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Entry : (*Object)->Values)
+		for (const auto& Entry : (*Object)->Values)
 		{
+			const FString Key(Entry.Key);
 			FString Value;
 			if (!Entry.Value.IsValid() || !Entry.Value->TryGetString(Value))
 			{
-				UE_LOGFMT(LogUnrealSharp, Fatal, "'{0}.{1}' in {2} must be a string", FieldName, Entry.Key, ManifestPath);
+				UE_LOGFMT(LogUnrealSharp, Fatal, "'{0}.{1}' in {2} must be a string", FieldName, Key, ManifestPath);
 				return false;
 			}
-			OutMap.Add(Entry.Key, MoveTemp(Value));
+			OutMap.Add(Key, MoveTemp(Value));
 		}
 		return true;
 	}
