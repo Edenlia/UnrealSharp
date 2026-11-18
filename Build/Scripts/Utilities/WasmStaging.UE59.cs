@@ -30,11 +30,12 @@ internal static partial class UnrealSharpStaging
 // A running preparation owns this registration. A separate staging/restaging
 // command cannot silently reuse a managed directory from an earlier native link.
 internal sealed class WasmStagingProduct(string projectFile, string pluginFile, string targetName,
-    UnrealTargetConfiguration configuration, string managedDirectory, string readyKey, Action requirePrepared)
+    UnrealTargetConfiguration configuration, string managedDirectory, string readyKey, Action requirePrepared, bool prelinked = false)
 {
     private readonly string ProjectFile = projectFile, PluginFile = pluginFile, TargetName = targetName;
     private readonly UnrealTargetConfiguration Configuration = configuration;
     private readonly string ManagedDirectory = managedDirectory, ReadyKey = readyKey;
+    private readonly bool Prelinked = prelinked;
     private readonly Action RequirePrepared = requirePrepared;
     private static WasmStagingProduct? _current;
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -65,8 +66,9 @@ internal sealed class WasmStagingProduct(string projectFile, string pluginFile, 
         product.RequirePrepared();
         string[] files = Directory.GetFiles(product.ManagedDirectory, "*", SearchOption.TopDirectoryOnly);
         if (Directory.GetDirectories(product.ManagedDirectory).Length != 0 || files.Length == 0 ||
-            !files.Any(path => Path.GetFileName(path) == "System.Private.CoreLib.dll") ||
-            !files.Any(path => Path.GetFileName(path) == "UnrealSharp.Plugins.dll") ||
+            (product.Prelinked ? files.Any(path => Path.GetExtension(path) != ".json") :
+                !files.Any(path => Path.GetFileName(path) == "System.Private.CoreLib.dll") ||
+                !files.Any(path => Path.GetFileName(path) == "UnrealSharp.Plugins.dll")) ||
             !files.Any(path => Path.GetFileName(path) == "UnrealSharp.Runtime.json"))
             throw new AutomationException("UnrealSharp Wasm staging requires the flat, complete prepared loose-PE directory.");
         if (files.Any(file => Path.GetExtension(file) is not (".dll" or ".json")))

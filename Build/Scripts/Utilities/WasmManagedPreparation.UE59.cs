@@ -117,6 +117,14 @@ internal static class WasmManagedPreparation
             AssemblyInput[] closure = ResolveClosure(rootFiles, candidates, product);
             PrepareSysroot();
             MakeDirectory(_managed);
+            if (product.IsNativeAot)
+            {
+                foreach (AssemblyInput assembly in closure) Observe(assembly.Path, "nativeaot-input");
+                EmitLoadOrder(glue, "GlueCode", LoadOrderUtilities.GlueLoadOrderPriority);
+                EmitLoadOrder(users, "UserCode", LoadOrderUtilities.UserLoadOrderPriority);
+                BuildNativeAot(closure, [..baseNames, ..built.Select(path => ReadAssembly(path).Name)]);
+                return Finish(closure, "Prelinked NativeAOT application archive and load order");
+            }
             foreach (AssemblyInput assembly in closure)
             {
                 Observe(assembly.Path, "managed-helper-input");
@@ -157,11 +165,16 @@ internal static class WasmManagedPreparation
             VerifyHelpers(closure, helpers, helperManifest, provenancePath);
             foreach (string name in helpers) { string path = Path.Combine(_helpers, name); Observe(path, "native-helper-source"); _outputs.Add(path); }
             BuildArchive(helpers);
+            return Finish(closure, "Plain Game IL closure and complete application helpers/archive");
+        }
+
+        private WasmManagedPreparationResult Finish(AssemblyInput[] closure, string scope)
+        {
             CheckUnchanged();
             string receipt = Path.Combine(_directory, "preparation.json");
             var outputs = _outputs.Distinct(UhtProducerReadPaths.Comparer).Select(path => Describe(path, "output")).ToArray();
             JsonElement manifest = JsonSerializer.SerializeToElement(new {
-                Scope = "Plain Game IL closure and complete application helpers/archive; not final UE link or Ready",
+                Scope = scope,
                 Profile = _input.Profile, _input.NativeProductKey, _input.RuntimeProductSha256,
                 Uht = new { _producer.ManifestHash, _producer.Context, _producer.Inputs, _producer.Transaction },
                 Inputs = _before.Values.OrderBy(file => file.Path, StringComparer.Ordinal), Outputs = outputs,
@@ -281,7 +294,7 @@ internal static class WasmManagedPreparation
             string[] arguments = ["-p:UETargetType=Game", "-p:UEBuildConfig=" + _input.Profile.Configuration,
                 "-p:TargetPlatform=Wasm", "-p:TargetArchitecture=wasm64",
                 "-p:UseDefaultOutputPath=true", "-p:UseArtifactsOutput=true", "-p:ArtifactsPath=" + _artifacts,
-                "-p:BuildingAOT=false", "-p:PublishAot=false", "-p:PublishReadyToRun=false", "-p:SelfContained=false", "-p:RuntimeIdentifier=",
+                "-p:BuildingAOT=" + (_input.RuntimeProduct.IsNativeAot ? "true" : "false"), "-p:PublishAot=false", "-p:PublishReadyToRun=false", "-p:SelfContained=false", "-p:RuntimeIdentifier=",
                 "-p:UnrealSharpWasmInputRecords=" + Path.Combine(_capture, _commands.Count.ToString("D3"))];
             arguments = [..arguments, ..GlueTargetUtilities.BuildArguments(_gameTarget, framework: packageDirectory == null),
                 "-p:UnrealSharpUserAssemblyDirectory=" + GameReferences];
@@ -352,9 +365,12 @@ internal static class WasmManagedPreparation
                 if (map.TryGetValue(assembly.Name, out AssemblyInput? previous)) Require(Hash(previous.Path) == Hash(path), "Ambiguous managed assembly identity: " + assembly.Name);
                 else map.Add(assembly.Name, assembly);
             }
-            foreach (JsonElement framework in product.Product.GetProperty("Managed").GetProperty("Framework").EnumerateArray())
-                Require(map.TryGetValue(framework.GetProperty("Name").GetString()!, out AssemblyInput? assembly) && assembly.Mvid.Equals(framework.GetProperty("Mvid").GetString(), StringComparison.OrdinalIgnoreCase), "Framework assembly does not match selected native product.");
-            Require(Hash(product.CoreLib).Equals(product.Product.GetProperty("Managed").GetProperty("CoreLibSha256").GetString(), StringComparison.OrdinalIgnoreCase), "CoreLib does not match the native product.");
+            if (!product.IsNativeAot)
+            {
+                foreach (JsonElement framework in product.Product.GetProperty("Managed").GetProperty("Framework").EnumerateArray())
+                    Require(map.TryGetValue(framework.GetProperty("Name").GetString()!, out AssemblyInput? assembly) && assembly.Mvid.Equals(framework.GetProperty("Mvid").GetString(), StringComparison.OrdinalIgnoreCase), "Framework assembly does not match selected native product.");
+                Require(Hash(product.CoreLib).Equals(product.Product.GetProperty("Managed").GetProperty("CoreLibSha256").GetString(), StringComparison.OrdinalIgnoreCase), "CoreLib does not match the native product.");
+            }
             var pending = new Queue<string>(roots.Select(path => ReadAssembly(path).Name)); var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (pending.TryDequeue(out string? name))
             {
@@ -457,13 +473,46 @@ internal static class WasmManagedPreparation
             CaptureTree(sysroot, "actual-em-cache-header");
         }
 
-        private static List<string> ResolveLoadOrderFiles(IEnumerable<string> projects, IReadOnlyDictionary<string, string> outputs, string managedDirectory)
+        private void BuildNativeAot(AssemblyInput[] closure, string[] roots)
+        {
+            var product = _input.RuntimeProduct;
+            string work = Path.Combine(_directory, "NativeAot");
+            MakeDirectory(work);
+            string source = Path.Combine(work, "Main.cs");
+            Safe(source);
+            NativeAOTUtilities.CreateInitializeClass(work);
+            Observe(source, "nativeaot-entry-source");
+            var framework = product.ManagedFiles.Select(Path.GetFileNameWithoutExtension).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var app = closure.Where(assembly => !framework.Contains(assembly.Name)).ToArray();
+            string projectFile = Path.Combine(work, "Application.csproj");
+            var project = new XElement("Project", new XAttribute("Sdk", "Microsoft.NET.Sdk"),
+                new XElement("PropertyGroup", new XElement("TargetFramework", "net10.0"), new XElement("AllowUnsafeBlocks", "true"),
+                    new XElement("ImplicitUsings", "enable"), new XElement("EnableDefaultCompileItems", "false")),
+                new XElement("ItemGroup", new XElement("Compile", new XAttribute("Include", source)),
+                    app.Select(assembly => new XElement("Reference", new XAttribute("Include", assembly.Name), new XElement("HintPath", assembly.Path)))));
+            Write(projectFile, project.ToString());
+            RunDotnet(["build", projectFile, "-c", "Release", "-p:ImportDirectoryBuildProps=false", "-p:ImportDirectoryBuildTargets=false",
+                "-p:ImportDirectoryPackagesProps=false"], "nativeaot-entry");
+            string entry = Path.Combine(work, "bin", "Release", "net10.0", "Application.dll");
+            Observe(entry, "nativeaot-entry");
+            string script = Path.Combine(_input.Profile.PluginDirectory, "Build", "Runtime", "Wasm", "compile-nativeaot.py");
+            Observe(script, "nativeaot-driver");
+            string request = Path.Combine(work, "compile.json");
+            Write(request, JsonSerializer.Serialize(new { Dotnet = _tools.DotnetHost, Compiler = product.HelperToolEntry, _tools.LlvmRoot, Entry = entry,
+                Archive = _input.AppArchive, References = product.ManagedFiles.Concat(app.Select(assembly => assembly.Path)),
+                Roots = roots.Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal) }));
+            Safe(_input.AppArchive);
+            Run(_environment["EMSDK_PYTHON"], [script, request], "nativeaot-archive");
+            _outputs.Add(_input.AppArchive);
+        }
+
+        private static List<string> ResolveLoadOrderFiles(IEnumerable<string> projects, IReadOnlyDictionary<string, string> outputs, string? managedDirectory)
         {
             var files = new List<string>();
             foreach (string project in projects.Distinct(UhtProducerReadPaths.Comparer))
             {
                 Require(outputs.TryGetValue(Path.GetFullPath(project), out string? output), "No evaluated managed output for load-order project: " + project);
-                string file = Path.Combine(managedDirectory, ReadAssembly(output!).Name + ".dll");
+                string file = managedDirectory == null ? output! : Path.Combine(managedDirectory, ReadAssembly(output!).Name + ".dll");
                 Require(File.Exists(file), "Missing staged managed load-order assembly: " + file);
                 files.Add(file);
             }
@@ -472,7 +521,7 @@ internal static class WasmManagedPreparation
 
         private void EmitLoadOrder(string[] projects, string name, int priority)
         {
-            List<string> files = ResolveLoadOrderFiles(projects, _projectOutputs, _managed);
+            List<string> files = ResolveLoadOrderFiles(projects, _projectOutputs, _input.RuntimeProduct.IsNativeAot ? null : _managed);
             if (files.Count == 0)
             {
                 string stale = Path.Combine(_managed, AssemblyUtilities.MakeLoadOrderFileName(name));

@@ -37,6 +37,8 @@ internal sealed class WasmPreparationSession
         WasmPreparationTools tools = ReadTools(command);
         WasmRuntimeProduct product = WasmRuntimeProduct.OpenPortable(RequiredFile(command, "UnrealSharpRuntimeProduct"));
         product.RequireUeExceptionAbi();
+        if (product.IsNativeAot && !(OperatingSystem.IsMacOS() && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64))
+            throw new AutomationException("The supplied Wasm NativeAOT compiler requires a macOS arm64 host.");
         FileReference plugin = command.GetUnrealSharpUPlugin();
         var profile = new WasmBuildProfile(request.ProjectFile.FullName, plugin.Directory.FullName, Unreal.EngineDirectory.FullName,
             request.TargetName, "Game", "Wasm", request.Configuration.ToString(), "wasm64", LowerMemory64: true, Simd128: true);
@@ -49,12 +51,12 @@ internal sealed class WasmPreparationSession
         if (File.Exists(input.PreparedReadyFile))
             File.Move(input.PreparedReadyFile, input.PreparedReadyFile + ".previous." + Guid.NewGuid().ToString("N"));
         string template = Path.Combine(profile.PluginDirectory, "Build", "Runtime", "Wasm", "wasm-bootstrap.js.in");
-        string bootstrap = File.ReadAllText(template).Replace("@UNREALSHARP_VERIFIED_JS_GIT_HASH@", product.EmittedGitHash, StringComparison.Ordinal);
+        string bootstrap = product.IsNativeAot ? "" : File.ReadAllText(template).Replace("@UNREALSHARP_VERIFIED_JS_GIT_HASH@", product.EmittedGitHash, StringComparison.Ordinal);
         if (bootstrap.Contains("@UNREALSHARP_", StringComparison.Ordinal)) throw new AutomationException("Unresolved Wasm bootstrap product substitution.");
         input.WriteFileAtomic(input.BootstrapFile, Encoding.UTF8.GetBytes(bootstrap));
         // This is a newly authored consumer input, not a replay of a runtime or
         // UE response file. SDK C++/math aliases stay owned by the normal driver.
-        string response = "--start-group\n" + QuoteLinkPath(input.AppArchive) + "\n" +
+        string response = (product.IsNativeAot ? "--undefined=InitializeAotRuntime\n" : "") + "--start-group\n" + QuoteLinkPath(input.AppArchive) + "\n" +
             string.Join("\n", product.LinkSequence.Where(item => item.Kind == "Archive").Select(item => QuoteLinkPath(item.Value))) + "\n--end-group\n";
         input.WriteFileAtomic(input.LinkResponse, Encoding.UTF8.GetBytes(response));
         input.RequireUnchanged();
@@ -115,7 +117,7 @@ internal sealed class WasmPreparationSession
             toolchainPaths = WasmFrozenPaths.FromToolchain(result.ToolchainPaths);
             string runtimeManifest = Path.Combine(result.ManagedDirectory, "UnrealSharp.Runtime.json");
             _input.WriteFileAtomic(runtimeManifest, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
-                Version = 1, Kind = "CoreClrEmbedded", Library = "", Properties = new Dictionary<string, string>(),
+                Version = 1, Kind = _input.RuntimeProduct.IsNativeAot ? "NativeAot" : "CoreClrEmbedded", Library = "", Properties = new Dictionary<string, string>(),
                 NativeLibraries = new Dictionary<string, string>(), ReadyToRunImages = new Dictionary<string, string>()
             })));
             foreach (string path in result.Files.Append(runtimeManifest).Append(_input.AppArchive)) Observe(path);
@@ -130,7 +132,7 @@ internal sealed class WasmPreparationSession
         }
         prepared.RequireUnchanged();
         WasmStagingProduct.Register(new WasmStagingProduct(profile.ProjectFile, _pluginFile, profile.TargetName,
-            request.Configuration, prepared.ManagedDirectory, prepared.ReadyKey, prepared.RequireUnchanged));
+            request.Configuration, prepared.ManagedDirectory, prepared.ReadyKey, prepared.RequireUnchanged, _input.RuntimeProduct.IsNativeAot));
     }
 
     internal IDisposable AcquireBuildLease()

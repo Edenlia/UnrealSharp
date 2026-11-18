@@ -97,7 +97,16 @@ public class UnrealSharpCore : ModuleRules
 		// (and any PE ReadyToRun composite) to the runtime through external_assembly_probe.
 		bool bEmbeddedCoreClr = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac ||
 			Target.Platform == UnrealTargetPlatform.Android;
-		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bEmbeddedCoreClr || bWasm ? "1" : "0"));
+		bool bWasmInterpreter = bWasm;
+#if UE_5_9_OR_LATER
+		if (bWasm && Target.ProjectFile != null)
+		{
+			var Profile = UnrealSharpWasmRuntime.GetBuildProfile(Target, PluginDirectory, EngineDirectory);
+			bWasmInterpreter = !UnrealSharp.Wasm.WasmBuildInput.Load(Profile.InputFile, Profile).RuntimeProduct.IsNativeAot;
+			ExternalDependencies.Add(Profile.InputFile);
+		}
+#endif
+		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bEmbeddedCoreClr || bWasmInterpreter ? "1" : "0"));
 		if (bWasm)
 		{
 			PrivateDependencyModuleNames.Add("UnrealSharpWasmRuntime");

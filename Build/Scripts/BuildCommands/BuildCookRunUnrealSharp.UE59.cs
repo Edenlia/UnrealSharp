@@ -4,6 +4,7 @@ using UnrealSharp.Automation.Utilities;
 namespace UnrealSharp.Automation.BuildCommands;
 
 [Help("Runs BuildCookRun with UnrealSharp staging and the UE 5.9 Wasm prelink boundary.")]
+[Help("UnrealSharpRuntimeProduct=<Path>", "For Wasm, select the CoreCLR interpreter or NativeAOT by passing the corresponding portable RuntimeProduct.json at package time.")]
 [Help(typeof(ProjectParams))]
 public class BuildCookRunUnrealSharp : global::BuildCookRun
 {
