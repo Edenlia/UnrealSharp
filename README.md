@@ -33,7 +33,7 @@ Making a game with UnrealSharp? [Open an issue](https://github.com/UnrealSharp/U
 |---|---|---|
 | Windows | Supported | CoreCLR (JIT), NativeAOT |
 | macOS | Supported | CoreCLR (JIT), NativeAOT |
-| Linux | Planned | |
+| Linux | Experimental (editor, x86-64) | |
 | iOS | Supported | NativeAOT, CoreCLR ReadyToRun + interpreter (.NET 11, experimental) |
 | Android | Supported | NativeAOT, CoreCLR JIT (.NET 11, experimental) |
 
@@ -44,6 +44,13 @@ See [Runtime hosts](Docs/RuntimeHosts.md) for how each runtime is started and ho
 - Unreal Engine 5.6 – 5.8, or 5.9 Preview on Windows
 - .NET 10.0.5 or newer
 - A C++ project (strongly recommended, pure Blueprint projects work, but are harder to provide support for)
+
+### Linux notes
+
+Linux support is experimental. The upstream implementation was tested with the UE 5.8 prebuilt (installed) engine, the engine's bundled clang toolchain and .NET 10 on x86-64. The combined CPM implementation and packaged Linux builds have not been validated here.
+
+- Install the .NET 10 SDK, for example with `dotnet-install.sh` into `~/.dotnet` or from your distribution's packages. The editor looks for it in `DOTNET_ROOT` first (e.g. `DOTNET_ROOT=~/.dotnet ./UnrealEditor MyGame.uproject`), then follows the `dotnet` executable on `PATH` to the real SDK directory, so `/usr/bin/dotnet` symlinks work. Version-manager shims (mise, asdf) are skipped because they have no `sdk/` folder next to them.
+- Opening the C# solution from the editor uses `xdg-open`, so associate `.sln` files with your IDE (e.g. Rider).
 
 ## Getting started
 
