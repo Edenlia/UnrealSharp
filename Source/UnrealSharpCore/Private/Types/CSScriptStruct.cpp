@@ -58,13 +58,15 @@ void UCSScriptStruct::Initialize()
 
 void UCSScriptStruct::InitializeStructDefaults()
 {
-	int32 Size = FMath::Max(GetStructureSize(), 1);
-	StructDefaults = MakeUnique<uint8[]>(Size);
+	const SIZE_T Size = FMath::Max(GetStructureSize(), 1);
+	const SIZE_T Alignment = GetMinAlignment();
+	StructDefaults = MakeUnique<uint8[]>(Size + Alignment - 1);
+	uint8* Defaults = Align(StructDefaults.Get(), Alignment);
 	
-	InitializeStructIgnoreDefaults(StructDefaults.Get());
+	InitializeStructIgnoreDefaults(Defaults);
 	
-	GetManagedCallbacks().InitializeStructure(GetTypeGCHandle()->GetHandle(), StructDefaults.Get());
+	GetManagedCallbacks().InitializeStructure(GetTypeGCHandle()->GetHandle(), Defaults);
 	
-	DefaultStructInstance = FUserStructOnScopeIgnoreDefaults(this, StructDefaults.Get());
+	DefaultStructInstance = FUserStructOnScopeIgnoreDefaults(this, Defaults);
 	DefaultStructInstance.SetPackage(GetOutermost());
 }
