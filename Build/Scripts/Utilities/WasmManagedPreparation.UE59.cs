@@ -80,7 +80,9 @@ internal static class WasmManagedPreparation
             var built = new List<string>();
             string pluginOutput = CompileProject(baseProject, null); built.Add(pluginOutput);
             string packageDirectory = Path.GetDirectoryName(pluginOutput)!;
-            foreach (string project in glue.Concat(users).Distinct(UhtProducerReadPaths.Comparer)) built.Add(CompileProject(project, packageDirectory));
+            foreach (string project in glue) built.Add(CompileProject(project, packageDirectory));
+            string glueTargets = WriteGameGlueReferences(glue);
+            foreach (string project in users.Except(glue, UhtProducerReadPaths.Comparer)) built.Add(CompileProject(project, packageDirectory, glueTargets));
             ConsumeCompilerInputs([baseProject, ..glue, ..users]);
             CheckUnchanged();
 
@@ -216,7 +218,40 @@ internal static class WasmManagedPreparation
             return Path.GetFullPath(path);
         }
 
-        private string CompileProject(string project, string? packageDirectory)
+        private string WriteGameGlueReferences(string[] projects)
+        {
+            // BuildUserGlue writes HintPaths to Editor assemblies into user projects.
+            // Replace only those generated references, including in transitive user projects.
+            string editorDirectory = PathUtilities.BuildOutputPath(Path.GetDirectoryName(_input.Profile.ProjectFile)!);
+            string manifest = Path.Combine(editorDirectory, AssemblyUtilities.MakeLoadOrderFileName(LoadOrderUtilities.GlueLoadOrderName));
+            var game = projects.Select(project => _projectOutputs[Path.GetFullPath(project)])
+                .ToDictionary(path => ReadAssembly(path).Name, StringComparer.OrdinalIgnoreCase);
+            var names = new HashSet<string>(game.Keys, StringComparer.OrdinalIgnoreCase);
+            if (File.Exists(manifest))
+            {
+                Observe(manifest, "editor-glue-reference-names");
+                names.UnionWith(AssemblyUtilities.ReadLoadOrder(manifest));
+            }
+
+            var items = new XElement("ItemGroup");
+            foreach (string name in names.OrderBy(value => value, StringComparer.Ordinal))
+            {
+                Require(Regex.IsMatch(name, @"^[\w.-]+$"), "Invalid generated module assembly name: " + name);
+                bool hasGameAssembly = game.TryGetValue(name, out string? output);
+                string condition = $"'%(Reference.Identity)' == '{name}' And '%(Reference.HintPath)' != '' And " +
+                    $"'$([MSBuild]::NormalizePath($(MSBuildProjectDirectory), %(Reference.HintPath)))' == '$([MSBuild]::NormalizePath($(UnrealSharpEditorGlueDirectory), {name}.dll))'";
+                var item = new XElement("Reference", new XAttribute(hasGameAssembly ? "Update" : "Remove", "@(Reference)"), new XAttribute("Condition", condition));
+                if (hasGameAssembly) item.Add(new XElement("HintPath", output));
+                items.Add(item);
+            }
+            var target = new XElement("Target", new XAttribute("Name", "ResolveUnrealSharpWasmGameGlue"), new XAttribute("BeforeTargets", "ResolveAssemblyReferences"), items);
+            string path = Path.Combine(_capture, "GameGlue.targets");
+            Write(path, new XElement("Project", new XElement("PropertyGroup", new XElement("UnrealSharpEditorGlueDirectory", editorDirectory)), target).ToString());
+            Observe(path, "game-glue-references");
+            return path;
+        }
+
+        private string CompileProject(string project, string? packageDirectory, string? glueTargets = null)
         {
             Observe(project, "managed-project");
             string[] arguments = ["-p:UETargetType=Game", "-p:UEBuildConfig=" + _input.Profile.Configuration,
@@ -225,6 +260,7 @@ internal static class WasmManagedPreparation
                 "-p:BuildingAOT=false", "-p:PublishAot=false", "-p:PublishReadyToRun=false", "-p:SelfContained=false", "-p:RuntimeIdentifier=",
                 "-p:UnrealSharpWasmInputRecords=" + Path.Combine(_capture, _commands.Count.ToString("D3"))];
             if (packageDirectory != null) arguments = [..arguments, "-p:UnrealSharpPackageDirectory=" + packageDirectory];
+            if (glueTargets != null) arguments = [..arguments, "-p:UnrealSharpWasmGlueTargets=" + glueTargets];
             string configuration = _input.Profile.Configuration is "Debug" or "DebugGame" ? "Debug" : "Release";
             ValidateManagedGraph(project, ["-p:Configuration=" + configuration, ..arguments]);
             arguments = [..arguments, "-p:CustomBeforeMicrosoftCommonTargets=" + Path.Combine(_templates, "ManagedInputs.targets")];
