@@ -192,7 +192,10 @@ namespace UnrealSharp.Wasm
                 ? ["-m64", "-pthread", "-fexceptions", "-msimd128"]
                 : ["-m64", "-pthread", "-fwasm-exceptions", "-sWASM_LEGACY_EXCEPTIONS=0", "-msimd128"];
             WasmData.Require(compileOptions.SequenceEqual(expectedOptions), "Unexpected runtime ABI compile requirements.");
-            WasmData.Require(WasmData.Strings(native.GetProperty("HelperDefinitions")).SequenceEqual(new[] { "GEN_PINVOKE=1", "TARGET_WASM", "TARGET_WASM64", "TARGET_64BIT", "TARGET_POINTER_SIZE=8" }), "Unexpected helper definitions.");
+            string[] definitions = WasmData.Strings(native.GetProperty("HelperDefinitions")).ToArray();
+            string[] wasm64Definitions = ["GEN_PINVOKE=1", "TARGET_WASM64", "TARGET_64BIT", "TARGET_POINTER_SIZE=8"];
+            string[] legacyDefinitions = ["GEN_PINVOKE=1", "TARGET_WASM", "TARGET_WASM64", "TARGET_64BIT", "TARGET_POINTER_SIZE=8"];
+            WasmData.Require(definitions.SequenceEqual(wasm64Definitions) || definitions.SequenceEqual(legacyDefinitions), "Unexpected helper definitions.");
             JsonElement includes = product.GetProperty("Includes"); WasmData.Fields(includes, "Host", "Helper", "ForceInclude", "Inventory");
             foreach (string include in WasmData.Strings(includes.GetProperty("Inventory"))) Asset(include);
             JsonElement managed = product.GetProperty("Managed"); WasmData.Fields(managed, "CoreLib", "CoreLibSha256", "FrameworkDirectory", "Framework", "HelperTool");
