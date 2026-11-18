@@ -92,7 +92,7 @@ public class UnrealSharpCore : ModuleRules
 		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
 		bool bWasm = Target.Platform.ToString() == "Wasm";
 		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile || bWasm ? "0" : "1"));
-		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=" + (bWasm ? "0" : "1"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
 		// coreclr_initialize hosting. Apple platforms load Mach-O ReadyToRun images; Android hands assemblies
 		// (and any PE ReadyToRun composite) to the runtime through external_assembly_probe.
 		bool bEmbeddedCoreClr = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac ||

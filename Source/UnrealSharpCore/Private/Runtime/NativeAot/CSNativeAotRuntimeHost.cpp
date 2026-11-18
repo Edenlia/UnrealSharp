@@ -8,10 +8,17 @@
 
 using namespace UnrealSharp;
 
+#if defined(PLATFORM_WASM) && PLATFORM_WASM
+// The interpreter links the same host without an AOT app archive. The AOT link roots this symbol explicitly.
+extern "C" void InitializeAotRuntime(const UTF8CHAR*, FCSManagedPluginCallbacks*, const void*, FCSManagedCallbacks*,
+                                     FCSInitializationResult*) __attribute__((weak));
+#else
 FCSNativeAotRuntimeHost::FCSNativeAotRuntimeHost(FString InLibraryPath)
 	: LibraryPath(MoveTemp(InLibraryPath))
 {
 }
+
+#endif
 
 FCSRuntimeCapabilities FCSNativeAotRuntimeHost::GetCapabilities() const
 {
@@ -25,6 +32,14 @@ FCSRuntimeCapabilities FCSNativeAotRuntimeHost::GetCapabilities() const
 
 FInitializeUnrealSharp FCSNativeAotRuntimeHost::StartRuntime()
 {
+#if defined(PLATFORM_WASM) && PLATFORM_WASM
+	if (!IsInGameThread() || !InitializeAotRuntime)
+	{
+		UE_LOGFMT(LogUnrealSharp, Fatal, "Wasm NativeAOT requires the game thread and a linked InitializeAotRuntime export.");
+		return nullptr;
+	}
+	return &InitializeAotRuntime;
+#else
 	Library = PlatformUtilities::LoadBundledLibrary(LibraryPath);
 	if (!Library)
 	{
@@ -45,6 +60,7 @@ FInitializeUnrealSharp FCSNativeAotRuntimeHost::StartRuntime()
 	UE_LOGFMT(LogUnrealSharp, Display, "Using NativeAOT runtime: {0}", LibraryPath);
 
 	return InitializeUnrealSharp;
+#endif
 }
 
 #endif // UNREALSHARP_WITH_NATIVEAOT_HOST
