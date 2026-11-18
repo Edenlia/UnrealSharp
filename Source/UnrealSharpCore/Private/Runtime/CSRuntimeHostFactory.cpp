@@ -44,11 +44,21 @@ namespace
 		case ECSRuntimeKind::NativeAot:
 #if UNREALSHARP_WITH_NATIVEAOT_HOST
 		{
+#if defined(PLATFORM_WASM) && PLATFORM_WASM
+			if (!Manifest.Library.IsEmpty() || !Manifest.NativeLibraries.IsEmpty() || !Manifest.ReadyToRunImages.IsEmpty() ||
+				FPaths::GetCleanFilename(Manifest.SourcePath) != FCSRuntimeManifest::FileName)
+			{
+				UE_LOGFMT(LogUnrealSharp, Fatal, "Wasm NativeAOT requires an explicit static application manifest: {0}", Manifest.SourcePath);
+				return nullptr;
+			}
+			return MakeUnique<FCSNativeAotRuntimeHost>();
+#else
 			// Packages that only carry the legacy marker do not name their library.
 			const FString LibraryReference = Manifest.Library.IsEmpty()
 				? PlatformUtilities::GetLegacyNativeAotLibraryReference()
 				: Manifest.Library;
 			return MakeUnique<FCSNativeAotRuntimeHost>(PlatformUtilities::ResolveBundledLibraryPath(ManagedDirectory, LibraryReference));
+#endif
 		}
 #else
 			break;
@@ -82,9 +92,9 @@ TUniquePtr<FCSRuntimeHost> RuntimeHostFactory::CreateRuntimeHost()
 #else
 	const TOptional<FCSRuntimeManifest> Manifest = FCSRuntimeManifest::Load(ManagedDirectory);
 #if defined(PLATFORM_WASM) && PLATFORM_WASM
-	if (!Manifest.IsSet() || Manifest->Kind != ECSRuntimeKind::CoreClrEmbedded)
+	if (!Manifest.IsSet() || (Manifest->Kind != ECSRuntimeKind::CoreClrEmbedded && Manifest->Kind != ECSRuntimeKind::NativeAot))
 	{
-		UE_LOGFMT(LogUnrealSharp, Fatal, "Wasm requires the verified static CoreClrEmbedded manifest in {0}", ManagedDirectory);
+		UE_LOGFMT(LogUnrealSharp, Fatal, "Wasm requires a static CoreClrEmbedded or NativeAot manifest in {0}", ManagedDirectory);
 		return nullptr;
 	}
 #endif

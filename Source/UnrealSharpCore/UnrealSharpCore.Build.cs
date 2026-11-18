@@ -86,7 +86,7 @@ public class UnrealSharpCore : ModuleRules
 		bool bMobile = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Android;
 		bool bWasm = Target.Platform.ToString() == "Wasm";
 		PrivateDefinitions.Add("UNREALSHARP_WITH_HOSTFXR_HOST=" + (bMobile || bWasm ? "0" : "1"));
-		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=" + (bWasm ? "0" : "1"));
+		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
 		// coreclr_initialize hosting needs a platform loader for ReadyToRun images; only Mach-O is implemented.
 		bool bApple = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac;
 		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple || bWasm ? "1" : "0"));
