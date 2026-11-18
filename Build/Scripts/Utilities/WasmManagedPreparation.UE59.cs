@@ -118,9 +118,17 @@ internal static class WasmManagedPreparation
             foreach (string path in product.HelperToolFiles) Observe(path, "helper-cli");
             foreach (string path in Directory.EnumerateFiles(_managed, "*.dll")) Observe(path, "staged-helper-input");
             MakeDirectory(_helpers);
-            Run(_tools.DotnetHost, [product.HelperToolEntry, helperManifest, _helpers], "helpers");
             string[] helpers = ["callhelpers-pinvoke.cpp", "callhelpers-reverse.cpp", "callhelpers-interp-to-managed.cpp"];
-            VerifyHelpers(closure, helpers);
+            string provenancePath = Path.Combine(_helpers, "provenance.json");
+            foreach (string name in helpers.Append("provenance.json"))
+            {
+                string path = Path.Combine(_helpers, name);
+                Safe(path);
+                File.Delete(path);
+            }
+            Run(_tools.DotnetHost, [product.HelperToolEntry, helperManifest, _helpers], "helpers");
+            Observe(provenancePath, "generated-helper-provenance");
+            VerifyHelpers(closure, helpers, helperManifest, provenancePath);
             foreach (string name in helpers) { string path = Path.Combine(_helpers, name); Observe(path, "native-helper-source"); _outputs.Add(path); }
             BuildArchive(helpers);
             CheckUnchanged();
@@ -329,9 +337,24 @@ internal static class WasmManagedPreparation
             return "";
         }
 
-        private void VerifyHelpers(AssemblyInput[] closure, string[] names)
+        private void VerifyHelpers(AssemblyInput[] closure, string[] names, string manifestPath, string provenancePath)
         {
-            foreach (string name in names) { string path = Path.Combine(_helpers, name); Require(File.Exists(path) && File.ReadAllText(path).Contains("static_assert(sizeof(void*) == 8", StringComparison.Ordinal), "Missing real Wasm64 generated helper: " + name); }
+            using JsonDocument provenance = JsonDocument.Parse(File.ReadAllText(provenancePath));
+            JsonElement target = provenance.RootElement;
+            Require(target.GetProperty("targetArchitecture").GetString() == "Wasm64" &&
+                    target.GetProperty("targetOS").GetString() == "Browser" &&
+                    target.GetProperty("PointerSize").GetInt32() == 8,
+                    "Generated helpers must target browser Wasm64 with 8-byte pointers.");
+            string? generator = target.GetProperty("generatorAssembly").GetString();
+            Require(UhtProducerReadPaths.Comparer.Equals(target.GetProperty("manifestPath").GetString(), manifestPath) &&
+                    generator != null && _input.RuntimeProduct.HelperToolFiles.Contains(generator, UhtProducerReadPaths.Comparer) &&
+                    String.Equals(Hash(generator), target.GetProperty("generatorSha256").GetString(), StringComparison.OrdinalIgnoreCase),
+                    "Generated helpers do not match the requested manifest and runtime generator.");
+            foreach (string name in names)
+            {
+                var file = new FileInfo(Path.Combine(_helpers, name));
+                Require(file.Exists && file.Length > 0, "Missing generated helper: " + name);
+            }
             string pinvoke = File.ReadAllText(Path.Combine(_helpers, names[0])), reverse = File.ReadAllText(Path.Combine(_helpers, names[1]));
             Require(pinvoke.Contains("callhelpers_pinvoke_override", StringComparison.Ordinal) && pinvoke.Contains("ResolveRuntimeHelperEntrypoint", StringComparison.Ordinal), "Incomplete application PInvoke/QCall replacement.");
             var frameworkNames = _input.RuntimeProduct.ManagedFiles.Append(_input.RuntimeProduct.CoreLib).Select(path => ReadAssembly(path).Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
