@@ -1,4 +1,5 @@
 <Project>
+  <Import Project="$(UnrealSharpWasmGlueTargets)" Condition="'$(UnrealSharpWasmGlueTargets)' != ''" />
   <!-- GetFileHash runs before the compiler consumes these items. In-memory
        generator output is covered by its analyzer/tool inputs, not invented files. -->
   <Target Name="CaptureUnrealSharpWasmCompilerInputs" BeforeTargets="CoreCompile">
