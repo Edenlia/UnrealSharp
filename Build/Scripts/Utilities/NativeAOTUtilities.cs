@@ -141,7 +141,7 @@ public static class NativeAOTUtilities
 		BuildSolution.RunBuild(publishDirectory, options.BuildConfiguration, true, ExtraArguments, EnvironmentOverrides);
 	}
 
-	private static void CreateInitializeClass(string outputDirectory)
+	internal static void CreateInitializeClass(string outputDirectory)
 	{
 	    string FilePath = Path.Combine(outputDirectory, "Main.cs");
 

@@ -28,7 +28,7 @@ protected:
 	virtual FInitializeUnrealSharp StartRuntime() override;
 	// End of FCSRuntimeHost interface
 
-#if !PLATFORM_WASM
+#if !defined(PLATFORM_WASM) || !PLATFORM_WASM
 private:
 	FString LibraryPath;
 	// NativeAOT does not support unloading. Keep this library loaded until process exit.

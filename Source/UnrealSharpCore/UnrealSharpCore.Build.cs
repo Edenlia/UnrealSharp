@@ -89,7 +89,16 @@ public class UnrealSharpCore : ModuleRules
 		PrivateDefinitions.Add("UNREALSHARP_WITH_NATIVEAOT_HOST=1");
 		// coreclr_initialize hosting needs a platform loader for ReadyToRun images; only Mach-O is implemented.
 		bool bApple = Target.Platform == UnrealTargetPlatform.IOS || Target.Platform == UnrealTargetPlatform.Mac;
-		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple || bWasm ? "1" : "0"));
+		bool bWasmInterpreter = bWasm;
+#if UE_5_9_OR_LATER
+		if (bWasm && Target.ProjectFile != null)
+		{
+			var Profile = UnrealSharpWasmRuntime.GetBuildProfile(Target, PluginDirectory, EngineDirectory);
+			bWasmInterpreter = !UnrealSharp.Wasm.WasmBuildInput.Load(Profile.InputFile, Profile).RuntimeProduct.IsNativeAot;
+			ExternalDependencies.Add(Profile.InputFile);
+		}
+#endif
+		PrivateDefinitions.Add("UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST=" + (bApple || bWasmInterpreter ? "1" : "0"));
 		if (bWasm)
 		{
 			PrivateDependencyModuleNames.Add("UnrealSharpWasmRuntime");

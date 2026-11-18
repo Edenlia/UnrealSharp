@@ -16,20 +16,7 @@ public class UnrealSharpWasmRuntime : ModuleRules
         Type = ModuleType.External;
         if (!target.Platform.ToString().Equals("Wasm", StringComparison.Ordinal)) return;
 #if UE_5_9_OR_LATER
-        if ((!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) || target.ProjectFile == null)
-            throw new BuildException("UnrealSharp static Wasm hosting requires a Windows- or Mac-hosted UE 5.9 code project.");
-        string[] architectures = target.Architectures.Architectures.Select(architecture => architecture.ToString()).ToArray();
-        // The Wasm platform extension is optional in desktop engine installations.
-        object wasmRules = target.GetType().GetProperty("WasmPlatform")?.GetValue(target)
-            ?? throw new BuildException("The Wasm target requires the UE Wasm platform extension.");
-        bool ReadWasmFlag(string name) =>
-            wasmRules.GetType().GetProperty(name)?.GetValue(wasmRules) is bool value
-                ? value : throw new BuildException("Missing UE Wasm target rule: {0}", name);
-        if (architectures.Length != 1 || architectures[0] != "wasm64" || !ReadWasmFlag("bWasm64"))
-            throw new BuildException("UnrealSharp static hosting requires the actual single wasm64 native target.");
-        var profile = new UnrealSharp.Wasm.WasmBuildProfile(target.ProjectFile.FullName, PluginDirectory, EngineDirectory,
-            target.Name, target.Type.ToString(), target.Platform.ToString(), target.Configuration.ToString(), architectures[0],
-            ReadWasmFlag("bLowerMemory64"), ReadWasmFlag("bSimd128"));
+        var profile = GetBuildProfile(target, PluginDirectory, EngineDirectory);
         UnrealSharp.Wasm.WasmBuildInput input = UnrealSharp.Wasm.WasmBuildInput.Load(profile.InputFile, profile);
         input.RuntimeProduct.RequireUeExceptionAbi();
         foreach (string include in input.RuntimeProduct.HostIncludeDirectories) PublicSystemIncludePaths.Add(include);
@@ -42,8 +29,11 @@ public class UnrealSharpWasmRuntime : ModuleRules
         PublicSystemLibraries.Add("-sSUPPORT_LONGJMP=emscripten");
         foreach (string library in input.RuntimeProduct.JavaScriptLibraries)
             PublicSystemLibraries.Add("--js-library=" + library.Replace('\\', '/'));
-        PublicSystemLibraries.Add("--pre-js=" + input.BootstrapFile.Replace('\\', '/'));
-        PublicSystemLibraries.Add("--js-library=" + Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "unrealsharp-wasm-library.js").Replace('\\', '/'));
+        if (!input.RuntimeProduct.IsNativeAot)
+        {
+            PublicSystemLibraries.Add("--pre-js=" + input.BootstrapFile.Replace('\\', '/'));
+            PublicSystemLibraries.Add("--js-library=" + Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "unrealsharp-wasm-library.js").Replace('\\', '/'));
+        }
         foreach (string path in new[] { input.InputFile, input.RuntimeProductFile, input.LinkResponse, input.BootstrapFile, input.PreparedReadyFile,
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "InvokeBuildGuard.ps1"),
             Path.Combine(PluginDirectory, "Build", "Runtime", "Wasm", "InvokeBuildGuard.py"),
@@ -58,6 +48,26 @@ public class UnrealSharpWasmRuntime : ModuleRules
         throw new BuildException("UnrealSharp static Wasm hosting requires UE 5.9 or later.");
 #endif
     }
+#if UE_5_9_OR_LATER
+    internal static UnrealSharp.Wasm.WasmBuildProfile GetBuildProfile(ReadOnlyTargetRules target, string pluginDirectory, string engineDirectory)
+    {
+        if ((!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) || target.ProjectFile == null)
+            throw new BuildException("UnrealSharp static Wasm hosting requires a Windows- or Mac-hosted UE 5.9 code project.");
+        string[] architectures = target.Architectures.Architectures.Select(architecture => architecture.ToString()).ToArray();
+        // The Wasm platform extension is optional in desktop engine installations.
+        object wasmRules = target.GetType().GetProperty("WasmPlatform")?.GetValue(target)
+            ?? throw new BuildException("The Wasm target requires the UE Wasm platform extension.");
+        bool ReadWasmFlag(string name) =>
+            wasmRules.GetType().GetProperty(name)?.GetValue(wasmRules) is bool value
+                ? value : throw new BuildException("Missing UE Wasm target rule: {0}", name);
+        if (architectures.Length != 1 || architectures[0] != "wasm64" || !ReadWasmFlag("bWasm64"))
+            throw new BuildException("UnrealSharp static hosting requires the actual single wasm64 native target.");
+        return new UnrealSharp.Wasm.WasmBuildProfile(target.ProjectFile.FullName, pluginDirectory, engineDirectory,
+            target.Name, target.Type.ToString(), target.Platform.ToString(), target.Configuration.ToString(), architectures[0],
+            ReadWasmFlag("bLowerMemory64"), ReadWasmFlag("bSimd128"));
+    }
+#endif
+
 }
 #endif
 
@@ -107,6 +117,7 @@ namespace UnrealSharp.Wasm
         public string DescriptorSha256 { get; private init; } = "";
         public string RootDirectory => Path.GetDirectoryName(DescriptorFile)!;
         public string NativeProductKey { get; private init; } = "";
+        public bool IsNativeAot { get; private init; }
         public string ExceptionModel { get; private init; } = "";
         public JsonElement Product { get; private init; }
         public IReadOnlyList<WasmProductAsset> Assets { get; private init; } = [];
@@ -130,6 +141,7 @@ namespace UnrealSharp.Wasm
             byte[] raw = File.ReadAllBytes(file);
             using JsonDocument document = WasmData.Parse(raw);
             JsonElement root = document.RootElement;
+            if (WasmData.String(root, "Schema") == "UnrealSharp.WasmNativeAotProduct") return OpenNativeAot(file, raw, root);
             WasmData.Fields(root, "Schema", "SchemaVersion", "Kind", "NativeProductKey", "Product", "Evidence", "ExternalTools");
             WasmData.Require(WasmData.String(root, "Schema") == "UnrealSharp.RuntimeProduct" && root.GetProperty("SchemaVersion").GetInt32() == 1 &&
                 WasmData.String(root, "Kind") == "Portable", "Expected a completed Portable RuntimeProduct v1.");
@@ -152,16 +164,7 @@ namespace UnrealSharp.Wasm
             string key = WasmData.String(root, "NativeProductKey");
             WasmData.Require(WasmData.IsHash(key) && key == WasmData.CanonicalHash(new { Schema = "UnrealSharp.RuntimeProduct", SchemaVersion = 1, Product = product }), "RuntimeProduct key mismatch.");
             string directory = Path.GetDirectoryName(file)!;
-            var assets = new List<WasmProductAsset>();
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (JsonElement item in product.GetProperty("Assets").EnumerateArray())
-            {
-                WasmData.Fields(item, "Path", "Kind", "Bytes", "Sha256");
-                string relative = WasmData.Relative(WasmData.String(item, "Path"));
-                var asset = new WasmProductAsset(relative, WasmData.String(item, "Kind"), item.GetProperty("Bytes").GetInt64(), WasmData.String(item, "Sha256"));
-                WasmData.Require(names.Add(relative) && asset.Kind.Length > 0 && asset.Bytes >= 0 && WasmData.IsHash(asset.Sha256), "Duplicate or invalid runtime asset.");
-                WasmData.VerifyFile(Path.Combine(directory, relative), asset.Bytes, asset.Sha256, noLinks: true); assets.Add(asset);
-            }
+            var assets = ReadAssets(product, directory);
             string Asset(string relative)
             {
                 relative = WasmData.Relative(relative);
@@ -264,6 +267,55 @@ namespace UnrealSharp.Wasm
                 CoreLib = coreLib, ManagedFiles = framework.AsReadOnly(), HelperToolEntry = Asset(WasmData.String(tool, "Entry")),
                 HelperToolFiles = WasmData.Strings(tool.GetProperty("Files")).Select(Asset).ToArray(), EvidenceFiles = evidence.AsReadOnly() };
             result.VerifyInventory(); return result;
+        }
+
+        private static List<WasmProductAsset> ReadAssets(JsonElement product, string directory)
+        {
+            var assets = new List<WasmProductAsset>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonElement item in product.GetProperty("Assets").EnumerateArray())
+            {
+                WasmData.Fields(item, "Path", "Kind", "Bytes", "Sha256");
+                string relative = WasmData.Relative(WasmData.String(item, "Path"));
+                var asset = new WasmProductAsset(relative, WasmData.String(item, "Kind"), item.GetProperty("Bytes").GetInt64(), WasmData.String(item, "Sha256"));
+                WasmData.Require(names.Add(relative) && asset.Kind.Length > 0 && asset.Bytes >= 0 && WasmData.IsHash(asset.Sha256), "Duplicate or invalid runtime asset.");
+                WasmData.VerifyFile(Path.Combine(directory, relative), asset.Bytes, asset.Sha256, noLinks: true); assets.Add(asset);
+            }
+            return assets;
+        }
+
+        private static WasmRuntimeProduct OpenNativeAot(string file, byte[] raw, JsonElement root)
+        {
+            WasmData.Fields(root, "Schema", "SchemaVersion", "Product", "NativeProductKey");
+            JsonElement product = root.GetProperty("Product");
+            WasmData.Fields(product, "RuntimeFlavor", "TargetOS", "Architecture", "SourceRevision", "Abi", "Compiler", "LinkSequence", "JavaScript", "Assets");
+            WasmData.Require(root.GetProperty("SchemaVersion").GetInt32() == 1 && WasmData.String(product, "RuntimeFlavor") == "NativeAot" &&
+                WasmData.String(product, "TargetOS") == "browser" && WasmData.String(product, "Architecture") == "wasm64" &&
+                WasmData.IsHash(WasmData.String(product, "SourceRevision"), 40), "Unexpected Wasm NativeAOT product.");
+            JsonElement abi = product.GetProperty("Abi");
+            WasmData.Fields(abi, "PointerSize", "NativePthreads", "ManagedThreads", "LowerMemory64", "NativeExceptions", "ManagedExceptions");
+            WasmData.Require(abi.GetProperty("PointerSize").GetInt32() == 8 && abi.GetProperty("NativePthreads").GetBoolean() &&
+                !abi.GetProperty("ManagedThreads").GetBoolean() && abi.GetProperty("LowerMemory64").GetBoolean() &&
+                WasmData.String(abi, "NativeExceptions") == "emscripten" && WasmData.String(abi, "ManagedExceptions") == "emulated", "Incompatible NativeAOT ABI.");
+            string key = WasmData.String(root, "NativeProductKey");
+            WasmData.Require(key == WasmData.CanonicalHash(new { Schema = "UnrealSharp.WasmNativeAotProduct", SchemaVersion = 1, Product = product }), "NativeAOT product key mismatch.");
+            string directory = Path.GetDirectoryName(file)!;
+            var assets = ReadAssets(product, directory);
+            string Asset(string relative, string kind)
+            {
+                WasmData.Require(assets.Any(item => item.Path == relative && item.Kind == kind), "Missing NativeAOT " + kind + " input: " + relative);
+                return Path.Combine(directory, relative);
+            }
+            var sequence = WasmData.Strings(product.GetProperty("LinkSequence")).Select(path => new WasmLinkItem("Archive", Asset(path, "native"))).ToArray();
+            WasmData.Require(sequence.Length > 0 && sequence.Select(item => item.Value).ToHashSet(WasmData.Paths)
+                .SetEquals(assets.Where(item => item.Kind == "native").Select(item => Asset(item.Path, "native"))), "Incomplete NativeAOT link inputs.");
+            var result = new WasmRuntimeProduct { IsNativeAot = true, DescriptorFile = file, DescriptorSha256 = WasmData.Hash(raw),
+                NativeProductKey = key, Product = product.Clone(), Assets = assets.AsReadOnly(), ExceptionModel = "emscripten", LinkSequence = sequence,
+                CoreLib = Asset("managed/System.Private.CoreLib.dll", "managed"), HelperToolEntry = Asset(WasmData.String(product, "Compiler"), "tools"),
+                ManagedFiles = assets.Where(item => item.Kind == "managed").Select(item => Asset(item.Path, "managed")).ToArray(),
+                JavaScriptLibraries = new[] { Asset(WasmData.String(product, "JavaScript"), "js") } };
+            result.VerifyInventory();
+            return result;
         }
 
         public string RequireAsset(string relative) { relative = WasmData.Relative(relative); WasmData.Require(Assets.Any(asset => asset.Path == relative), "Undeclared product asset."); return Path.GetFullPath(Path.Combine(RootDirectory, relative)); }
@@ -430,7 +482,9 @@ namespace UnrealSharp.Wasm
             WasmPreparedFile selection = payload.Files.Single(file => WasmData.Paths.Equals(file.Path, input.InputFile));
             WasmData.Require(selection.Sha256 == input.InputSha256, "Ready does not bind raw BuildInput bytes.");
             string[] actualManaged = Directory.EnumerateFiles(managed, "*.dll", SearchOption.TopDirectoryOnly).Select(WasmData.Full).ToArray();
-            WasmData.Require(actualManaged.Length > 0 && actualManaged.All(seen.Contains) && actualManaged.Any(path => Path.GetFileName(path) == "System.Private.CoreLib.dll") &&
+            if (input.RuntimeProduct.IsNativeAot)
+                WasmData.Require(actualManaged.Length == 0, "A prelinked game may stage only its manifests.");
+            else WasmData.Require(actualManaged.Length > 0 && actualManaged.All(seen.Contains) && actualManaged.Any(path => Path.GetFileName(path) == "System.Private.CoreLib.dll") &&
                 actualManaged.Any(path => Path.GetFileName(path) == "UnrealSharp.Plugins.dll"), "Prepared loose PE closure is incomplete.");
             sources.Verify();
         }
