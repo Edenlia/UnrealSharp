@@ -30,6 +30,7 @@
     </Target>
 
     <PropertyGroup>
+        <DefineConstants>$(DefineConstants);$(UE5Rules_DefineConstants)</DefineConstants>
         <TargetFramework>net8.0</TargetFramework>
         <TargetFramework Condition="$(UE5Rules_DefineConstants.Contains('UE_5_8_OR_LATER'))">net10.0</TargetFramework>
     </PropertyGroup>
