@@ -107,7 +107,9 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
                 {
                     string typeFullName = param.Type.GetAnnotatedTypeName(model) ?? param.Type.ToString();
 
-                    if (param.IsOutParameter || param.IsRefParameter)
+                    ITypeSymbol? parameterType = model.GetTypeInfo(param.Type).Type;
+                    if (param.IsOutParameter || param.IsRefParameter ||
+                        parameterType?.SpecialType == SpecialType.System_String || parameterType?.TypeKind == TypeKind.Delegate)
                     {
                         sourceBuilder.Append($"IntPtr.Size");
                     }
@@ -188,6 +190,52 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
             sourceBuilder.AppendLine("        {");
 
             string delegateName = delegateInfo.Name;
+            // Non-blittable calli signatures require a runtime-generated marshalling
+            // stub. Apple CoreCLR cannot JIT that stub. Marshal UTF-8 strings and
+            // delegate inputs explicitly, and pin unmanaged ref/out arguments, so
+            // the actual unmanaged call needs no runtime marshalling stub.
+            bool IsStringInput(DelegateParameterInfo parameter) =>
+                !parameter.IsOutParameter && !parameter.IsRefParameter &&
+                model.GetTypeInfo(parameter.Type).Type?.SpecialType == SpecialType.System_String;
+            List<DelegateParameterInfo> stringInputs = delegateInfo.Parameters.Where(IsStringInput).ToList();
+            bool IsDelegateInput(DelegateParameterInfo parameter) =>
+                !parameter.IsOutParameter && !parameter.IsRefParameter &&
+                model.GetTypeInfo(parameter.Type).Type?.TypeKind == TypeKind.Delegate;
+            List<DelegateParameterInfo> delegateInputs = delegateInfo.Parameters.Where(IsDelegateInput).ToList();
+            bool IsPinnedByRef(DelegateParameterInfo parameter) =>
+                (parameter.IsOutParameter || parameter.IsRefParameter) &&
+                model.GetTypeInfo(parameter.Type).Type?.IsUnmanagedType == true;
+            List<DelegateParameterInfo> pinnedInputs = delegateInfo.Parameters.Where(IsPinnedByRef).ToList();
+            foreach (DelegateParameterInfo parameter in pinnedInputs.Where(p => p.IsOutParameter))
+                sourceBuilder.AppendLine($"            {parameter.Name} = default;");
+            foreach (DelegateParameterInfo parameter in pinnedInputs)
+                sourceBuilder.AppendLine($"            fixed ({parameter.Type.GetAnnotatedTypeName(model) ?? parameter.Type.ToString()}* {parameter.Name}Native = &{parameter.Name})");
+            if (pinnedInputs.Count > 0) sourceBuilder.AppendLine("            {");
+            bool needsMarshalling = stringInputs.Count > 0 || delegateInputs.Count > 0;
+            const string utf8Marshaller = "global::System.Runtime.InteropServices.Marshalling.Utf8StringMarshaller.ManagedToUnmanagedIn";
+            foreach (DelegateParameterInfo parameter in stringInputs)
+            {
+                sourceBuilder.AppendLine($"            scoped {utf8Marshaller} {parameter.Name}Marshaller = default;");
+                sourceBuilder.AppendLine($"            global::System.Span<byte> {parameter.Name}Buffer = stackalloc byte[{utf8Marshaller}.BufferSize];");
+            }
+            if (needsMarshalling)
+            {
+                sourceBuilder.AppendLine("            try");
+                sourceBuilder.AppendLine("            {");
+                foreach (DelegateParameterInfo parameter in stringInputs)
+                    sourceBuilder.AppendLine($"                {parameter.Name}Marshaller.FromManaged({parameter.Name}, {parameter.Name}Buffer);");
+                foreach (DelegateParameterInfo parameter in delegateInputs)
+                    sourceBuilder.AppendLine($"                global::System.IntPtr {parameter.Name}Native = {parameter.Name} is null ? global::System.IntPtr.Zero : global::System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate({parameter.Name});");
+            }
+            if (needsMarshalling || pinnedInputs.Count > 0)
+            {
+                string signature = string.Join(", ", delegateInfo.Parameters.Select(p =>
+                    IsStringInput(p) ? "byte*" : IsDelegateInput(p) ? "global::System.IntPtr" :
+                    IsPinnedByRef(p) ? (p.Type.GetAnnotatedTypeName(model) ?? p.Type.ToString()) + "*" :
+                    (p.IsOutParameter ? "out " : p.IsRefParameter ? "ref " : string.Empty) +
+                    (p.Type.GetAnnotatedTypeName(model) ?? p.Type.ToString())).Concat(new[] { returnTypeFullName }));
+                delegateName = $"((delegate* unmanaged<{signature}>)(void*){delegateName})";
+            }
 
             if (delegateInfo.ReturnValue.Type.ToString() != "void")
             {
@@ -201,10 +249,23 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
             sourceBuilder.Append(string.Join(", ", delegateInfo.Parameters.Select(p =>
             {
                 string prefix = p.IsOutParameter ? "out " : p.IsRefParameter ? "ref " : string.Empty;
-                return prefix + p.Name;
+                return IsStringInput(p) ? $"{p.Name}Marshaller.ToUnmanaged()" :
+                    IsDelegateInput(p) || IsPinnedByRef(p) ? $"{p.Name}Native" : prefix + p.Name;
             })));
 
             sourceBuilder.AppendLine(");");
+            if (needsMarshalling)
+            {
+                sourceBuilder.AppendLine("            }");
+                sourceBuilder.AppendLine("            finally");
+                sourceBuilder.AppendLine("            {");
+                foreach (DelegateParameterInfo parameter in stringInputs)
+                    sourceBuilder.AppendLine($"                {parameter.Name}Marshaller.Free();");
+                foreach (DelegateParameterInfo parameter in delegateInputs)
+                    sourceBuilder.AppendLine($"                global::System.GC.KeepAlive({parameter.Name});");
+                sourceBuilder.AppendLine("            }");
+            }
+            if (pinnedInputs.Count > 0) sourceBuilder.AppendLine("            }");
             sourceBuilder.AppendLine("        }");
         }
 
