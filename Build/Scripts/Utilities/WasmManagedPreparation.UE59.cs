@@ -50,6 +50,8 @@ internal static class WasmManagedPreparation
         private readonly Dictionary<string, string> _environment = new(StringComparer.OrdinalIgnoreCase);
         private readonly WasmFrozenPaths _sourcePaths = WasmFrozenPaths.CreateToolchain();
         private string _dotnetSdk = "";
+        private GlueTarget _gameTarget = null!;
+        private string GameReferences => Path.Combine(_capture, "GameReferences");
 
         internal Preparation(WasmBuildInput input, UhtProducerSnapshot producer, WasmPreparationTools tools)
         {
@@ -68,6 +70,19 @@ internal static class WasmManagedPreparation
             MakeDirectory(_directory); MakeDirectory(_capture);
             string[] glue = _producer.Inventories.SelectMany(root => root.Value.Keys.Where(path => path.EndsWith(".csproj", StringComparison.Ordinal))
                 .Select(path => Path.Combine(root.Key, path))).OrderBy(path => path, StringComparer.Ordinal).ToArray();
+            string projectDirectory = Path.GetDirectoryName(_input.Profile.ProjectFile)!;
+            string targetManifest = Path.Combine(PathUtilities.GetTargetIntermediateDirectory(projectDirectory, "Game"), GlueTarget.FileName);
+            Require(_producer.FileHashes.ContainsKey(targetManifest), "Missing producer-owned Game glue manifest.");
+            _gameTarget = GlueTarget.Read(targetManifest);
+            Require(_gameTarget.Name == _input.Profile.TargetName && _gameTarget.Platform == "Wasm" &&
+                _gameTarget.Type == "Game" && _gameTarget.Configuration == _input.Profile.Configuration &&
+                _gameTarget.MatchesArchitecture(_input.Profile.Architecture) && !_gameTarget.Distribution &&
+                UhtProducerReadPaths.Comparer.Equals(Path.GetFullPath(_gameTarget.PluginDirectory), _input.Profile.PluginDirectory) &&
+                UhtProducerReadPaths.Comparer.Equals(Path.GetFullPath(_gameTarget.ProjectFile), _input.Profile.ProjectFile) &&
+                UhtProducerReadPaths.Comparer.Equals(_gameTarget.ManifestPath, targetManifest) &&
+                _gameTarget.Projects.ToHashSet(UhtProducerReadPaths.Comparer).SetEquals(glue),
+                "Game glue manifest differs from the selected Wasm producer.");
+            MakeDirectory(GameReferences);
             var command = new PackageProject { Params = ["Project=" + _input.Profile.ProjectFile] };
             var target = new ManagedBuildTarget(UnrealTargetPlatform.Parse("Wasm"), TargetType.Game,
                 Enum.Parse<UnrealTargetConfiguration>(_input.Profile.Configuration));
@@ -80,7 +95,15 @@ internal static class WasmManagedPreparation
             var built = new List<string>();
             string pluginOutput = CompileProject(baseProject, null); built.Add(pluginOutput);
             string packageDirectory = Path.GetDirectoryName(pluginOutput)!;
-            foreach (string project in glue) built.Add(CompileProject(project, packageDirectory));
+            // CP merges engine-plugin bindings into a single assembly. Other projects
+            // reference it by HintPath, so publish each Game output before building its consumers.
+            foreach (string project in glue.OrderByDescending(path =>
+                         Path.GetFileNameWithoutExtension(path) == GlueTarget.MergedAssemblyName))
+            {
+                string output = CompileProject(project, packageDirectory);
+                Copy(output, Path.Combine(GameReferences, Path.GetFileName(output)));
+                built.Add(output);
+            }
             string glueTargets = WriteGameGlueReferences(glue);
             foreach (string project in users.Except(glue, UhtProducerReadPaths.Comparer)) built.Add(CompileProject(project, packageDirectory, glueTargets));
             ConsumeCompilerInputs([baseProject, ..glue, ..users]);
@@ -259,7 +282,10 @@ internal static class WasmManagedPreparation
                 "-p:UseDefaultOutputPath=true", "-p:UseArtifactsOutput=true", "-p:ArtifactsPath=" + _artifacts,
                 "-p:BuildingAOT=false", "-p:PublishAot=false", "-p:PublishReadyToRun=false", "-p:SelfContained=false", "-p:RuntimeIdentifier=",
                 "-p:UnrealSharpWasmInputRecords=" + Path.Combine(_capture, _commands.Count.ToString("D3"))];
-            if (packageDirectory != null) arguments = [..arguments, "-p:UnrealSharpPackageDirectory=" + packageDirectory];
+            arguments = [..arguments, ..GlueTargetUtilities.BuildArguments(_gameTarget, framework: packageDirectory == null),
+                "-p:UnrealSharpUserAssemblyDirectory=" + GameReferences];
+            if (packageDirectory != null)
+                arguments = [..arguments, "-p:UnrealSharpBindingsDirectory=" + packageDirectory, "-p:UnrealSharpPackageDirectory=" + packageDirectory];
             if (glueTargets != null) arguments = [..arguments, "-p:UnrealSharpWasmGlueTargets=" + glueTargets];
             string configuration = _input.Profile.Configuration is "Debug" or "DebugGame" ? "Debug" : "Release";
             ValidateManagedGraph(project, ["-p:Configuration=" + configuration, ..arguments]);

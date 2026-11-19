@@ -1,3 +1,4 @@
+using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -50,6 +51,13 @@ public class UhtProducerRoots
 /// <summary>Pure wire-format operations. Callers own all IO, authorization and locks.</summary>
 public static class UhtProducerProtocol
 {
+    public static bool IsGlueBuildInput(string root, string path)
+    {
+        string relative = Path.GetRelativePath(root, path);
+        return relative is "UE5Rules.Defines.props" or "UnrealSharp.EngineGlue.props" or
+            "UnrealSharp.Target.json" or "UnrealSharp.Target.props" or "UnrealSharp.References.targets";
+    }
+
     public static bool MatchesSidecarHash(UHTManifest.Module module, byte[] bytes) =>
         module.TryGetDefine("UNREALSHARP_UHT_CONTEXT_SHA256", out string? expected) &&
         expected?.Trim('"') == Convert.ToHexString(SHA256.HashData(bytes));

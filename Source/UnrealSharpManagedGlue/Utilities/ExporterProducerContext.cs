@@ -70,7 +70,9 @@ public static class ExporterProducerContext
 
     public static bool Initialize()
     {
-        IsTracking = GeneratorStatics.Target.Type == "Game" && GeneratorStatics.Target.Platform == "Wasm";
+        // Packaged Game targets can overwrite one another’s shared framework sources.
+        IsTracking = GeneratorStatics.Target.Type == "Game" && !GeneratorStatics.Target.Distribution &&
+            !string.IsNullOrEmpty(GeneratorStatics.Target.ProjectFile);
         if (!IsTracking) return true;
         // Only actual current UHT outputs may introduce trusted ancestor links.
         // Historical metadata can never grant a new link traversal permission.
@@ -244,8 +246,7 @@ public static class ExporterProducerContext
         {
             foreach (FileStream stream in PhysicalLocks.Values)
                 stream.Dispose();
-            IsTracking = false;
-        Locks.Clear();
+            Locks.Clear();
             PhysicalLocks.Clear();
             LockPaths.Clear();
             throw new IOException("Cannot exclusively lock UnrealSharp generated roots; another exporter may be active.", error);
@@ -414,7 +415,7 @@ public static class ExporterProducerContext
         var owned = new HashSet<string>(PathComparer);
         foreach (string path in EnumerateFiles(root))
         {
-            if (path.EndsWith(".generated.cs", StringComparison.Ordinal) || PathComparer.Equals(path, Path.Combine(root, "UE5Rules.Defines.props")))
+            if (path.EndsWith(".generated.cs", StringComparison.Ordinal) || UhtProducerProtocol.IsGlueBuildInput(root, path))
                 owned.Add(path);
             else if (path.EndsWith(".csproj", StringComparison.Ordinal) && IsGeneratedProject(path))
             {

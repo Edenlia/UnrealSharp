@@ -293,7 +293,7 @@ internal sealed class UhtProducerReader
         var result = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (string path in Files(root))
         {
-            bool owned = path.EndsWith(".generated.cs", StringComparison.Ordinal) || Paths.Equals(path, Path.Combine(root, "UE5Rules.Defines.props"));
+            bool owned = path.EndsWith(".generated.cs", StringComparison.Ordinal) || UhtProducerProtocol.IsGlueBuildInput(root, path);
             if (path.EndsWith(".csproj", StringComparison.Ordinal))
             {
                 using var bytes = new MemoryStream(Bytes(path), writable: false);
