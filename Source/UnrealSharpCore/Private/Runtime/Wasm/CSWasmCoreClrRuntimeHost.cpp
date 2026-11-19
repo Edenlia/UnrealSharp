@@ -1,6 +1,6 @@
 #include "CSWasmCoreClrRuntimeHost.h"
 
-#if PLATFORM_WASM && UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+#if defined(PLATFORM_WASM) && PLATFORM_WASM && UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
 #include "CSWasmCoreClrKernel.h"
 #include "UnrealSharpCore.h"
 #include "HAL/FileManager.h"

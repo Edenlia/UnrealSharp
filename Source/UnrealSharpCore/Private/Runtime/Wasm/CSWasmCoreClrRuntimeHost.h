@@ -1,6 +1,6 @@
 #pragma once
 
-#if PLATFORM_WASM && UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
+#if defined(PLATFORM_WASM) && PLATFORM_WASM && UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST
 #include "Runtime/CSRuntimeHost.h"
 #include "Runtime/CSRuntimeManifest.h"
 

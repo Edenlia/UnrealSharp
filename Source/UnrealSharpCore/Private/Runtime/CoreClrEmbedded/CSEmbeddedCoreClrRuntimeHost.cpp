@@ -1,6 +1,6 @@
 #include "Runtime/CoreClrEmbedded/CSEmbeddedCoreClrRuntimeHost.h"
 
-#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST && !PLATFORM_WASM
+#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST && (!defined(PLATFORM_WASM) || !PLATFORM_WASM)
 
 #include "CSPlatformUtilities.h"
 #include "UnrealSharpCore.h"
