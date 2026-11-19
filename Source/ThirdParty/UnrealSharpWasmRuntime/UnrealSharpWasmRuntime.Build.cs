@@ -19,11 +19,17 @@ public class UnrealSharpWasmRuntime : ModuleRules
         if ((!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) || target.ProjectFile == null)
             throw new BuildException("UnrealSharp static Wasm hosting requires a Windows- or Mac-hosted UE 5.9 code project.");
         string[] architectures = target.Architectures.Architectures.Select(architecture => architecture.ToString()).ToArray();
-        if (architectures.Length != 1 || architectures[0] != "wasm64" || !target.WasmPlatform.bWasm64)
+        // The Wasm platform extension is optional in desktop engine installations.
+        object wasmRules = target.GetType().GetProperty("WasmPlatform")?.GetValue(target)
+            ?? throw new BuildException("The Wasm target requires the UE Wasm platform extension.");
+        bool ReadWasmFlag(string name) =>
+            wasmRules.GetType().GetProperty(name)?.GetValue(wasmRules) is bool value
+                ? value : throw new BuildException("Missing UE Wasm target rule: {0}", name);
+        if (architectures.Length != 1 || architectures[0] != "wasm64" || !ReadWasmFlag("bWasm64"))
             throw new BuildException("UnrealSharp static hosting requires the actual single wasm64 native target.");
         var profile = new UnrealSharp.Wasm.WasmBuildProfile(target.ProjectFile.FullName, PluginDirectory, EngineDirectory,
             target.Name, target.Type.ToString(), target.Platform.ToString(), target.Configuration.ToString(), architectures[0],
-            target.WasmPlatform.bLowerMemory64, target.WasmPlatform.bSimd128);
+            ReadWasmFlag("bLowerMemory64"), ReadWasmFlag("bSimd128"));
         UnrealSharp.Wasm.WasmBuildInput input = UnrealSharp.Wasm.WasmBuildInput.Load(profile.InputFile, profile);
         input.RuntimeProduct.RequireUeExceptionAbi();
         foreach (string include in input.RuntimeProduct.HostIncludeDirectories) PublicSystemIncludePaths.Add(include);
