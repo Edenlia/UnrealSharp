@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST && !PLATFORM_WASM
+#if UNREALSHARP_WITH_EMBEDDED_CORECLR_HOST && (!defined(PLATFORM_WASM) || !PLATFORM_WASM)
 
 #include "Runtime/CSRuntimeHost.h"
 #include "Runtime/CSRuntimeManifest.h"

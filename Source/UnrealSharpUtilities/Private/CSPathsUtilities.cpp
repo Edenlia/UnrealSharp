@@ -20,7 +20,7 @@ FString UnrealSharp::Paths::GetUnrealSharpDirectory()
 
 FString UnrealSharp::Paths::GetPluginAssembliesPath()
 {
-#if PLATFORM_WASM
+#if defined(PLATFORM_WASM) && PLATFORM_WASM
     return GetUserAssemblyDirectory();
 #else
     if (InstallationUtilities::IsUnrealSharpInstalled())
