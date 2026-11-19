@@ -92,6 +92,7 @@ internal static class WasmManagedPreparation
             string[] baseNames = ["UnrealSharp", "UnrealSharp.Core", "UnrealSharp.Binds", "UnrealSharp.Log", "UnrealSharp.Plugins"];
             string[] rootFiles = built.Concat(baseNames.Select(name => Path.Combine(packageDirectory, name + ".dll"))).Append(product.CoreLib).ToArray();
             AssemblyInput[] closure = ResolveClosure(rootFiles, candidates, product);
+            PrepareSysroot();
             MakeDirectory(_managed);
             foreach (AssemblyInput assembly in closure)
             {
@@ -410,10 +411,6 @@ internal static class WasmManagedPreparation
                 Set("UNREALSHARP_ARCHIVE_DIRECTORY", [Path.GetDirectoryName(_input.AppArchive)!]));
             Observe(data, "cmake-input");
             string build = Path.Combine(_directory, "Native");
-            Run(HostTool(Path.Combine(_tools.SdkRoot, "upstream", "emscripten"), "embuilder"), ["build", "sysroot"], "emscripten-sysroot");
-            string sysroot = Path.Combine(_tools.EmCache, "sysroot", "include");
-            Require(Directory.Exists(sysroot), "Selected EM_CACHE has no initialized sysroot headers.");
-            CaptureTree(sysroot, "actual-em-cache-header");
             Run(_tools.CMake, ["-S", _templates, "-B", build, "-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=" + _tools.Ninja,
                 "-DCMAKE_TOOLCHAIN_FILE=" + Path.Combine(_tools.SdkRoot, "upstream", "emscripten", "cmake", "Modules", "Platform", "Emscripten.cmake"),
                 "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", "-DUNREALSHARP_APP_INPUTS=" + data], "cmake-configure");
@@ -424,6 +421,14 @@ internal static class WasmManagedPreparation
             foreach (string name in new[] { "callhelpers_pinvoke_override", "ResolveRuntimeHelperEntrypoint", "g_ReverseThunks", "g_portableCallHelperThunks" })
                 Require(Regex.IsMatch(symbols, @"(?m)^.*\b" + Regex.Escape(name) + @"(?:\(|\s|$)"), "Application archive is missing generated symbol: " + name);
             _outputs.AddRange([_input.AppArchive, Path.Combine(build, "CMakeCache.txt"), Path.Combine(build, "compile_commands.json"), data]);
+        }
+
+        private void PrepareSysroot()
+        {
+            Run(HostTool(Path.Combine(_tools.SdkRoot, "upstream", "emscripten"), "embuilder"), ["build", "sysroot"], "emscripten-sysroot");
+            string sysroot = Path.Combine(_tools.EmCache, "sysroot", "include");
+            Require(Directory.Exists(sysroot), "Selected EM_CACHE has no initialized sysroot headers.");
+            CaptureTree(sysroot, "actual-em-cache-header");
         }
 
         private static List<string> ResolveLoadOrderFiles(IEnumerable<string> projects, IReadOnlyDictionary<string, string> outputs, string managedDirectory)
