@@ -1,4 +1,7 @@
 {
   "ScriptDirectoryName": "Script",
-  "NativeAOT": false
+  "NativeAOT": false,
+  "ExcludedHeaderPaths": [
+    "Engine/Source/Editor/JsonUtilitiesEditor/Private/Tests/JsonSchemaGeneratorTests.h"
+  ]
 }
