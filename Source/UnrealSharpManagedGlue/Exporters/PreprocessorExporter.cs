@@ -27,6 +27,11 @@ public static class PreprocessorExporter
         stringBuilder.AppendLine("</Project>");
 
         string propsPath = Path.Combine(GeneratorStatics.PluginModuleInfo.Module.GetUHTBaseDirectory(), "UE5Rules.Defines.props");
-        File.WriteAllText(propsPath, stringBuilder.ToString());
+        string props = stringBuilder.ToString();
+        if (!File.Exists(propsPath) || File.ReadAllText(propsPath) != props)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(propsPath)!);
+            File.WriteAllText(propsPath, props);
+        }
     }
 }

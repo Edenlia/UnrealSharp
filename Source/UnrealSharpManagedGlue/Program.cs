@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Runtime.Loader;
 using EpicGames.UHT.Tables;
 using EpicGames.UHT.Utils;
+using Microsoft.Extensions.Logging;
+using UnrealBuildTool;
 using UnrealSharpManagedGlue;
 using UnrealSharpManagedGlue.PropertyTranslators;
 using UnrealSharpManagedGlue.Utilities;
@@ -13,6 +15,7 @@ using UnrealSharpManagedGlue.Utilities;
 public static class Program
 {
     private static readonly object ExporterLock = new();
+    private const int ExportStageCount = 5;
 
     static Program()
     {
@@ -65,13 +68,33 @@ public static class Program
             ResetRunState();
             GeneratorStatics.Initialize(factory);
             PropertyTranslatorManager.Initialize();
-            ExportBindings();
+            RunStage(1, "Export C# bindings", () => ExportBindings((completed, total) =>
+            {
+                ReportProgress($"Export C# bindings ({completed}/{total} modules)", (double)completed / total);
+            }));
+            RunStage(2, "Clean up obsolete bindings", FileExporter.CleanOldExportedFiles);
+            RunStage(3, "Build UnrealSharp managed assemblies", BuildUtilities.BuildBindings);
+            RunStage(4, "Synchronize project glue", ModuleFactory.SyncModuleProjects);
+            RunStage(5, "Prepare C# solution", BuildUtilities.GenerateUserSolution);
+            ReportProgress("C# setup complete", ExportStageCount);
 
-            FileExporter.CleanOldExportedFiles();
-            BuildUtilities.BuildBindings();
+            void RunStage(int stage, string message, Action action)
+            {
+                ConsoleUtilities.Log($"[{stage}/{ExportStageCount}] {message}...");
+                ReportProgress($"[{stage}/{ExportStageCount}] {message}", stage - 1);
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                action();
+                ConsoleUtilities.Log($"[{stage}/{ExportStageCount}] {message} finished in {stopwatch.Elapsed.TotalSeconds:F2}s.");
+            }
 
-            ModuleFactory.SyncModuleProjects();
-            BuildUtilities.GenerateUserSolution();
+            void ReportProgress(string message, double completedStages)
+            {
+                if (ProgressWriter.bWriteMarkup)
+                {
+                    int percent = (int)Math.Round(completedStages * 100 / ExportStageCount);
+                    factory.Session.Logger.LogInformation("@progress 'UnrealSharp: {Message}' {Percent}%", message, percent);
+                }
+            }
         }
         finally
         {
@@ -98,21 +121,11 @@ public static class Program
         GeneratorStatics.Reset();
     }
 
-    private static void ExportBindings()
+    private static void ExportBindings(Action<int, int> reportProgress)
     {
-        ConsoleUtilities.Log("Starting C# bindings export...");
-
         try
         {
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            
-            GlueGenerator.GenerateBindings();
-            TaskManager.WaitForTasks();
-
-            stopwatch.Stop();
-            
-            string timeString = stopwatch.Elapsed.TotalSeconds < 1 ? $"{stopwatch.Elapsed.TotalMilliseconds:F0}ms" : $"{stopwatch.Elapsed.TotalSeconds:F2}s";
-            ConsoleUtilities.Log($"Finished exporting C# bindings in {timeString}");
+            GlueGenerator.GenerateBindings(reportProgress);
         }
         catch (Exception ex)
         {

@@ -70,40 +70,19 @@ public static class PackageHeadersTracker
         return false;
     }
     
-    public static bool HasHeaderFileChanged(string packageName, UhtHeaderFile headerPath)
+    public static bool UpdateHeaderWriteTime(string packageName, UhtHeaderFile header)
     {
-        if (!_packageHeadersWriteRecord.TryGetValue(packageName, out PackageHeaders? headers))
-        {
-            return true;
-        }
-        
-        if (headers == null || !headers.HeaderToWriteTime.TryGetValue(headerPath.FilePath, out DateTime recordedWriteTime))
-        {
-            return true;
-        }
-
-        return recordedWriteTime != File.GetLastWriteTimeUtc(headerPath.FilePath);
-    }
-    
-    public static void RecordPackageHeadersWriteTime(string packageName, IEnumerable<UhtHeaderFile> headerPaths)
-    {
-        foreach (UhtHeaderFile headerPath in headerPaths)
-        {
-            RecordHeaderWriteTime(packageName, headerPath);
-        }
-    }
-
-    private static void RecordHeaderWriteTime(string packageName, UhtHeaderFile headerPath)
-    {
-        DateTime currentWriteTime = File.GetLastWriteTimeUtc(headerPath.FilePath);
-        
         if (!_packageHeadersWriteRecord.TryGetValue(packageName, out PackageHeaders? headers) || headers == null)
         {
             headers = new PackageHeaders();
             _packageHeadersWriteRecord[packageName] = headers;
         }
-        
-        headers.HeaderToWriteTime[headerPath.FilePath] = currentWriteTime;
+
+        DateTime currentWriteTime = File.GetLastWriteTimeUtc(header.FilePath);
+        bool changed = !headers.HeaderToWriteTime.TryGetValue(header.FilePath, out DateTime previousWriteTime) ||
+                       previousWriteTime != currentWriteTime;
+        headers.HeaderToWriteTime[header.FilePath] = currentWriteTime;
         headers.HasBeenExported = true;
+        return changed;
     }
 }

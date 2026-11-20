@@ -9,17 +9,18 @@ public static class TaskManager
 {
 	private static readonly List<Task> Tasks = new();
 
-	public static void StartTask(UhtExportTaskDelegate action)
+	public static Task? StartTask(UhtExportTaskDelegate action, List<Task?>? prerequisites = null)
 	{
-		Task? task = GeneratorStatics.Factory.CreateTask(action);
+		Task? task = GeneratorStatics.Factory.CreateTask(prerequisites, action);
 		
 		if (task == null)
 		{
 			// Task execution was done synchronously
-			return;
+			return null;
 		}
 		
 		Tasks.Add(task);
+		return task;
 	}
 	
 	public static void WaitForTasks()

@@ -1,8 +1,7 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using EpicGames.UHT.Types;
 using UnrealSharpManagedGlue.PropertyTranslators;
 using UnrealSharpManagedGlue.SourceGeneration;
@@ -11,8 +10,8 @@ namespace UnrealSharpManagedGlue.Utilities;
 
 public static class FileExporter
 {
-	private static readonly ReaderWriterLockSlim ReadWriteLock = new();
-	private static readonly HashSet<string> AffectedFiles = new(StringComparer.OrdinalIgnoreCase);
+	private static readonly object[] FileLocks = Enumerable.Range(0, 64).Select(_ => new object()).ToArray();
+	private static readonly ConcurrentDictionary<string, byte> AffectedFiles = new(StringComparer.OrdinalIgnoreCase);
     
 	public static bool HasModifiedEngineGlue { get; private set; }
 
@@ -36,23 +35,12 @@ public static class FileExporter
 	public static void SaveGlueToDisk(UhtPackage package, string directory, string typeName, string text)
 	{
 		string absoluteFilePath = GetFilePath(typeName, directory);
-		bool needsWrite = true;
-
-		if (File.Exists(absoluteFilePath))
+		// Keep both the comparison and write serialized for the same output path.
+		uint lockIndex = unchecked((uint)StringComparer.OrdinalIgnoreCase.GetHashCode(absoluteFilePath)) % (uint)FileLocks.Length;
+		lock (FileLocks[lockIndex])
 		{
-			FileInfo fileInfo = new(absoluteFilePath);
-			if (fileInfo.Length == text.Length && File.ReadAllText(absoluteFilePath) == text)
-			{
-				needsWrite = false;
-			}
-		}
-
-		ReadWriteLock.EnterWriteLock();
-		try
-		{
-			AffectedFiles.Add(absoluteFilePath);
-
-			if (!needsWrite)
+			AffectedFiles.TryAdd(absoluteFilePath, 0);
+			if (File.Exists(absoluteFilePath) && File.ReadAllText(absoluteFilePath) == text)
 			{
 				return;
 			}
@@ -70,10 +58,6 @@ public static class FileExporter
 				HasModifiedEngineGlue = true;
 			}
 		}
-		finally
-		{
-			ReadWriteLock.ExitWriteLock();
-		}
 	}
 
 	public static void AddUnchangedType(UhtType type)
@@ -82,19 +66,11 @@ public static class FileExporter
 
 		string directory = type.Package.GetPackageOutputDirectory();
 
-        ReadWriteLock.EnterWriteLock();
-		try
-		{
-			AffectedFiles.Add(GetFilePath(engineName, directory));
+		AffectedFiles.TryAdd(GetFilePath(engineName, directory), 0);
 
-			if (type is UhtStruct uhtStruct && uhtStruct.Functions.Any(f => f.HasMetadata("ExtensionMethod")))
-			{
-				AffectedFiles.Add(GetFilePath($"{engineName}_Extensions", directory));
-			}
-		}
-		finally
+		if (type is UhtStruct uhtStruct && uhtStruct.Functions.Any(f => f.HasMetadata("ExtensionMethod")))
 		{
-			ReadWriteLock.ExitWriteLock();
+			AffectedFiles.TryAdd(GetFilePath($"{engineName}_Extensions", directory), 0);
 		}
 	}
 
@@ -149,7 +125,7 @@ public static class FileExporter
 		string[] files = Directory.GetFiles(path);
 		foreach (string file in files)
 		{
-			if (Path.GetExtension(file) != ".cs" || AffectedFiles.Contains(file))
+			if (Path.GetExtension(file) != ".cs" || AffectedFiles.ContainsKey(file))
 			{
 				continue;
 			}

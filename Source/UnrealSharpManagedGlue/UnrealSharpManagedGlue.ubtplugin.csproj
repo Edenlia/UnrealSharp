@@ -38,6 +38,10 @@
         <Reference Include="EpicGames.UHT">
             <HintPath>$(EngineDir)\Binaries\DotNET\UnrealBuildTool\EpicGames.UHT.dll</HintPath>
         </Reference>
+        <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+            <HintPath>$(EngineDir)\Binaries\DotNET\UnrealBuildTool\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
         <Reference Include="UnrealBuildTool">
             <HintPath>$(EngineDir)\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll</HintPath>
         </Reference>

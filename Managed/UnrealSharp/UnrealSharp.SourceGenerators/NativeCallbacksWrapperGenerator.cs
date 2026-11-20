@@ -20,7 +20,7 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var classDeclarations = context.SyntaxProvider.CreateSyntaxProvider(
-                static (syntaxNode, _) => syntaxNode is ClassDeclarationSyntax cds && cds.AttributeLists.Count > 0,
+                static (syntaxNode, _) => syntaxNode is ClassDeclarationSyntax declaration && HasNativeCallbacksAttribute(declaration),
                 static (syntaxContext, _) => GetClassInfoOrNull(syntaxContext));
 
         var classAndCompilation = classDeclarations.Combine(context.CompilationProvider);
@@ -217,20 +217,7 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
 
     private static ClassInfo? GetClassInfoOrNull(GeneratorSyntaxContext context)
     {
-        if (context.Node is not ClassDeclarationSyntax classDeclaration)
-        {
-            return null;
-        }
-
-        // Check attribute (support both NativeCallbacks and NativeCallbacksAttribute)
-        bool hasNativeCallbacksAttribute = classDeclaration.AttributeLists
-            .SelectMany(a => a.Attributes)
-            .Any(a => a.Name.ToString() is "NativeCallbacks" or "NativeCallbacksAttribute");
-
-        if (!hasNativeCallbacksAttribute)
-        {
-            return null;
-        }
+        var classDeclaration = (ClassDeclarationSyntax)context.Node;
 
         string namespaceName = classDeclaration.GetFullNamespace();
 
@@ -293,6 +280,24 @@ public class NativeCallbacksWrapperGenerator : IIncrementalGenerator
         }
 
         return classInfo;
+    }
+
+    private static bool HasNativeCallbacksAttribute(ClassDeclarationSyntax declaration)
+    {
+        // Filter before Roslyn creates a semantic model for the class.
+        foreach (AttributeListSyntax attributes in declaration.AttributeLists)
+        {
+            foreach (AttributeSyntax attribute in attributes.Attributes)
+            {
+                if (attribute.Name is IdentifierNameSyntax name &&
+                    name.Identifier.Text is "NativeCallbacks" or "NativeCallbacksAttribute")
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
 

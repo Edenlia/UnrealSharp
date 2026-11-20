@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using EpicGames.Core;
 using EpicGames.UHT.Types;
 using UnrealSharpManagedGlue.Model;
@@ -11,11 +13,27 @@ namespace UnrealSharpManagedGlue.Exporters;
 
 public static class PackageExporter
 {
-    public static void ExportPackages()
+    private const int ExportBatchSize = 32;
+
+    public static void ExportPackages(Action<int, int> reportProgress)
     {
+        int total = ModuleUtilities.PackageToModuleInfo.Count;
+        int completed = 0;
+        object progressLock = new();
+        Stopwatch progressTimer = Stopwatch.StartNew();
+        ConsoleUtilities.Log($"[0/{total}] Processing C# binding modules...");
+
         foreach (ModuleInfo moduleInfo in ModuleUtilities.PackageToModuleInfo.Values)
         {
-            ExportPackage(moduleInfo.Module);
+            List<Task?> tasks = ExportPackage(moduleInfo.Module);
+            if (tasks.Count == 0)
+            {
+                CompletePackage(moduleInfo.ModuleName);
+            }
+            else
+            {
+                TaskManager.StartTask(_ => CompletePackage(moduleInfo.ModuleName), tasks);
+            }
         }
         
         TaskManager.WaitForTasks();
@@ -23,43 +41,98 @@ public static class PackageExporter
         {
             throw new InvalidOperationException("UnrealSharp export tasks failed.");
         }
+
+        ConsoleUtilities.Log($"[{total}/{total}] Processed C# binding modules.");
+
+        void CompletePackage(string moduleName)
+        {
+            lock (progressLock)
+            {
+                completed++;
+                if (completed < total && progressTimer.ElapsedMilliseconds >= 250)
+                {
+                    reportProgress(completed, total);
+                    ConsoleUtilities.Log($"[{completed}/{total}] Processed C# binding module {moduleName}.");
+                    progressTimer.Restart();
+                }
+            }
+        }
     }
     
-    private static void ExportPackage(UhtPackage package)
+    private static List<Task?> ExportPackage(UhtPackage package)
     {
         string packageName = package.GetModuleShortName();
         string generatedPath = package.GetPackageOutputDirectory();
         bool generatedGlueFolderExists = Directory.Exists(generatedPath);
+        Dictionary<UhtHeaderFile, bool> changedHeaders = new();
+        List<Task?> tasks = new();
+        List<Action> batch = new(ExportBatchSize);
 
-        int childrenCount = package.Children.Count;
-        UhtHeaderFile[] processedHeaders = new UhtHeaderFile[childrenCount];
-        
-        for (int i = 0; i < childrenCount; i++)
+        foreach (UhtType child in package.Children)
         {
-            UhtType child = package.Children[i];
-            bool hasChanged = !generatedGlueFolderExists || PackageHeadersTracker.HasHeaderFileChanged(packageName, child.HeaderFile);
-            Action<UhtType> processAction = hasChanged ? ExportType : FileExporter.AddUnchangedType;
+            UhtHeaderFile header = child.HeaderFile;
+            if (!changedHeaders.TryGetValue(header, out bool hasChanged))
+            {
+                hasChanged = PackageHeadersTracker.UpdateHeaderWriteTime(packageName, header) || !generatedGlueFolderExists;
+                changedHeaders.Add(header, hasChanged);
+            }
 
-            processAction(child);
-
+            ProcessType(child, hasChanged);
             foreach (UhtType type in child.Children)
             {
-                processAction(type);
+                ProcessType(type, hasChanged);
             }
-            
-            processedHeaders[i] = child.HeaderFile;
         }
-        
-        PackageHeadersTracker.RecordPackageHeadersWriteTime(packageName, processedHeaders);
+
+        if (batch.Count > 0)
+        {
+            ScheduleBatch();
+        }
+
+        return tasks;
+
+        void ProcessType(UhtType type, bool hasChanged)
+        {
+            if (!hasChanged)
+            {
+                FileExporter.AddUnchangedType(type);
+                return;
+            }
+
+            Action? export = GetExportAction(type);
+            if (export == null)
+            {
+                return;
+            }
+
+            batch.Add(export);
+            if (batch.Count == ExportBatchSize)
+            {
+                ScheduleBatch();
+            }
+        }
+
+        void ScheduleBatch()
+        {
+            List<Action> scheduled = batch;
+            tasks.Add(TaskManager.StartTask(_ =>
+            {
+                foreach (Action export in scheduled)
+                {
+                    export();
+                }
+            }));
+            batch = new List<Action>(ExportBatchSize);
+        }
     }
 
-    private static void ExportType(UhtType type)
+    private static Action? GetExportAction(UhtType type)
     {
         SpecialStructInfo specialStructs = PropertyTranslatorManager.SpecialTypeInfo.Structs;
 
         if (type.CanSkipType() || specialStructs.SkippedTypes.Contains(type.SourceName))
         {
-            return;
+            return null;
         }
 
         bool isManualExport = specialStructs.BlittableTypes.ContainsKey(type.SourceName);
@@ -86,7 +159,7 @@ public static class PackageExporter
         {
             if (isManualExport)
             {
-                return;
+                return null;
             }
             
             exportAction = () => EnumExporter.ExportEnum(enumObj);
@@ -105,10 +178,7 @@ public static class PackageExporter
             }
         }
 
-        if (exportAction != null)
-        {
-            TaskManager.StartTask(_ => exportAction());
-        }
+        return exportAction;
     }
 
     private static bool CanExportReflectedRootInterface(SpecialStructInfo specialStructs)

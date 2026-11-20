@@ -12,6 +12,11 @@
     <PropertyGroup Condition="'$(GenerateDocumentation)' == ''">
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
+
+    <PropertyGroup Condition="'$(UnrealSharpBuildBindings)' == 'true'">
+        <!-- The generated binding assembly is consumed directly by user projects. -->
+        <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    </PropertyGroup>
     
     <Import Project="..\..\..\UnrealSharp.AOT.props" Condition="Exists('..\..\..\UnrealSharp.AOT.props')" />
     <Import Project="..\..\..\UnrealSharp.Build.props" Condition="Exists('..\..\..\UnrealSharp.Build.props')" />
