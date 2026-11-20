@@ -9,6 +9,7 @@
 #include "DesktopPlatformModule.h"
 #include "IPluginBrowser.h"
 #include "ISettingsModule.h"
+#include "ILevelEditor.h"
 #include "LevelEditor.h"
 #include "SourceCodeNavigation.h"
 #include "CSSourceCodeNavigation.h"
@@ -17,6 +18,7 @@
 #include "BlueprintEditorModule.h"
 #include "Editor.h"
 #include "Misc/CoreDelegates.h"
+#include "ToolMenus.h"
 #include "SubobjectDataSubsystem.h"
 #include "AssetActions/CSAssetTypeAction_CSBlueprint.h"
 #include "AssetActions/CSAssetTypeAction_ReadOnly.h"
@@ -104,18 +106,25 @@ void FUnrealSharpEditorModule::ShutdownModule()
 #else
 	FCoreDelegates::GetOnPostEngineInit().RemoveAll(this);
 #endif
+#if !UE_VERSION_OLDER_THAN(5, 7, 0)
+	if (FLevelEditorModule* LevelEditorModule = FModuleManager::GetModulePtr<FLevelEditorModule>(TEXT("LevelEditor")))
+	{
+		LevelEditorModule->OnLevelEditorCreated().RemoveAll(this);
+	}
 	if (SubobjectEditorCustomization.IsValid())
 	{
+		if (TSharedPtr<ILevelEditor> LevelEditor = CustomizedLevelEditor.Pin())
+		{
+			LevelEditor->RemoveActorDetailsSCSEditorUICustomization(SubobjectEditorCustomization);
+		}
 		if (FBlueprintEditorModule* BlueprintEditorModule = FModuleManager::GetModulePtr<FBlueprintEditorModule>(TEXT("Kismet")))
 		{
-#if UE_VERSION_OLDER_THAN(5, 7, 0)
-			BlueprintEditorModule->SetSubobjectEditorUICustomization(nullptr);
-#else
 			BlueprintEditorModule->RemoveCustomization(SubobjectEditorCustomization);
-#endif
 		}
 	}
+	CustomizedLevelEditor.Reset();
 	SubobjectEditorCustomization.Reset();
+#endif
 	BlueprintEditorCustomization.Reset();
 	if (FAssetToolsModule* AssetToolsModule = FModuleManager::GetModulePtr<FAssetToolsModule>(TEXT("AssetTools")))
 	{
@@ -134,20 +143,44 @@ void FUnrealSharpEditorModule::ShutdownModule()
 
 void FUnrealSharpEditorModule::RegisterSubobjectEditorCustomization()
 {
-	if (!GIsEditor || !GEditor || IsRunningCommandlet() || SubobjectEditorCustomization.IsValid())
+	if (!GIsEditor || !GEditor || IsRunningCommandlet() || BlueprintEditorCustomization.IsValid())
 	{
 		return;
 	}
 
+#if UE_VERSION_OLDER_THAN(5, 7, 0)
+	// The parent-class customization below still uses Kismet on UE 5.6.
+	FModuleManager::LoadModuleChecked<FBlueprintEditorModule>(TEXT("Kismet"));
+	RegisterCSSubobjectSourceMenu(this);
+#else
 	SubobjectEditorCustomization = MakeShared<FCSSubobjectEditorCustomization>();
 	FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>(TEXT("Kismet"));
-#if UE_VERSION_OLDER_THAN(5, 7, 0)
-	BlueprintEditorModule.SetSubobjectEditorUICustomization(SubobjectEditorCustomization);
-#else
 	BlueprintEditorModule.AddCustomization(SubobjectEditorCustomization);
+
+	FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
+	LevelEditorModule.OnLevelEditorCreated().AddRaw(this, &FUnrealSharpEditorModule::RegisterLevelEditorSubobjectCustomization);
+	RegisterLevelEditorSubobjectCustomization(LevelEditorModule.GetFirstLevelEditor());
 #endif
 	BlueprintEditorCustomization = MakeShared<FCSBlueprintEditorCustomization>();
 }
+
+#if !UE_VERSION_OLDER_THAN(5, 7, 0)
+void FUnrealSharpEditorModule::RegisterLevelEditorSubobjectCustomization(TSharedPtr<ILevelEditor> LevelEditor)
+{
+	const TSharedPtr<ILevelEditor> PreviousLevelEditor = CustomizedLevelEditor.Pin();
+	if (!LevelEditor || LevelEditor == PreviousLevelEditor)
+	{
+		return;
+	}
+
+	if (PreviousLevelEditor)
+	{
+		PreviousLevelEditor->RemoveActorDetailsSCSEditorUICustomization(SubobjectEditorCustomization);
+	}
+	LevelEditor->AddActorDetailsSCSEditorUICustomization(SubobjectEditorCustomization);
+	CustomizedLevelEditor = LevelEditor;
+}
+#endif
 
 void FUnrealSharpEditorModule::InitializeManagedEditorCallbacks(FCSManagedEditorCallbacks Callbacks)
 {

@@ -49,6 +49,11 @@ public class UnrealSharpEditor : ModuleRules
             }
         );
 
+        if (Target.Version.MajorVersion == 5 && Target.Version.MinorVersion < 7)
+        {
+            PrivateDependencyModuleNames.Add("SubobjectEditor");
+        }
+
         PublicDefinitions.Add("ForceAsEngineGlue=1");
     }
 }

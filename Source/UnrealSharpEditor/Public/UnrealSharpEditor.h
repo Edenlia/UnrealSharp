@@ -24,6 +24,7 @@ class FCSScriptBuilder;
 class FCSSourceCodeNavigation;
 class FCSSubobjectEditorCustomization;
 class FCSBlueprintEditorCustomization;
+class ILevelEditor;
 
 struct FCSManagedEditorCallbacks
 {
@@ -82,9 +83,11 @@ public:
 
 private:
     void RegisterSubobjectEditorCustomization();
+    void RegisterLevelEditorSubobjectCustomization(TSharedPtr<ILevelEditor> LevelEditor);
 
     TSharedPtr<FCSSourceCodeNavigation> SourceCodeNavigation;
     TSharedPtr<FCSSubobjectEditorCustomization> SubobjectEditorCustomization;
+    TWeakPtr<ILevelEditor> CustomizedLevelEditor;
     TSharedPtr<FCSBlueprintEditorCustomization> BlueprintEditorCustomization;
     TArray<TSharedRef<IAssetTypeActions>> RegisteredAssetTypeActions;
     
