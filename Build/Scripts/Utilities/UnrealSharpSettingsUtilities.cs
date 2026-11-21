@@ -43,6 +43,12 @@ public static class UnrealSharpSettingsUtilities
         return _config[elementName];
     }
     
+    internal static bool GetTrimManaged(this BuildCommand buildCommand)
+    {
+        InitializeConfigFile(buildCommand);
+        return _config!.TryGetValue("TrimManaged", out JsonElement Setting) && Setting.GetBoolean();
+    }
+
     static string GetConfigFile(string rootDirectory)
     {
         string ConfigDirectory = Path.Combine(rootDirectory, "Config");

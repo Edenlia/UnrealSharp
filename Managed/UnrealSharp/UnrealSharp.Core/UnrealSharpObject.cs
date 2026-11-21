@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -9,6 +10,8 @@ namespace UnrealSharp.Core;
 /// </summary>
 public class UnrealSharpObject : IDisposable
 {
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The cooked package roots constructors of Unreal classes.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The cooked package roots constructors of Unreal classes.")]
     internal static unsafe IntPtr Create(Type typeToCreate, IntPtr nativeObjectPtr)
     {
         const BindingFlags bindingFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;

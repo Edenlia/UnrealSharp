@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using AutomationTool;
 using UnrealBuildTool;
 using UnrealSharp.Automation.Utilities;
@@ -17,6 +16,7 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
 [Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to X64.")]
 [Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
+[Help("TrimManaged", "Optional flag. Links UnrealSharp, glue and user code for a packaged game. Also enabled by TrimManaged in UnrealSharp.Settings.json.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
@@ -32,7 +32,8 @@ public class PackageProject : BuildCommand
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
         bool NativeAot,
-        string[]? UserParams = null);
+        string[]? UserParams = null,
+        bool TrimManaged = false);
 
     public override void ExecuteBuild()
     {
@@ -47,19 +48,68 @@ public class PackageProject : BuildCommand
 
         DotNetSdkUtilities.CopyGlobalJson(this);
 
-        string PublishFolder = PathUtilities.BuildOutputPath(options.ArchiveDirectory);
-        CleanBuildArtifacts(PublishFolder);
+        string PublishFolder = Path.GetFullPath(PathUtilities.BuildOutputPath(options.ArchiveDirectory));
+        if (options.TrimManaged)
+        {
+            PackageWithManagedTrimming(options, PublishFolder);
+            return;
+        }
 
+        CleanBuildArtifacts(PublishFolder);
+        PublishManagedCode(options, PublishFolder);
+        EmitInstalledFlagFile(PublishFolder);
+        LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
+    }
+
+    private void PublishManagedCode(PackagingOptions options, string publishFolder)
+    {
         string RuntimeIdentifier = DotNetSdkUtilities.GetDotNetRuntimeIdentifier(options.TargetPlatform, options.TargetArchitecture);
-        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, PublishFolder);
+        IList<string> Arguments = BuildBaseArguments(RuntimeIdentifier, options, publishFolder);
 
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
-        BuildUserBindings(PublishFolder, options, Arguments);
-        BuildUserSolution(PublishFolder, Arguments, options);
-        
-        EmitInstalledFlagFile(PublishFolder);
+        BuildUserBindings(publishFolder, options, Arguments);
+        BuildUserSolution(publishFolder, Arguments, options);
+    }
 
-        LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
+    private void PackageWithManagedTrimming(PackagingOptions options, string publishFolder)
+    {
+        string Attempt = Guid.NewGuid().ToString("N");
+        string Pending = publishFolder + ".pending-" + Attempt;
+        string Previous = publishFolder + ".previous-" + Attempt;
+        string Work = Path.Combine(this.GetUnrealSharpIntermediateDirectory(), "ManagedTrim", Attempt);
+
+        try
+        {
+            PublishManagedCode(options, Pending);
+            ManagedTrimmingUtilities.Trim(Pending, Work);
+            CleanBuildArtifacts(Path.Combine(Pending, ManagedTrimmingUtilities.DescriptorFolder));
+            EmitInstalledFlagFile(Pending);
+
+            if (Directory.Exists(publishFolder))
+            {
+                Directory.Move(publishFolder, Previous);
+            }
+            try
+            {
+                Directory.Move(Pending, publishFolder);
+            }
+            catch
+            {
+                if (Directory.Exists(Previous))
+                {
+                    Directory.Move(Previous, publishFolder);
+                }
+                throw;
+            }
+            CleanBuildArtifacts(Previous);
+        }
+        finally
+        {
+            CleanBuildArtifacts(Pending);
+        }
+
+        CleanBuildArtifacts(Work);
+        LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {publishFolder}");
     }
 
     private PackagingOptions ParseOptionsFromCommandLine()
@@ -78,7 +128,9 @@ public class PackageProject : BuildCommand
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        bool TrimManaged = ParseParam("TrimManaged") || (TargetType != TargetType.Editor && this.GetTrimManaged());
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture,
+            NativeAot, UserParams, TrimManaged);
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -90,6 +142,7 @@ public class PackageProject : BuildCommand
         LoggerUtilities.LogUnrealSharpInfo($"UE Build Configuration: {options.BuildConfiguration}");
         LoggerUtilities.LogUnrealSharpInfo($"UE Target Type: {options.TargetType}");
         LoggerUtilities.LogUnrealSharpInfo($"Native AOT: {options.NativeAot}");
+        LoggerUtilities.LogUnrealSharpInfo($"Trim managed assemblies: {options.TrimManaged}");
 
         if (options.UserParams is { Length: > 0 })
         {
@@ -109,6 +162,11 @@ public class PackageProject : BuildCommand
         if (options.NativeAot)
         {
             throw new NotSupportedException("Native AOT packaging is not currently supported. This option is reserved for future use and should not be set.");
+        }
+
+        if (options.TrimManaged && options.TargetType == TargetType.Editor)
+        {
+            throw new NotSupportedException("Managed trimming requires a packaged non-Editor target.");
         }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;
@@ -159,7 +217,7 @@ public class PackageProject : BuildCommand
 
     private static IList<string> BuildBaseArguments(string runtimeIdentifier, PackagingOptions options, string publishFolder)
     {
-        return
+        List<string> Arguments =
         [
             "--runtime", runtimeIdentifier,
 
@@ -172,6 +230,17 @@ public class PackageProject : BuildCommand
 
             $"-p:PublishDir=\"{publishFolder}\"",
         ];
+        if (options.TrimManaged)
+        {
+            // The linker needs the original IL from every target project.
+            Arguments.Add("-p:PublishTrimmed=false");
+            Arguments.Add("-p:PublishAot=false");
+            Arguments.Add("-p:PublishReadyToRun=false");
+            Arguments.Add("-p:PublishSingleFile=false");
+            Arguments.Add("-p:UnrealSharpExportTrimDescriptors=true");
+            Arguments.Add($"-p:UnrealSharpPackageReferencePath=\"{publishFolder}\"");
+        }
+        return Arguments;
     }
 
     private void BuildBindingsSolution(IList<string> arguments, UnrealTargetConfiguration buildConfig)
@@ -198,11 +267,10 @@ public class PackageProject : BuildCommand
         IList<string> BuildUserSolutionArguments = buildArguments;
         if (options.UserParams is { Length: > 0 })
         {
-            BuildUserSolutionArguments = new List<string>(buildArguments);
-            foreach (string UserParam in options.UserParams)
-            {
-                BuildUserSolutionArguments.Add(UserParam);
-            }
+            // Preserve the target and raw IL layout for the combined linker invocation.
+            BuildUserSolutionArguments = options.TrimManaged
+                ? options.UserParams.Concat(buildArguments).ToList()
+                : buildArguments.Concat(options.UserParams).ToList();
         }
 
         BuildCommands.BuildSolution.RunBuild(SolutionDirectory, options.BuildConfiguration, publish: true, BuildUserSolutionArguments);

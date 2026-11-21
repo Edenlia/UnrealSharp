@@ -56,6 +56,28 @@ Visit the website's [Get Started](https://www.unrealsharp.com/getting-started/qu
 
 If you want to contribute to the documentation, check out the [docs repository](https://github.com/UnrealSharp/unrealsharp.github.io)!
 
+## Managed trimming in packaged games
+
+Set `"TrimManaged": true` in the project's `Config/UnrealSharp.Settings.json`, or pass `-TrimManaged` to the
+UnrealSharp `PackageProject` command. The option applies to self-contained hostfxr packages for non-Editor targets.
+
+UnrealSharp publishes the target bindings, plugin glue and game assemblies before running ILLink once over the
+combined managed package. The linker keeps Unreal's reflected types, construction and marshalling entry points,
+event invokers, delegate wrappers, module initializers and host entry point. The packaged runtime and its settings,
+load order, native libraries and content retain their on-disk layout.
+
+Project code that looks up types or members by name needs its own preservation rules. Declare a
+`TrimmerRootDescriptor` item in the project that owns the lookup. For example, a component name stored in a
+StateTree can be covered by a descriptor that keeps the matching property getter. The rule also applies to
+reflection-based serializers and dynamically selected managed plugins. Prefer static references or source-generated
+serialization when those are available. Review any remaining ILLink diagnostics against the actual lookup and
+provide precise roots and a narrowly scoped suppression when static analysis cannot verify them. An unresolved
+warning fails packaging before it replaces the existing archive payload.
+
+Run `dotnet run --project Tests/ManagedTrimming/ManagedTrimming.Tests.csproj` from the repository root to check the
+linker, descriptor transfer from a referenced project and the runtime reflection contracts on the host platform.
+Add `-- --nativeaot` to run the descriptor through the .NET NativeAOT compiler and execute a standalone probe.
+
 ## Code example
 
 A networked, interactable resource pickup written entirely in C#:

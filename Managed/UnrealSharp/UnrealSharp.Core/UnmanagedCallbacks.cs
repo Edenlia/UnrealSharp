@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using UnrealSharp.Core.Marshallers;
 
@@ -35,6 +36,7 @@ public static class UnmanagedCallbacks
     }
 
     [UnmanagedCallersOnly]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The cooked package roots Wrap on Unreal interfaces.")]
     public static IntPtr CreateNewManagedObjectWrapper(IntPtr managedObjectHandle, IntPtr typeHandlePtr)
     {
         try
@@ -80,6 +82,7 @@ public static class UnmanagedCallbacks
     }
     
     [UnmanagedCallersOnly]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The cooked package roots Invoke_ methods on their declaring types.")]
     public static unsafe IntPtr GetManagedMethod(IntPtr typeHandlePtr, char* methodName)
     {
         try
@@ -120,6 +123,8 @@ public static class UnmanagedCallbacks
     }
     
     [UnmanagedCallersOnly]
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "The cooked package roots Unreal struct constructors.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The cooked package roots ToNative on Unreal structs.")]
     public static void InitializeStruct(IntPtr structHandle, IntPtr buffer)
     {
         try
@@ -154,6 +159,7 @@ public static class UnmanagedCallbacks
     }
     
     [UnmanagedCallersOnly]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The cooked package records Unreal types as roots by their metadata names.")]
     public static unsafe IntPtr GetManagedTypeHandle(IntPtr assemblyHandle, char* fullTypeName)
     {
         try

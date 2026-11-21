@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using UnrealSharp.Binds;
@@ -9,6 +10,8 @@ public static class ExportedFunctionsManager
 {
     private static readonly Dictionary<string, FieldInfo> UnmanagedDelegates = new();
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The cooked package roots types annotated with NativeCallbacks.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The cooked package roots fields of types annotated with NativeCallbacks.")]
     public static unsafe void Initialize(IntPtr nativeExportFunctionsPtr)
     {
         try

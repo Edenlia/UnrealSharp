@@ -17,4 +17,16 @@
   <Target Name="DebugUETargetType" BeforeTargets="Compile">
     <Message Importance="high" Text="Build Parameters: Target Type: $(UETargetType) ($(WithTargetType)) | Configuration: $(UEBuildConfig) ($(WithBuildConfig))" />
   </Target>
+
+  <!-- Linking runs after all managed projects have published to the same package. -->
+  <Target Name="ExportUnrealSharpTrimDescriptors" BeforeTargets="AssignTargetPaths"
+          Condition="'$(UnrealSharpExportTrimDescriptors)' == 'true' and '@(TrimmerRootDescriptor)' != ''">
+    <GetFileHash Files="@(TrimmerRootDescriptor)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_UnrealSharpTrimDescriptors" />
+    </GetFileHash>
+    <ItemGroup>
+      <Content Include="@(_UnrealSharpTrimDescriptors)" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest"
+               TargetPath="UnrealSharpTrimming/$(MSBuildProjectName)/%(_UnrealSharpTrimDescriptors.FileHash).xml" />
+    </ItemGroup>
+  </Target>
 </Project>

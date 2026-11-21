@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Loader;
 using System.IO;
 
@@ -13,6 +14,7 @@ public class PluginLoadContext : AssemblyLoadContext
         _resolver = resolver;
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Cooked plugin assemblies and their dependencies are analyzed together by PackageProject.")]
     protected override Assembly? Load(AssemblyName assemblyName)
     {
         if (string.IsNullOrEmpty(assemblyName.Name))

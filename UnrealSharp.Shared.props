@@ -11,6 +11,18 @@
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.AOT.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.AOT.props')" />
   <Import Project="$(UnrealSharpPluginDir)UnrealSharp.Build.props" Condition="Exists('$(UnrealSharpPluginDir)UnrealSharp.Build.props')" />
 
+  <Target Name="PreferUnrealSharpPackageReferences" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(UnrealSharpPackageReferencePath)' != ''">
+    <ItemGroup>
+      <Reference Condition="'%(Reference.HintPath)' != '' and '%(Reference.FrameworkReferenceName)' == ''">
+        <PackageHintPath>$(UnrealSharpPackageReferencePath)/$([System.IO.Path]::GetFileName($([MSBuild]::NormalizePath('%(Reference.HintPath)'))))</PackageHintPath>
+      </Reference>
+      <Reference Condition="'%(Reference.PackageHintPath)' != '' and Exists('%(Reference.PackageHintPath)')">
+        <HintPath>%(Reference.PackageHintPath)</HintPath>
+      </Reference>
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
   
     <Reference Include="UnrealSharp">

@@ -1,5 +1,6 @@
 using UnrealSharp.Core;
 using UnrealSharp.CoreUObject;
+using System.Diagnostics.CodeAnalysis;
 
 namespace UnrealSharp;
 
@@ -81,6 +82,7 @@ public abstract class TDelegateBase<T> where T : Delegate
     
     public readonly DelegateBase<T> InnerDelegate;
     
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The cooked package roots generated delegate wrappers by name.")]
     static TDelegateBase()
     {
         Type delegateType = typeof(T);
@@ -97,6 +99,7 @@ public abstract class TDelegateBase<T> where T : Delegate
         Wrapper = foundWrapper;
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The cooked package roots the constructors of generated delegate wrappers.")]
     internal TDelegateBase()
     {
         InnerDelegate = (DelegateBase<T>?) Activator.CreateInstance(Wrapper)
