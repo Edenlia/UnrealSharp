@@ -17,6 +17,7 @@ namespace UnrealSharp.Automation.BuildCommands;
 [Help("TargetPlatform=<Platform>", "Optional. Target platform. Defaults to Win64.")]
 [Help("TargetArchitecture=<Arch>", "Optional. Target architecture. Defaults to X64.")]
 [Help("NativeAOT", "Optional flag. Enables Native AOT compilation for the user solution.")]
+[Help("TrimManagedAssemblies", "Trim UnrealSharp and opted-in game assemblies after publishing a non-Editor target.")]
 [Help("UserParams", "Optional. Additional parameters to forward to the user solution build. " + "These should be specified in the format -UserParams=\"-p:Property=Value\" -UserParams=\"--argument\".")]
 public class PackageProject : BuildCommand
 {
@@ -32,7 +33,8 @@ public class PackageProject : BuildCommand
         UnrealTargetPlatform TargetPlatform,
         UnrealArch TargetArchitecture,
         bool NativeAot,
-        string[]? UserParams = null);
+        string[]? UserParams = null,
+        bool TrimManagedAssemblies = false);
 
     public override void ExecuteBuild()
     {
@@ -56,7 +58,13 @@ public class PackageProject : BuildCommand
         BuildBindingsSolution(Arguments, options.BuildConfiguration);
         BuildUserBindings(PublishFolder, options, Arguments);
         BuildUserSolution(PublishFolder, Arguments, options);
-        
+
+        if (options.TargetType != TargetType.Editor &&
+            (options.TrimManagedAssemblies || this.GetElement("TrimManagedAssemblies").GetBoolean()))
+        {
+            ManagedTrimmingUtilities.Trim(PublishFolder, this.GetUnrealSharpIntermediateDirectory());
+        }
+
         EmitInstalledFlagFile(PublishFolder);
 
         LoggerUtilities.LogUnrealSharpInfo($"Packaging complete. Published files: {PublishFolder}");
@@ -78,7 +86,8 @@ public class PackageProject : BuildCommand
 
         string[] UserParams = ParseParamValues("UserParams");
 
-        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture, NativeAot, UserParams);
+        return new PackagingOptions(ArchiveDirectory, TargetType, TargetConfiguration, TargetPlatform, TargetArchitecture,
+            NativeAot, UserParams, ParseParam("TrimManagedAssemblies"));
     }
 
     private static void LogOptions(PackagingOptions options)
@@ -109,6 +118,11 @@ public class PackageProject : BuildCommand
         if (options.NativeAot)
         {
             throw new NotSupportedException("Native AOT packaging is not currently supported. This option is reserved for future use and should not be set.");
+        }
+
+        if (options.TargetType == TargetType.Editor && options.TrimManagedAssemblies)
+        {
+            throw new ArgumentException("TrimManagedAssemblies requires a Game, Client or Server target.");
         }
 
         string HostFxrPath = DotNetUtilities.LatestHostFxrPath;

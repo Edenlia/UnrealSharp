@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Fixture/**/*.cs" />
+    <Compile Include="../../Scripts/Utilities/ManagedTrimmingUtilities.cs" />
+    <Compile Include="../../Scripts/Utilities/UnrealSharpTrimmingRoots.cs" />
+    <Compile Include="../../Scripts/Utilities/DotNetUtilities.cs" />
+    <Compile Include="../../Scripts/Processes/*Process.cs" />
+    <Compile Include="../../../Managed/Shared/AssemblyUtilities.cs" />
+  </ItemGroup>
+</Project>

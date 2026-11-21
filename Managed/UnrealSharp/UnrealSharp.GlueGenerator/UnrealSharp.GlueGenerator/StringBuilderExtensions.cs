@@ -66,6 +66,14 @@ public static class StringBuilderExtensions
 
         builder.StartModuleInitializer(registrarClassName);
 
+        if (type is UnrealClass)
+        {
+            // Unreal creates registered objects through a native callback that invokes their parameterless constructor.
+            builder.AppendLine("[System.Diagnostics.CodeAnalysis.DynamicDependency("
+                + "System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | "
+                + $"System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof({type.FieldName}))]");
+        }
+
         builder.AppendLine(
             $"public static void {registrationMethodName}() => " +
             $"RegisterManagedType(typeof({type.FieldName}), {jsonPropertyName}, {(byte)type.FieldType});");

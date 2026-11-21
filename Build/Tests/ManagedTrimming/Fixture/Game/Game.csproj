@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UETargetType>Game</UETargetType>
+    <UnrealSharpTrimAssembly>true</UnrealSharpTrimAssembly>
+  </PropertyGroup>
+  <Import Project="../../../../../UnrealSharp.Build.props" />
+  <ItemGroup>
+    <ProjectReference Include="../../../../../Managed/UnrealSharp/UnrealSharp.Core/UnrealSharp.Core.csproj" />
+    <ProjectReference Include="../../../../../Managed/UnrealSharp/UnrealSharp.Binds/UnrealSharp.Binds.csproj" />
+    <EmbeddedResource Include="fixture.txt" LogicalName="Game.Fixture" />
+  </ItemGroup>
+</Project>

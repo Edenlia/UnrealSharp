@@ -14,6 +14,10 @@
     <DefineConstants>$(DefineConstants);NATIVE_AOT</DefineConstants>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(UnrealSharpTrimAssembly)' != '' and '$(UETargetType)' != 'Editor'">
+    <AssemblyMetadata Include="UnrealSharp.TrimAssembly" Value="$(UnrealSharpTrimAssembly)" />
+  </ItemGroup>
+
   <Target Name="DebugUETargetType" BeforeTargets="Compile">
     <Message Importance="high" Text="Build Parameters: Target Type: $(UETargetType) ($(WithTargetType)) | Configuration: $(UEBuildConfig) ($(WithBuildConfig))" />
   </Target>

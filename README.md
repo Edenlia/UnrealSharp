@@ -56,6 +56,14 @@ Visit the website's [Get Started](https://www.unrealsharp.com/getting-started/qu
 
 If you want to contribute to the documentation, check out the [docs repository](https://github.com/UnrealSharp/unrealsharp.github.io)!
 
+## Trimming packaged managed assemblies
+
+Set `"TrimManagedAssemblies": true` in the project's `Config/UnrealSharp.Settings.json`, or pass `-TrimManagedAssemblies` to `PackageProject`. For Game, Client, and Server CoreCLR packages this links `UnrealSharp.dll` and the generated glue after all managed projects have been published. The linker keeps the types and members Unreal finds through native registration, including UObject constructors, UFunction invokers, struct defaults, and interface and delegate wrappers.
+
+Game and plugin projects can opt in individually by setting `<UnrealSharpTrimAssembly>true</UnrealSharpTrimAssembly>` before importing `UnrealSharp.Shared.props`. Use standard .NET trim annotations or an embedded `ILLink.Descriptors.xml` for additional reflection entry points. Set the property to `false` to retain a generated glue assembly that exposes additional dynamic entry points. Trim warnings fail packaging and identify where annotations or reflection changes are needed.
+
+The package keeps the existing .NET runtime, dependency manifests, and load order. The linker analyzes the assemblies that are published together. If you load external managed assemblies at runtime, explicitly root the packaged APIs they use. Run the managed smoke tests with `dotnet run --project Build/Tests/ManagedTrimming -c Release`.
+
 ## Code example
 
 A networked, interactable resource pickup written entirely in C#:
